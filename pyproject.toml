@@ -1,0 +1,49 @@
+[project]
+name = "production-bug-resolver-agent"
+version = "0.1.0"
+description = "A multi-agent production bug resolver that performs evidence-backed RCA using logs, code context, and knowledge base context."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+authors = [
+    { name = "Vishnu Das" }
+]
+dependencies = [
+    "typer>=0.12.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "python-dotenv>=1.0.1",
+    "openai>=1.30.0",
+    "langchain>=0.2.0",
+    "langchain-openai>=0.1.0",
+    "langgraph>=0.2.0",
+    "faiss-cpu>=1.8.0",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+]
+
+[project.scripts]
+bug-resolver = "bug_resolver.cli.app:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[build-system]
+requires = ["setuptools>=69.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
