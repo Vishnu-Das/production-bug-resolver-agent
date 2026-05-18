@@ -12,18 +12,25 @@ class LocalKnowledgeBaseProvider(KnowledgeBaseProvider):
         self.knowledge_base_dir = Path(knowledge_base_dir)
         self.max_results = max_results
 
-    def search_docs(self, queries: list[str]) -> list[KnowledgeContext]:
+    async def search_knowledge(
+        self,
+        queries: list[str],
+        *,
+        limit: int = 5,
+    ) -> list[KnowledgeContext]:
         if not queries:
             return []
 
         documents = self._load_documents()
         scored_documents = self._score_documents(documents=documents, queries=queries)
 
+        max_results = min(limit, self.max_results)
+
         top_documents = sorted(
             scored_documents,
             key=lambda item: item[1],
             reverse=True,
-        )[: self.max_results]
+        )[:max_results]
 
         return [
             self._to_knowledge_context(

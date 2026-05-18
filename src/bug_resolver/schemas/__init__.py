@@ -18,6 +18,7 @@ from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.solution import SolutionRecommendation
 from bug_resolver.schemas.workflow_state import WorkflowState
 from bug_resolver.schemas.reports import ReportSaveResult
+from bug_resolver.schemas.incident_intake import IncidentIntakeRequest
 
 __all__ = [
     "CodeContext",
@@ -40,4 +41,5 @@ __all__ = [
     "WorkflowState",
     "WorkflowStatus",
     "ReportSaveResult",
+    "IncidentIntakeRequest",
 ]
