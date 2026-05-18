@@ -46,11 +46,9 @@ htmlcov/
 
 # Logs
 *.log
-logs/
 
 # Local generated storage
 storage/
-reports/
 
 # FAISS / vector indexes
 *.faiss
