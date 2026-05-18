@@ -17,6 +17,7 @@ from bug_resolver.schemas.logs import LogAnalysisResult, LogEntry, StackTraceFra
 from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.solution import SolutionRecommendation
 from bug_resolver.schemas.workflow_state import WorkflowState
+from bug_resolver.schemas.reports import ReportSaveResult
 
 __all__ = [
     "CodeContext",
@@ -38,4 +39,5 @@ __all__ = [
     "StackTraceFrame",
     "WorkflowState",
     "WorkflowStatus",
+    "ReportSaveResult",
 ]
