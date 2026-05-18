@@ -7,7 +7,6 @@ import pytest
 from bug_resolver.agents import (
     CodeContextAgent,
     ContextPlanningAgent,
-    EvidenceEvaluatorAgent,
     HypothesisAgent,
     IncidentIntakeAgent,
     KnowledgeBaseAgent,
@@ -18,7 +17,7 @@ from bug_resolver.agents import (
 )
 from bug_resolver.schemas.common import WorkflowStatus
 from bug_resolver.schemas.incident_intake import IncidentIntakeRequest
-from bug_resolver.workflows import BugResolutionWorkflow
+from bug_resolver.workflows import BugResolutionGraph
 from workflow_fakes import (
     AlwaysRetryEvidenceEvaluatorAgent,
     FakeCodeContextProvider,
@@ -30,50 +29,10 @@ from workflow_fakes import (
 
 
 @pytest.mark.asyncio
-async def test_bug_resolution_workflow_runs_full_investigation() -> None:
-    workflow = BugResolutionWorkflow(
-        incident_intake_agent=IncidentIntakeAgent(),
-        log_provider=FakeLogProvider(),
-        log_analysis_agent=LogAnalysisAgent(),
-        context_planning_agent=ContextPlanningAgent(),
-        code_context_agent=CodeContextAgent(FakeCodeContextProvider()),
-        knowledge_base_agent=KnowledgeBaseAgent(FakeKnowledgeBaseProvider()),
-        hypothesis_agent=HypothesisAgent(),
-        rca_agent=RCAAgent(),
-        evidence_evaluator_agent=EvidenceEvaluatorAgent(),
-        solution_recommendation_agent=SolutionRecommendationAgent(),
-        report_writer_agent=ReportWriterAgent(FakeReportStore()),
-    )
-
-    state = await workflow.run(
-        IncidentIntakeRequest(
-            incident_id="INC-001",
-            title="Summary query fails",
-            description="Users get a 500 error while asking summary questions.",
-            affected_service="conversational_rag",
-        )
-    )
-
-    assert state.status == WorkflowStatus.REPORT_SAVED
-    assert state.incident.incident_id == "INC-001"
-    assert len(state.parsed_logs) == 1
-    assert state.log_analysis is not None
-    assert state.context_plan is not None
-    assert state.code_context
-    assert state.knowledge_context
-    assert state.hypotheses
-    assert state.rca_report is not None
-    assert state.evidence_evaluation is not None
-    assert state.solution_recommendation is not None
-    assert state.final_report_path == Path("reports/incidents/INC-001/rca.md")
-    assert state.errors == []
-
-
-@pytest.mark.asyncio
-async def test_bug_resolution_workflow_retries_when_evidence_is_weak() -> None:
+async def test_bug_resolution_graph_runs_full_investigation() -> None:
     evidence_evaluator_agent = RetryThenPassEvidenceEvaluatorAgent()
 
-    workflow = BugResolutionWorkflow(
+    graph = BugResolutionGraph(
         incident_intake_agent=IncidentIntakeAgent(),
         log_provider=FakeLogProvider(),
         log_analysis_agent=LogAnalysisAgent(),
@@ -89,7 +48,52 @@ async def test_bug_resolution_workflow_retries_when_evidence_is_weak() -> None:
         confidence_threshold=0.75,
     )
 
-    state = await workflow.run(
+    state = await graph.run(
+        IncidentIntakeRequest(
+            incident_id="INC-001",
+            title="Summary query fails",
+            description="Users get a 500 error while asking summary questions.",
+            affected_service="conversational_rag",
+        )
+    )
+
+    assert state.status == WorkflowStatus.REPORT_SAVED
+    assert state.incident is not None
+    assert state.incident.incident_id == "INC-001"
+    assert len(state.parsed_logs) == 1
+    assert state.log_analysis is not None
+    assert state.context_plan is not None
+    assert state.code_context
+    assert state.knowledge_context
+    assert state.hypotheses
+    assert state.rca_report is not None
+    assert state.evidence_evaluation is not None
+    assert state.solution_recommendation is not None
+    assert state.final_report_path == Path("reports/incidents/INC-001/rca.md")
+    assert state.errors == []
+
+
+@pytest.mark.asyncio
+async def test_bug_resolution_graph_retries_when_evidence_is_weak() -> None:
+    evidence_evaluator_agent = RetryThenPassEvidenceEvaluatorAgent()
+
+    graph = BugResolutionGraph(
+        incident_intake_agent=IncidentIntakeAgent(),
+        log_provider=FakeLogProvider(),
+        log_analysis_agent=LogAnalysisAgent(),
+        context_planning_agent=ContextPlanningAgent(),
+        code_context_agent=CodeContextAgent(FakeCodeContextProvider()),
+        knowledge_base_agent=KnowledgeBaseAgent(FakeKnowledgeBaseProvider()),
+        hypothesis_agent=HypothesisAgent(),
+        rca_agent=RCAAgent(),
+        evidence_evaluator_agent=evidence_evaluator_agent,  # type: ignore[arg-type]
+        solution_recommendation_agent=SolutionRecommendationAgent(),
+        report_writer_agent=ReportWriterAgent(FakeReportStore()),
+        max_retries=2,
+        confidence_threshold=0.75,
+    )
+
+    state = await graph.run(
         IncidentIntakeRequest(
             incident_id="INC-001",
             title="Summary query fails",
@@ -116,10 +120,10 @@ async def test_bug_resolution_workflow_retries_when_evidence_is_weak() -> None:
 
 
 @pytest.mark.asyncio
-async def test_bug_resolution_workflow_stops_retry_at_max_retries() -> None:
+async def test_bug_resolution_graph_stops_retry_at_max_retries() -> None:
     evidence_evaluator_agent = AlwaysRetryEvidenceEvaluatorAgent()
 
-    workflow = BugResolutionWorkflow(
+    graph = BugResolutionGraph(
         incident_intake_agent=IncidentIntakeAgent(),
         log_provider=FakeLogProvider(),
         log_analysis_agent=LogAnalysisAgent(),
@@ -135,7 +139,7 @@ async def test_bug_resolution_workflow_stops_retry_at_max_retries() -> None:
         confidence_threshold=0.75,
     )
 
-    state = await workflow.run(
+    state = await graph.run(
         IncidentIntakeRequest(
             incident_id="INC-001",
             title="Summary query fails",
