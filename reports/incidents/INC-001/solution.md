@@ -2,45 +2,42 @@
 
 ## Summary
 
-The LLM router emitted `summary` as a retrieval strategy, which is unsupported, leading to a fallback to the rule-based router. The resolution to map summary intents to `parent_child` is identified as necessary for proper system functionality.
+Recommended solution based on RCA RCA-20260519-D8F0379A: The LLM router emitted `summary` as a retrieval strategy, which is not supported, resulting in fallback behavior that utilized the `parent_child` strategy instead. This indicates a mismatch between the output of the LLM router and the expected retrieval strategy values.
 
 ## Immediate Steps
 
-- Update the LLM router prompt and/or structured output validation to only emit supported retrieval strategy values, returning `parent_child` directly for broad summary questions or normalizing `summary` to `parent_child` before validation.
-- Reproduce the incident locally to analyze the failure scenario and validate steps taken for resolution.
-- Verify the update against symptoms detailed in runtime logs and corroborated with RCA evidence.
+- Update the LLM router prompt and/or structured output validation to only emit supported retrieval strategy values. Normalize `summary` to `parent_child` or directly return `parent_child` for broad summary queries.
+- Reproduce the incident locally to identify conditions leading to the invalid strategy output.
+- Verify the adjustments against symptoms observed in the logs and confirm findings with the related RCA evidence.
 
 ## Long-Term Steps
 
-- Add regression tests to ensure that the correct strategy is returned for `summarize this document` queries.
-- Centralize retrieval strategy validation across the system to prevent future contract mismatches.
-- Enhance structured error handling for the router to manage unsupported outputs more effectively.
-- Implement logging of raw router outputs when a fallback occurs to aid in monitoring system behavior and deterioration.
+- Establish a robust validation mechanism for the router strategy outputs to ensure conformity to a set of acceptable strategies prior to their return.
+- Maintain alignment between the LLM router output schema, prompt instructions, and the retrieval strategy enumeration to prevent unsupported labels from being emitted.
+- Document and communicate the supported retrieval strategies along with the expected mappings for summary-oriented queries.
 
 ## Tests to Add
 
-- Create a regression test for the case where the query is 'summarize this document' and a selected document is provided, asserting that the resolved strategy is `parent_child`.
-- Add a test that ensures unsupported LLM strategy values are managed effectively with a clear fallback reason to ensure no silent routing quality degradation occurs.
-- Implement a contract test to confirm that the LLM router emits only supported retrieval strategy enum values.
+- Create test scenarios to confirm the LLM router does not return unsupported strategies and triggers correct fallback behavior when required.
+- Implement unit tests to ensure valid strategies are consistently returned for summary queries.
 
 ## Monitoring Improvements
 
-- Log the raw LLM router strategy value, the normalized strategy value, the type of router used, the fallback reason, the request ID, and the trace ID whenever falls back occurs.
-- Introduce a metric to capture counts of unsupported LLM router strategy values, allowing visibility into potential contract drift such as the `summary` value before it impacts end users.
+- Log details of LLM router activity including raw strategy values, normalized strategy values, router type, fallback reason, request ID, and trace ID during router fallback instances.
+- Introduce a metric tracking unsupported LLM router strategy values to allow visibility of any contract drift related to `summary` strategies before user impact occurs.
 
 ## Risk Notes
 
-- There is a risk that unsupported strategy values could lead to degraded performance and user experience until addressed. Awareness of this issue is critical for both immediate and long-term action plans.
+- There remains a risk that unforeseen edge cases may still lead to unsupported strategies if not properly captured in testing or logging.]
+- Continued reliance on fallback mechanisms without addressing the root cause may lead to a decline in performance or user trust if situations reoccur.
 
 ## Evidence
 
-- EVID-LOG-D00A28C9
-- EVID-LOG-F795570E
-- src/rag/service.py:71-150
-- src/rag/service.py:141-220
+- EVID-LOG-AAF4A2E5
+- EVID-LOG-03350DDE
+- src/rag/routing/llm.py:71-110
+- src/rag/retrieval/parent_child/strategy.py:1-80
 - src/rag/retrieval/parent_child/strategy.py:71-114
-- tests/rag/routing/test_rule_based_router.py:1-80
-- src/rag/routing/rule_based.py:1-80
 
 ## Generation Details
 
@@ -50,8 +47,8 @@ The LLM router emitted `summary` as a retrieval strategy, which is unsupported, 
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-43955CAE
-- rca_report_id: RCA-20260519-211C0A71
+- recommendation_id: SOL-20260519-761C6B88
+- rca_report_id: RCA-20260519-D8F0379A
 - confidence_score: 0.8
 - solution_writer: llm
 - llm_output_validated: true

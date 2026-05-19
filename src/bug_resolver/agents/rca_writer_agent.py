@@ -9,6 +9,10 @@ from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas import RCAReport, WorkflowState
 from bug_resolver.utils.ids import new_rca_report_id
 
+import re
+
+
+HYPOTHESIS_PREFIX_PATTERN = re.compile(r"^H\d+\s*:?\s*", re.IGNORECASE)
 
 ANALYZE_ONLY_FORBIDDEN_PHRASES = (
     "i fixed",
@@ -158,6 +162,10 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             for evidence_id in output.evidence_ids
             if evidence_id in allowed_evidence_ids
         ]
+        hypotheses_considered, selected_hypothesis_id = self._normalize_hypotheses(
+            output.hypotheses_considered,
+            output.selected_hypothesis_id,
+        )
         if not evidence_ids:
             raise RCAWriterFallback("invalid_evidence_id")
 
@@ -167,14 +175,17 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         if output.confidence_score > fallback_report.confidence_score:
             raise RCAWriterFallback("llm_call_failed")
 
-        if output.selected_hypothesis_id and not any(
-            hypothesis.startswith(f"{output.selected_hypothesis_id}:")
-            for hypothesis in output.hypotheses_considered
+        if not hypotheses_considered:
+            raise RCAWriterFallback("missing_hypotheses")
+
+        if selected_hypothesis_id is None:
+            raise RCAWriterFallback("missing_selected_hypothesis_id")
+
+        if not any(
+            hypothesis.startswith(f"{selected_hypothesis_id}:")
+            for hypothesis in hypotheses_considered
         ):
             raise RCAWriterFallback("selected_hypothesis_id_not_found")
-
-        if not output.hypotheses_considered:
-            raise RCAWriterFallback("missing_hypotheses")
 
         if not output.tests_to_add:
             raise RCAWriterFallback("missing_tests_to_add")
@@ -198,8 +209,8 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             log_findings=output.log_findings,
             code_findings=output.code_findings,
             knowledge_base_findings=output.knowledge_base_findings,
-            hypotheses_considered=output.hypotheses_considered,
-            selected_hypothesis_id=output.selected_hypothesis_id,
+            hypotheses_considered=hypotheses_considered,
+            selected_hypothesis_id=selected_hypothesis_id,
             root_cause=output.root_cause,
             technical_explanation=output.technical_explanation,
             evidence_ids=evidence_ids,
@@ -278,11 +289,24 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         ]
 
     def _build_system_prompt(self) -> str:
-        return (
-            "You write evidence-backed production RCA reports. Use only the provided "
-            "incident and evidence. Do not invent files, logs, metrics, or facts. "
-            "Keep the report analyze-only: recommend fixes and tests, but do not "
-            "claim code was changed. Reference only evidence IDs from the provided list."
+         return (
+            "You write evidence-backed production RCA reports.\n"
+            "Use only the provided incident and evidence. Do not invent files, logs, "
+            "metrics, or facts. Keep the report analyze-only: recommend fixes and "
+            "tests, but do not claim code was changed.\n"
+            "Reference only evidence IDs from the provided list.\n"
+            "Use evidence IDs only in the structured evidence_ids field.\n"
+            "Do not write internal evidence IDs in prose fields such as findings, "
+            "root cause, technical explanation, confidence reason, fixes, tests, "
+            "or open questions.\n"
+            "Internal evidence IDs look like evidence-src/..., evidence-tests/..., "
+            "evidence-eval/..., or evidence-docs/.... Never use those in prose.\n"
+            "For prose, use the provided Display path value instead.\n"
+            "Hypotheses must be formatted exactly as 'H1: ...', 'H2: ...', etc.\n"
+            "selected_hypothesis_id must be exactly one of those IDs, for example 'H1'.\n"
+            "Do not set selected_hypothesis_id to null when hypotheses exist.\n"
+            "Use repo-relative display paths in prose.\n"
+            "Keep Markdown inline code balanced with matching backticks."
         )
 
     def _build_prompt(
@@ -290,15 +314,25 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         state: WorkflowState,
         deterministic_report: RCAReport,
     ) -> str:
-        evidence_lines = []
+        evidence_blocks: list[str] = []
+
         for evidence in state.evidence_items:
             location = evidence.file_path or evidence.source_name
             if evidence.line_start and evidence.line_end:
                 location = f"{location}:{evidence.line_start}-{evidence.line_end}"
-            evidence_lines.append(
-                f"- {evidence.evidence_id} [{evidence.source_type.value}] "
-                f"{location}: {evidence.content}"
+
+            evidence_blocks.append(
+                "\n".join(
+                    [
+                        f"Evidence ID: {evidence.evidence_id}",
+                        f"Source type: {evidence.source_type.value}",
+                        f"Display path: {location}",
+                        f"Content: {evidence.content}",
+                    ]
+                )
             )
+
+        evidence_text = "\n\n---\n\n".join(evidence_blocks)
 
         return (
             "Write a structured RCA report from the evidence.\n\n"
@@ -308,10 +342,17 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             f"Severity: {state.incident.severity.value}\n"
             f"Affected service: {state.incident.affected_service or 'unknown'}\n"
             f"Affected area: {state.incident.affected_area or 'unknown'}\n\n"
+            "Important evidence usage rules:\n"
+            "- Use Evidence ID values only in the evidence_ids field.\n"
+            "- Do not copy Evidence ID values into prose fields.\n"
+            "- Use Display path values in prose when referring to files.\n"
+            "- Never write internal evidence prefixes like evidence-src/ or evidence-tests/ in prose.\n\n"
             f"Allowed evidence IDs: {', '.join(deterministic_report.evidence_ids)}\n\n"
-            "Evidence:\n"
-            f"{chr(10).join(evidence_lines)}\n\n"
+            "Evidence blocks:\n"
+            f"{evidence_text}\n\n"
             "Deterministic baseline RCA for grounding:\n"
+            "Use this only for reasoning. Do not copy its paths or evidence IDs into prose "
+            "if they violate the Display path rules.\n"
             f"Root cause: {deterministic_report.root_cause}\n"
             f"Technical explanation: {deterministic_report.technical_explanation}\n"
             f"Immediate fix: {deterministic_report.immediate_fix or 'not specified'}\n"
@@ -330,3 +371,62 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
 
         if input_data.evidence_evaluation is None:
             raise ValueError(f"{self.name} requires evidence evaluation before RCA.")
+
+    def _normalize_hypotheses(
+        self,
+        hypotheses: list[str],
+        selected_hypothesis_id: str | None,
+    ) -> tuple[list[str], str | None]:
+        cleaned_hypotheses = [
+            hypothesis.strip()
+            for hypothesis in hypotheses
+            if hypothesis and hypothesis.strip()
+        ]
+
+        normalized_hypotheses: list[str] = []
+
+        for index, hypothesis in enumerate(cleaned_hypotheses, start=1):
+            hypothesis_id = f"H{index}"
+
+            if hypothesis.startswith(f"{hypothesis_id}:"):
+                normalized_hypotheses.append(hypothesis)
+                continue
+
+            # If the LLM already used a different H-number prefix, remove it and
+            # rewrite based on actual list order.
+            if len(hypothesis) > 3 and hypothesis[0].upper() == "H" and hypothesis[1].isdigit():
+                _, _, remainder = hypothesis.partition(":")
+                hypothesis = HYPOTHESIS_PREFIX_PATTERN.sub("", hypothesis).strip() or hypothesis
+
+            normalized_hypotheses.append(f"{hypothesis_id}: {hypothesis}")
+
+        normalized_selected_id = self._normalize_selected_hypothesis_id(
+            selected_hypothesis_id=selected_hypothesis_id,
+            hypothesis_count=len(normalized_hypotheses),
+        )
+
+        if normalized_selected_id is None and normalized_hypotheses:
+            normalized_selected_id = "H1"
+
+        return normalized_hypotheses, normalized_selected_id
+
+    def _normalize_selected_hypothesis_id(
+        self,
+        *,
+        selected_hypothesis_id: str | None,
+        hypothesis_count: int,
+    ) -> str | None:
+        if not selected_hypothesis_id:
+            return None
+
+        normalized = selected_hypothesis_id.strip().upper().rstrip(":")
+
+        if normalized.isdigit():
+            normalized = f"H{normalized}"
+
+        if len(normalized) >= 2 and normalized[0] == "H" and normalized[1:].isdigit():
+            hypothesis_number = int(normalized[1:])
+            if 1 <= hypothesis_number <= hypothesis_count:
+                return normalized
+
+        return normalized
