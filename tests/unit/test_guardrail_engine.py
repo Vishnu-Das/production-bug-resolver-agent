@@ -60,7 +60,7 @@ def test_guardrail_engine_rejects_disallowed_agent() -> None:
 
     assert result.allowed is False
     assert "unknown_or_disallowed_agent" in result.violated_rules
-    assert result.fallback_next_agent == AgentName.FINISH
+    assert result.fallback_next_agent == AgentName.LOG_INVESTIGATOR
 
 
 def test_guardrail_engine_rejects_when_max_steps_reached() -> None:
@@ -137,8 +137,9 @@ def test_guardrail_engine_blocks_rca_without_minimum_evidence() -> None:
     result = engine.validate_decision(state=state, decision=decision)
 
     assert result.allowed is False
+    assert "runtime_evidence_required_first" in result.violated_rules
     assert "minimum_evidence_not_met_for_rca" in result.violated_rules
-    assert result.fallback_next_agent == AgentName.EVIDENCE_EVALUATOR
+    assert result.fallback_next_agent == AgentName.LOG_INVESTIGATOR
 
 
 def test_guardrail_engine_allows_rca_with_minimum_evidence() -> None:
@@ -178,8 +179,9 @@ def test_guardrail_engine_blocks_solution_without_rca() -> None:
     result = engine.validate_decision(state=state, decision=decision)
 
     assert result.allowed is False
+    assert "runtime_evidence_required_first" in result.violated_rules
     assert "solution_requires_rca" in result.violated_rules
-    assert result.fallback_next_agent == AgentName.RCA_WRITER
+    assert result.fallback_next_agent == AgentName.LOG_INVESTIGATOR
 
 
 def test_guardrail_engine_blocks_report_without_rca_and_solution() -> None:
@@ -190,9 +192,10 @@ def test_guardrail_engine_blocks_report_without_rca_and_solution() -> None:
     result = engine.validate_decision(state=state, decision=decision)
 
     assert result.allowed is False
+    assert "runtime_evidence_required_first" in result.violated_rules
     assert "report_requires_rca" in result.violated_rules
     assert "report_requires_solution" in result.violated_rules
-    assert result.fallback_next_agent == AgentName.SOLUTION_RECOMMENDER
+    assert result.fallback_next_agent == AgentName.LOG_INVESTIGATOR
 
 
 def test_guardrail_engine_allows_report_after_rca_and_solution() -> None:
@@ -247,8 +250,9 @@ def test_guardrail_engine_blocks_finish_without_report_or_low_confidence() -> No
     result = engine.validate_decision(state=state, decision=decision)
 
     assert result.allowed is False
+    assert "runtime_evidence_required_first" in result.violated_rules
     assert "finish_requires_report_or_low_confidence" in result.violated_rules
-    assert result.fallback_next_agent == AgentName.EVIDENCE_EVALUATOR
+    assert result.fallback_next_agent == AgentName.LOG_INVESTIGATOR
 
 
 def test_guardrail_engine_allows_finish_for_low_confidence_state() -> None:

@@ -13,10 +13,9 @@ from bug_resolver.utils.ids import new_agent_decision_id
 class SupervisorRoutingOutput(StrictBaseModel):
     next_agent: AgentName
     reason: str = Field(..., min_length=1)
-    queries: list[str] = Field(default_factory=list)
-    expected_evidence: list[str] = Field(default_factory=list)
-    should_continue: bool = True
-    metadata: dict[str, str] = Field(default_factory=dict)
+    queries: list[str]
+    expected_evidence: list[str]
+    should_continue: bool
 
 
 class SupervisorAgent(BaseAgent[WorkflowState, AgentDecision]):
@@ -46,7 +45,7 @@ class SupervisorAgent(BaseAgent[WorkflowState, AgentDecision]):
             queries=routing_output.queries,
             expected_evidence=routing_output.expected_evidence,
             should_continue=routing_output.should_continue,
-            metadata=routing_output.metadata,
+            metadata={},
         )
 
     def _build_system_prompt(self) -> str:
@@ -58,6 +57,11 @@ class SupervisorAgent(BaseAgent[WorkflowState, AgentDecision]):
             "or implementation bug. Use knowledge-base investigation when design "
             "intent, expected behavior, README, docs, or architecture context is "
             "needed. Use evidence evaluation when evidence sufficiency is unclear. "
+            "If no evidence has been collected yet, choose log investigation first "
+            "unless the incident already provides an exact code location that should "
+            "be inspected immediately. Do not choose evidence evaluation, RCA, "
+            "solution recommendation, report writing, or finish before evidence "
+            "has been collected. "
             "Move to RCA only when evidence appears sufficient. Do not write the "
             "RCA, save reports, or invent evidence."
         )

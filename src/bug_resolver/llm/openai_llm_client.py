@@ -1,4 +1,3 @@
-from pydantic import BaseModel
 from openai import AsyncOpenAI
 
 from bug_resolver.llm.base import LLMClient, StructuredOutputT

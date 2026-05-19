@@ -205,6 +205,11 @@ async def test_dynamic_workflow_records_guardrail_blocked_decision() -> None:
     supervisor = FakeSupervisorAgent(
         [
             decision("decision-1", AgentName.RCA_WRITER),
+            decision(
+                "decision-2",
+                AgentName.FINISH,
+                should_continue=False,
+            ),
         ]
     )
     workflow = make_workflow(supervisor)
@@ -213,12 +218,21 @@ async def test_dynamic_workflow_records_guardrail_blocked_decision() -> None:
 
     assert state.low_confidence is True
     assert state.investigation_status == InvestigationStatus.LOW_CONFIDENCE
-    assert len(state.trace.guardrail_decisions) == 1
+    assert len(state.trace.guardrail_decisions) == 2
     assert state.trace.guardrail_decisions[0].allowed is False
+    assert state.trace.guardrail_decisions[0].fallback_next_agent == (
+        AgentName.LOG_INVESTIGATOR
+    )
+    assert "runtime_evidence_required_first" in (
+        state.trace.guardrail_decisions[0].violated_rules
+    )
     assert "minimum_evidence_not_met_for_rca" in (
         state.trace.guardrail_decisions[0].violated_rules
     )
     assert state.trace.steps[0].run_status.value == "blocked"
+    assert state.trace.steps[1].agent_name == AgentName.LOG_INVESTIGATOR
+    assert state.trace.steps[1].run_status.value == "succeeded"
+    assert len(state.evidence_items) == 1
 
 
 @pytest.mark.asyncio
@@ -230,6 +244,11 @@ async def test_dynamic_workflow_stops_on_finish_decision_when_low_confidence() -
                 AgentName.FINISH,
                 should_continue=False,
             ),
+            decision(
+                "decision-2",
+                AgentName.FINISH,
+                should_continue=False,
+            ),
         ]
     )
     workflow = make_workflow(supervisor)
@@ -237,9 +256,17 @@ async def test_dynamic_workflow_stops_on_finish_decision_when_low_confidence() -
 
     assert workflow_state.investigation_status == InvestigationStatus.LOW_CONFIDENCE
     assert workflow_state.trace.guardrail_decisions[0].allowed is False
+    assert "runtime_evidence_required_first" in (
+        workflow_state.trace.guardrail_decisions[0].violated_rules
+    )
     assert "finish_requires_report_or_low_confidence" in (
         workflow_state.trace.guardrail_decisions[0].violated_rules
     )
+    assert workflow_state.trace.guardrail_decisions[0].fallback_next_agent == (
+        AgentName.LOG_INVESTIGATOR
+    )
+    assert workflow_state.trace.steps[1].agent_name == AgentName.LOG_INVESTIGATOR
+    assert len(workflow_state.evidence_items) == 1
 
 
 @pytest.mark.asyncio

@@ -26,7 +26,7 @@ from bug_resolver.schemas import (
     InvestigationStep,
     WorkflowState,
 )
-from bug_resolver.utils.ids import new_agent_execution_id
+from bug_resolver.utils.ids import new_agent_decision_id, new_agent_execution_id
 
 
 class DynamicBugResolutionWorkflow:
@@ -113,6 +113,24 @@ class DynamicBugResolutionWorkflow:
                     }:
                         state.mark_low_confidence()
                         return state
+                    if guardrail_decision.fallback_next_agent is not None:
+                        fallback_decision = AgentDecision(
+                            decision_id=new_agent_decision_id(),
+                            next_agent=guardrail_decision.fallback_next_agent,
+                            reason=(
+                                "Guardrail fallback after blocked decision: "
+                                f"{guardrail_decision.reason}"
+                            ),
+                            queries=decision.queries,
+                            expected_evidence=decision.expected_evidence,
+                            should_continue=True,
+                            metadata={"fallback_for": decision.decision_id},
+                        )
+                        state.record_decision(fallback_decision)
+                        await self._execute_decision(
+                            state=state,
+                            decision=fallback_decision,
+                        )
                     continue
 
                 if decision.next_agent == AgentName.FINISH:

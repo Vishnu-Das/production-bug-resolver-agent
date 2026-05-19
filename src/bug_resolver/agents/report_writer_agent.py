@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
-
 from bug_resolver.agents.base import BaseAgent
 from bug_resolver.providers.reports.base import ReportStore
 from bug_resolver.schemas import RCAReport, SolutionRecommendation

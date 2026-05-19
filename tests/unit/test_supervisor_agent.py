@@ -61,6 +61,7 @@ async def test_supervisor_agent_returns_structured_agent_decision() -> None:
             reason="Runtime evidence is missing.",
             queries=["INC-001 logs"],
             expected_evidence=["exception type", "stack trace"],
+            should_continue=True,
         )
     )
     agent = SupervisorAgent(llm)
@@ -99,6 +100,7 @@ async def test_supervisor_agent_can_route_to_code_investigator() -> None:
             reason="Logs point to a concrete router file and function.",
             queries=["src/rag/router.py route_query TypeError"],
             expected_evidence=["failing function", "response schema"],
+            should_continue=True,
         )
     )
     agent = SupervisorAgent(llm)
@@ -119,6 +121,7 @@ async def test_supervisor_agent_can_route_to_knowledge_base_investigator() -> No
             reason="Expected routing behavior is unclear.",
             queries=["summary routing expected behavior"],
             expected_evidence=["design intent", "documented routing contract"],
+            should_continue=True,
         )
     )
     agent = SupervisorAgent(llm)
@@ -145,6 +148,9 @@ async def test_supervisor_agent_prompt_includes_dynamic_state() -> None:
         SupervisorRoutingOutput(
             next_agent=AgentName.CODE_INVESTIGATOR,
             reason="Use logs to fetch code.",
+            queries=[],
+            expected_evidence=[],
+            should_continue=True,
         )
     )
     agent = SupervisorAgent(llm)
@@ -165,6 +171,9 @@ async def test_supervisor_agent_rejects_empty_input() -> None:
         SupervisorRoutingOutput(
             next_agent=AgentName.LOG_INVESTIGATOR,
             reason="Need logs.",
+            queries=[],
+            expected_evidence=[],
+            should_continue=True,
         )
     )
     agent = SupervisorAgent(llm)

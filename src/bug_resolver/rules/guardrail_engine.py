@@ -38,6 +38,21 @@ class GuardrailEngine:
         if decision.next_agent not in state.allowed_agent_names:
             violated_rules.append("unknown_or_disallowed_agent")
 
+        if (
+            not state.evidence_items
+            and not state.low_confidence
+            and state.rca_report is None
+            and decision.next_agent
+            in {
+                AgentName.EVIDENCE_EVALUATOR,
+                AgentName.RCA_WRITER,
+                AgentName.SOLUTION_RECOMMENDER,
+                AgentName.REPORT_WRITER,
+                AgentName.FINISH,
+            }
+        ):
+            violated_rules.append("runtime_evidence_required_first")
+
         if not state.can_take_step():
             violated_rules.append("max_steps_reached")
 
@@ -74,7 +89,10 @@ class GuardrailEngine:
                 guardrail_id=new_guardrail_id(),
                 allowed=False,
                 reason=self._blocked_reason(violated_rules),
-                fallback_next_agent=self._fallback_agent(decision.next_agent),
+                fallback_next_agent=self._fallback_agent(
+                    blocked_agent=decision.next_agent,
+                    state=state,
+                ),
                 violated_rules=violated_rules,
             )
 
@@ -104,7 +122,15 @@ class GuardrailEngine:
             and previous_decision.queries == decision.queries
         )
 
-    def _fallback_agent(self, blocked_agent: AgentName) -> AgentName:
+    def _fallback_agent(
+        self,
+        *,
+        blocked_agent: AgentName,
+        state: WorkflowState,
+    ) -> AgentName:
+        if not state.evidence_items:
+            return AgentName.LOG_INVESTIGATOR
+
         if blocked_agent == AgentName.FINISH:
             return AgentName.EVIDENCE_EVALUATOR
 
