@@ -66,8 +66,8 @@ async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionW
             LocalKnowledgeBaseProvider(settings.knowledge_base_dir)
         ),
         evidence_evaluator_agent=EvidenceEvaluatorAgent(),
-        rca_writer_agent=RCAWriterAgent(),
-        solution_recommendation_agent=SolutionRecommendationAgent(),
+        rca_writer_agent=RCAWriterAgent(llm_client=llm_client),
+        solution_recommendation_agent=SolutionRecommendationAgent(llm_client=llm_client),
         report_writer_agent=ReportWriterAgent(FileReportStore(settings.reports_dir)),
         max_replans=settings.max_retries,
         confidence_threshold=settings.confidence_threshold,

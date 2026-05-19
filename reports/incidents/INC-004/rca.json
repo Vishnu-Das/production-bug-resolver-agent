@@ -1,5 +1,5 @@
 {
-  "report_id": "RCA-20260519-83573411",
+  "report_id": "RCA-20260519-2811EEB9",
   "incident_id": "INC-004",
   "title": "RCA for Reuploaded PDF content is not refreshed",
   "incident_summary": "Incident INC-004: Users upload a revised PDF with the same filename, but the chat continues answering from the older document content.",
@@ -14,11 +14,11 @@
     "log-002 shows runtime signal: 2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename=\"policy_handbook.pdf..."
   ],
   "code_findings": [
+    "src/rag/pipeline.py:1-58 contains implementation context relevant to the incident.",
     "src/services/upload_service.py:1-77 handles PDF uploads, duplicate filename checks, document ingestion, cache reset, and Streamlit upload state.",
-    "src/rag/retrievers.py:1-80 contains implementation context relevant to the incident.",
-    "src/conversationalAI.py:141-220 contains implementation context relevant to the incident.",
-    "src/reranker.py:1-80 contains implementation context relevant to the incident.",
-    "src/rag/cache.py:1-34 defines cache reset behavior for RAG retrievers and cached retrieval results."
+    "src/rag/service.py:211-246 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.",
+    "src/rag/retrieval/fusion/strategy.py:1-80 contains implementation context relevant to the incident.",
+    "src/conversationalAI.py:141-220 contains implementation context relevant to the incident."
   ],
   "knowledge_base_findings": [],
   "hypotheses_considered": [
@@ -29,13 +29,13 @@
   "root_cause": "A revised PDF upload with the same filename was skipped by duplicate upload guards, so ingestion and cache reset did not run and retrieval continued serving stale indexed content.",
   "technical_explanation": "Runtime logs show a duplicate upload for `policy_handbook.pdf` was ignored before ingestion and cache reset, followed by stale answers from revision `2026-Q1` when `2026-Q2` was expected. The upload path therefore needs explicit replace/version/re-ingest behavior for same-name document revisions.",
   "evidence_ids": [
-    "EVID-LOG-1B081F12",
-    "EVID-LOG-78EE8605",
+    "EVID-LOG-69562DE2",
+    "EVID-LOG-48ED8F7C",
+    "evidence-src/rag/pipeline.py:1-58",
     "evidence-src/services/upload_service.py:1-77",
-    "evidence-src/rag/retrievers.py:1-80",
-    "evidence-src/conversationalAI.py:141-220",
-    "evidence-src/reranker.py:1-80",
-    "evidence-src/rag/cache.py:1-34"
+    "evidence-src/rag/service.py:211-246",
+    "evidence-src/rag/retrieval/fusion/strategy.py:1-80",
+    "evidence-src/conversationalAI.py:141-220"
   ],
   "confidence_score": 0.75,
   "confidence_reason": "Confidence is based on available evidence quality, source diversity, and evaluator result: Evidence is sufficient to proceed to RCA writing.",

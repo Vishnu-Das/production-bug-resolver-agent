@@ -30,11 +30,11 @@ ValueError: Unsupported retrieval strategy: semantic
 
 ## Code Findings
 
-- eval/compare_retrieval_strategies.py:71-150 contains evaluation context for retrieval or answer quality checks relevant to the incident.
+- src/rag/service.py:141-220 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- src/rag/cache.py:1-34 defines cache reset behavior for RAG retrievers and cached retrieval results.
+- main.py:1-6 contains implementation context relevant to the incident.
+- src/rag/service.py:1-80 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
 - src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
-- tests/rag/retrieval/test_retrieval_factory.py:1-60 covers retrieval strategy factory behavior for supported and unsupported strategy names.
-- tests/rag/routing/test_rule_based_router.py:71-98 contains implementation context relevant to the incident.
-- src/rag/retrieval/hybrid/__init__.py:1-40 contains implementation context relevant to the incident.
 
 ## Knowledge Base Findings
 
@@ -55,13 +55,13 @@ Runtime logs show `RETRIEVAL_STRATEGY=semantic` reaching document retrieval. The
 
 ## Evidence
 
-- EVID-LOG-C4911603
-- EVID-LOG-46A22D95
-- eval/compare_retrieval_strategies.py:71-150
+- EVID-LOG-D7A53BF1
+- EVID-LOG-A00CA8AE
+- src/rag/service.py:141-220
+- src/rag/cache.py:1-34
+- main.py:1-6
+- src/rag/service.py:1-80
 - src/rag/service.py:71-150
-- tests/rag/retrieval/test_retrieval_factory.py:1-60
-- tests/rag/routing/test_rule_based_router.py:71-98
-- src/rag/retrieval/hybrid/__init__.py:1-40
 
 ## Confidence
 

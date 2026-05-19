@@ -2,47 +2,49 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-FB8D76D1: The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, causing the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.
+The LLM router emitted `summary` as a retrieval strategy, which is unsupported, leading to a fallback to a rule-based router. This indicates a mismatch between the LLM router output and the expected retrieval strategy values.
 
 ## Immediate Steps
 
-- Update the LLM router prompt and/or structured output validation so the router emits only supported retrieval strategy values. For broad summary questions over a selected document, return `parent_child` directly or normalize `summary` to `parent_child` before validation.
-- Reproduce the incident locally using the same failure scenario.
-- Verify the fix against the log symptoms and selected RCA evidence.
+- Update the LLM router prompt or validation to emit only supported retrieval strategy values. Map `summary` to `parent_child` for relevant queries.
+- Reproduce the incident locally using the same conditions that led to the failure.
+- Verify the updated behavior against the log symptoms and the evidence from the RCA.
 
 ## Long-Term Steps
 
-- Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.
-- Keep the LLM router output schema, prompt instructions, and retrieval strategy enum in sync so unsupported conceptual labels cannot be emitted.
-- Document the supported retrieval strategies and the expected mapping for summary-style selected-document questions.
+- Add regression tests to ensure `parent_child` is returned for summary questions over selected documents.
+- Centralize the retrieval strategy validation process to ensure consistency across components.
+- Improve structured error handling to provide clearer insights during failures.
+- Log raw router outputs whenever a fallback occurs to understand the exact conditions leading to it.
 
 ## Tests to Add
 
-- Add a regression test where query="summarize this document" and a selected document is present; assert the resolved strategy is `parent_child`.
-- Add a test ensuring unsupported LLM strategy values are handled with a clear fallback reason and do not silently degrade routing quality.
-- Add a contract test ensuring the LLM router can emit only supported retrieval strategy enum values.
+- Add a regression test for the query "summarize this document" to assert resolution to `parent_child`.
+- Add a test to handle unsupported LLM strategy values, ensuring there is a fallback reason instead of silent degradation.
+- Add a contract test to confirm the LLM router only emits supported retrieval strategy enum values.
 
 ## Monitoring Improvements
 
-- Log the raw LLM router strategy value, normalized strategy value, router type, fallback reason, request id, and trace id whenever router fallback occurs.
-- Add a metric for unsupported LLM router strategy values so `summary`-style contract drift is visible before it affects users.
+- Log the raw LLM router strategy value, normalized strategy value, router type, fallback reason, request id, and trace id during router fallback events.
+- Establish a metric to track unsupported LLM router strategy values to catch contract drift before it impacts users.
 
 ## Risk Notes
 
-- Some open questions remain, so the recommendation should be validated before implementation.
+- There's a risk of continued user impact if unsupported strategy values persist post-fix.
+- Potential confusion in user experience if there is a lack of clarity on retrieval strategies and fallbacks.
 
 ## Evidence
 
-- EVID-LOG-F3598923
-- EVID-LOG-514135EA
+- EVID-LOG-0219CDEC
+- EVID-LOG-6D339B49
+- src/rag/service.py:71-150
+- src/rag/retrieval/hybrid/__init__.py:1-40
+- src/rag/retrieval/hybrid/strategy.py:1-43
+- src/rag/routing/rule_based.py:71-150
 - tests/rag/routing/test_llm_router.py:71-138
-- eval/evaluate_with_judge.py:71-150
-- src/rag/routing/llm.py:71-110
-- tests/rag/routing/test_llm_router.py:1-80
-- tests/rag/test_service.py:211-235
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-A97F26D5
-- rca_report_id: RCA-20260519-FB8D76D1
+- recommendation_id: SOL-20260519-D3BCB632
+- rca_report_id: RCA-20260519-E5CD5032
 - confidence_score: 0.8

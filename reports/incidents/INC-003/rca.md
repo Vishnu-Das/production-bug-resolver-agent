@@ -21,11 +21,11 @@ Affected service: conversational_rag. Affected area: selected document retrieval
 
 ## Code Findings
 
-- src/rag/service.py:1-80 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
 - eval/strategy_questions.json:1-24 contains evaluation context for retrieval or answer quality checks relevant to the incident.
-- src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
 - eval/questions.json:1-50 contains evaluation context for retrieval or answer quality checks relevant to the incident.
-- src/rag/service.py:141-220 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- src/vectorstore.py:71-111 contains implementation context relevant to the incident.
+- src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- src/ingest.py:71-85 coordinates document ingestion into standard and parent-child retrieval indexes.
 
 ## Knowledge Base Findings
 
@@ -46,13 +46,13 @@ Runtime logs show `selected_document="Transformer Notes.pdf"` while available me
 
 ## Evidence
 
-- EVID-LOG-1D114892
-- EVID-LOG-B6EB492A
-- src/rag/service.py:1-80
+- EVID-LOG-41F27B74
+- EVID-LOG-D00148C6
 - eval/strategy_questions.json:1-24
-- src/rag/service.py:71-150
 - eval/questions.json:1-50
-- src/rag/service.py:141-220
+- src/vectorstore.py:71-111
+- src/rag/service.py:71-150
+- src/ingest.py:71-85
 
 ## Confidence
 

@@ -2,15 +2,53 @@ from __future__ import annotations
 
 import pytest
 
-from bug_resolver.agents import SolutionRecommendationAgent
+from bug_resolver.agents import (
+    SolutionRecommendationAgent,
+    SolutionRecommendationOutput,
+)
 from bug_resolver.schemas import RCAReport
 
 
-@pytest.mark.asyncio
-async def test_solution_recommendation_agent_builds_recommendation_from_rca() -> None:
-    agent = SolutionRecommendationAgent()
+class FakeSolutionLLM:
+    def __init__(
+        self,
+        output: SolutionRecommendationOutput | None = None,
+        *,
+        should_fail: bool = False,
+    ) -> None:
+        self.output = output
+        self.should_fail = should_fail
+        self.prompt: str | None = None
+        self.system_prompt: str | None = None
 
-    rca_report = RCAReport(
+    async def generate_text(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str | None = None,
+    ) -> str:
+        raise AssertionError("SolutionRecommendationAgent should request structured output")
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        output_schema,
+        *,
+        system_prompt: str | None = None,
+    ):
+        self.prompt = prompt
+        self.system_prompt = system_prompt
+
+        if self.should_fail:
+            raise ValueError("LLM failed")
+
+        assert output_schema is SolutionRecommendationOutput
+        assert self.output is not None
+        return self.output
+
+
+def build_rca_report() -> RCAReport:
+    return RCAReport(
         report_id="RCA-001",
         incident_id="INC-001",
         title="RCA for Summary query fails",
@@ -31,6 +69,13 @@ async def test_solution_recommendation_agent_builds_recommendation_from_rca() ->
         tests_to_add=["Add regression test for missing output key."],
         open_questions=[],
     )
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_builds_recommendation_from_rca() -> None:
+    agent = SolutionRecommendationAgent()
+
+    rca_report = build_rca_report()
 
     result = await agent.run(rca_report)
 
@@ -59,6 +104,163 @@ async def test_solution_recommendation_agent_builds_recommendation_from_rca() ->
     assert result.risk_notes == []
     assert result.confidence_score == 0.90
     assert result.evidence_ids == ["evidence-log-001", "evidence-code-001"]
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_can_generate_llm_backed_recommendation() -> None:
+    rca_report = build_rca_report()
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="LLM recommendation: guard router response access.",
+            immediate_steps=[
+                "Validate the router response contains the expected output key.",
+                "Reproduce the failing summary request.",
+            ],
+            long_term_steps=[
+                "Use structured response contracts for router outputs.",
+            ],
+            tests_to_add=["Add missing output key regression test."],
+            monitoring_improvements=["Log invalid router response shape."],
+            risk_notes=["Validate against production-like router payloads."],
+            confidence_score=0.85,
+            evidence_ids=["evidence-log-001", "evidence-code-001"],
+        )
+    )
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.recommendation_id.startswith("SOL-")
+    assert result.incident_id == "INC-001"
+    assert result.rca_report_id == "RCA-001"
+    assert result.summary == "LLM recommendation: guard router response access."
+    assert result.confidence_score == 0.85
+    assert result.evidence_ids == ["evidence-log-001", "evidence-code-001"]
+    assert llm.prompt is not None
+    assert "Allowed evidence IDs: evidence-log-001, evidence-code-001" in llm.prompt
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_falls_back_when_llm_fails() -> None:
+    rca_report = build_rca_report()
+    llm = FakeSolutionLLM(should_fail=True)
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.summary == (
+        "Recommended solution based on RCA RCA-001: "
+        "KeyError occurred because 'output' was missing."
+    )
+    assert result.confidence_score == 0.90
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_falls_back_for_unknown_evidence() -> None:
+    rca_report = build_rca_report()
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="Bad recommendation.",
+            immediate_steps=["Do something."],
+            long_term_steps=[],
+            tests_to_add=[],
+            monitoring_improvements=[],
+            risk_notes=[],
+            confidence_score=0.85,
+            evidence_ids=["not-collected"],
+        )
+    )
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.summary.startswith("Recommended solution based on RCA RCA-001")
+    assert result.evidence_ids == ["evidence-log-001", "evidence-code-001"]
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_falls_back_when_confidence_exceeds_rca() -> None:
+    rca_report = build_rca_report()
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="Overconfident recommendation.",
+            immediate_steps=["Do something."],
+            long_term_steps=[],
+            tests_to_add=[],
+            monitoring_improvements=[],
+            risk_notes=[],
+            confidence_score=1.0,
+            evidence_ids=["evidence-log-001"],
+        )
+    )
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.summary.startswith("Recommended solution based on RCA RCA-001")
+    assert result.confidence_score == 0.90
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_falls_back_when_llm_claims_fix_was_done() -> None:
+    rca_report = build_rca_report()
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="The issue has been fixed.",
+            immediate_steps=["We fixed the router output handling."],
+            long_term_steps=["Add contracts."],
+            tests_to_add=["Add regression test."],
+            monitoring_improvements=["Log invalid router response shape."],
+            risk_notes=[],
+            confidence_score=0.85,
+            evidence_ids=["evidence-log-001"],
+        )
+    )
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.summary.startswith("Recommended solution based on RCA RCA-001")
+    assert result.confidence_score == 0.90
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_falls_back_for_unbalanced_inline_code() -> None:
+    rca_report = build_rca_report()
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="Fix `ValueError: invalid strategy without closing marker.",
+            immediate_steps=["Validate router output."],
+            long_term_steps=["Add contracts."],
+            tests_to_add=["Add regression test."],
+            monitoring_improvements=["Log invalid router response shape."],
+            risk_notes=[],
+            confidence_score=0.85,
+            evidence_ids=["evidence-log-001"],
+        )
+    )
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.summary.startswith("Recommended solution based on RCA RCA-001")
+    assert result.confidence_score == 0.90
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_falls_back_without_tests() -> None:
+    rca_report = build_rca_report()
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="Recommendation.",
+            immediate_steps=["Validate router output handling."],
+            long_term_steps=["Add contracts."],
+            tests_to_add=[],
+            monitoring_improvements=["Log invalid router response shape."],
+            risk_notes=[],
+            confidence_score=0.85,
+            evidence_ids=["evidence-log-001"],
+        )
+    )
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.summary.startswith("Recommended solution based on RCA RCA-001")
+    assert result.tests_to_add == ["Add regression test for missing output key."]
 
 
 @pytest.mark.asyncio

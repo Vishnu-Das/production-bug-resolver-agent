@@ -2,7 +2,7 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-19C18A25: Selected-document retrieval returned zero documents because the UI-selected filename did not match the stored vector metadata source for the same PDF after normalization.
+Recommended solution based on RCA RCA-20260519-BC1EB683: Selected-document retrieval returned zero documents because the UI-selected filename did not match the stored vector metadata source for the same PDF after normalization.
 
 ## Immediate Steps
 
@@ -12,36 +12,40 @@ Recommended solution based on RCA RCA-20260519-19C18A25: Selected-document retri
 
 ## Long-Term Steps
 
-- Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.
-- Add input and output contract checks around the implicated code path.
-- Document the expected behavior and failure mode for future incidents.
+- Add regression tests to ensure selected-document retrieval functionality is reliable.
+- Centralize retrieval strategy validation to prevent discrepancies in document retrieval.
+- Improve structured error handling to provide clearer insights into retrieval failures.
+- Log raw router outputs when fallback occurs to assist in diagnosing issues quickly.
+- Add input and output contract checks around the implicated code path to safeguard against future discrepancies.
+- Document the expected behavior and failure mode for future incidents to inform developers.
 
 ## Tests to Add
 
-- Add a regression test for incident INC-003.
-- Add a test covering the implicated implementation path.
+- Add a regression test specifically for incident INC-003 to ensure similar issues do not reoccur.
+- Add a test that covers the implicated implementation path to validate the integrity of document retrieval.
 
 ## Monitoring Improvements
 
-- Add structured logging around the implicated code path.
-- Log request or trace identifiers with the error when available.
+- Add structured logging around the implicated code path to facilitate better monitoring of retrieval processes.
+- Log request or trace identifiers with the error when available to assist in tracking down issues in the system.
 
 ## Risk Notes
 
-- None
+- Improper normalization of filenames may continue to cause silent failures in document retrieval if not addressed promptly.
+- Insufficient logging could lead to challenges in diagnosing issues when failures occur.
 
 ## Evidence
 
-- EVID-LOG-1D114892
-- EVID-LOG-B6EB492A
-- src/rag/service.py:1-80
+- EVID-LOG-41F27B74
+- EVID-LOG-D00148C6
 - eval/strategy_questions.json:1-24
-- src/rag/service.py:71-150
 - eval/questions.json:1-50
-- src/rag/service.py:141-220
+- src/vectorstore.py:71-111
+- src/rag/service.py:71-150
+- src/ingest.py:71-85
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-D8873728
-- rca_report_id: RCA-20260519-19C18A25
+- recommendation_id: SOL-20260519-0518E4B5
+- rca_report_id: RCA-20260519-BC1EB683
 - confidence_score: 0.75

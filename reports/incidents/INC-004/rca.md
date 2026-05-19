@@ -21,11 +21,11 @@ Affected service: conversational_rag. Affected area: document upload and ingesti
 
 ## Code Findings
 
+- src/rag/pipeline.py:1-58 contains implementation context relevant to the incident.
 - src/services/upload_service.py:1-77 handles PDF uploads, duplicate filename checks, document ingestion, cache reset, and Streamlit upload state.
-- src/rag/retrievers.py:1-80 contains implementation context relevant to the incident.
+- src/rag/service.py:211-246 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- src/rag/retrieval/fusion/strategy.py:1-80 contains implementation context relevant to the incident.
 - src/conversationalAI.py:141-220 contains implementation context relevant to the incident.
-- src/reranker.py:1-80 contains implementation context relevant to the incident.
-- src/rag/cache.py:1-34 defines cache reset behavior for RAG retrievers and cached retrieval results.
 
 ## Knowledge Base Findings
 
@@ -46,13 +46,13 @@ Runtime logs show a duplicate upload for `policy_handbook.pdf` was ignored befor
 
 ## Evidence
 
-- EVID-LOG-1B081F12
-- EVID-LOG-78EE8605
+- EVID-LOG-69562DE2
+- EVID-LOG-48ED8F7C
+- src/rag/pipeline.py:1-58
 - src/services/upload_service.py:1-77
-- src/rag/retrievers.py:1-80
+- src/rag/service.py:211-246
+- src/rag/retrieval/fusion/strategy.py:1-80
 - src/conversationalAI.py:141-220
-- src/reranker.py:1-80
-- src/rag/cache.py:1-34
 
 ## Confidence
 

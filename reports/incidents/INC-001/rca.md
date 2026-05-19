@@ -30,11 +30,11 @@ ValueError: Invalid strategy: summary
 
 ## Code Findings
 
+- src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- src/rag/retrieval/hybrid/__init__.py:1-40 contains implementation context relevant to the incident.
+- src/rag/retrieval/hybrid/strategy.py:1-43 contains implementation context relevant to the incident.
+- src/rag/routing/rule_based.py:71-150 maps document-level summary queries to the supported `parent_child` retrieval strategy.
 - tests/rag/routing/test_llm_router.py:71-138 covers LLM router behavior and unsupported strategy validation for routing decisions.
-- eval/evaluate_with_judge.py:71-150 contains evaluation context for retrieval or answer quality checks relevant to the incident.
-- src/rag/routing/llm.py:71-110 invokes the LLM router and validates that the returned strategy is one of the supported retrieval strategy values.
-- tests/rag/routing/test_llm_router.py:1-80 covers LLM router behavior and unsupported strategy validation for routing decisions.
-- tests/rag/test_service.py:211-235 contains implementation context relevant to the incident.
 
 ## Knowledge Base Findings
 
@@ -52,17 +52,17 @@ The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a
 
 ## Technical Explanation
 
-The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. Code evidence from src/rag/routing/llm.py:71-110 points to the LLM routing path where the returned strategy is validated. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
+The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
 
 ## Evidence
 
-- EVID-LOG-F3598923
-- EVID-LOG-514135EA
+- EVID-LOG-0219CDEC
+- EVID-LOG-6D339B49
+- src/rag/service.py:71-150
+- src/rag/retrieval/hybrid/__init__.py:1-40
+- src/rag/retrieval/hybrid/strategy.py:1-43
+- src/rag/routing/rule_based.py:71-150
 - tests/rag/routing/test_llm_router.py:71-138
-- eval/evaluate_with_judge.py:71-150
-- src/rag/routing/llm.py:71-110
-- tests/rag/routing/test_llm_router.py:1-80
-- tests/rag/test_service.py:211-235
 
 ## Confidence
 

@@ -1,9 +1,38 @@
 from __future__ import annotations
 
+from pydantic import Field
+
 from bug_resolver.agents.base import BaseAgent
+from bug_resolver.llm.base import LLMClient
 from bug_resolver.rules.solution_rules import SolutionRules
+from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas import RCAReport, SolutionRecommendation
 from bug_resolver.utils.ids import new_recommendation_id
+
+
+ANALYZE_ONLY_FORBIDDEN_PHRASES = (
+    "i fixed",
+    "we fixed",
+    "has been fixed",
+    "was fixed",
+    "is fixed",
+    "deployed the fix",
+    "deployed a fix",
+    "merged the fix",
+    "opened a pull request",
+    "created a pull request",
+)
+
+
+class SolutionRecommendationOutput(StrictBaseModel):
+    summary: str = Field(..., min_length=1)
+    immediate_steps: list[str]
+    long_term_steps: list[str]
+    tests_to_add: list[str]
+    monitoring_improvements: list[str]
+    risk_notes: list[str]
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
+    evidence_ids: list[str]
 
 
 class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
@@ -19,10 +48,38 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
 
     name = "solution_recommendation_agent"
 
-    def __init__(self, rules: SolutionRules | None = None) -> None:
+    def __init__(
+        self,
+        rules: SolutionRules | None = None,
+        llm_client: LLMClient | None = None,
+    ) -> None:
         self._rules = rules or SolutionRules()
+        self._llm_client = llm_client
 
     async def _run(self, input_data: RCAReport) -> SolutionRecommendation:
+        deterministic_recommendation = self._build_deterministic_recommendation(input_data)
+
+        if self._llm_client is None:
+            return deterministic_recommendation
+
+        try:
+            llm_output = await self._llm_client.generate_structured(
+                self._build_prompt(input_data, deterministic_recommendation),
+                SolutionRecommendationOutput,
+                system_prompt=self._build_system_prompt(),
+            )
+            return self._build_recommendation_from_llm_output(
+                rca_report=input_data,
+                output=llm_output,
+                fallback_recommendation=deterministic_recommendation,
+            )
+        except Exception:
+            return deterministic_recommendation
+
+    def _build_deterministic_recommendation(
+        self,
+        input_data: RCAReport,
+    ) -> SolutionRecommendation:
         return SolutionRecommendation(
             recommendation_id=new_recommendation_id(),
             incident_id=input_data.incident_id,
@@ -35,4 +92,126 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
             risk_notes=self._rules.build_risk_notes(input_data),
             confidence_score=input_data.confidence_score,
             evidence_ids=input_data.evidence_ids,
+        )
+
+    def _build_recommendation_from_llm_output(
+        self,
+        *,
+        rca_report: RCAReport,
+        output: SolutionRecommendationOutput,
+        fallback_recommendation: SolutionRecommendation,
+    ) -> SolutionRecommendation:
+        allowed_evidence_ids = set(fallback_recommendation.evidence_ids)
+        evidence_ids = [
+            evidence_id
+            for evidence_id in output.evidence_ids
+            if evidence_id in allowed_evidence_ids
+        ]
+
+        if allowed_evidence_ids and not evidence_ids:
+            raise ValueError(
+                "LLM solution recommendation did not reference RCA evidence"
+            )
+
+        if output.confidence_score > rca_report.confidence_score:
+            raise ValueError("solution confidence cannot exceed RCA confidence")
+
+        if not output.immediate_steps:
+            raise ValueError("LLM solution recommendation requires immediate steps")
+
+        if not output.tests_to_add:
+            raise ValueError("LLM solution recommendation requires tests to add")
+
+        if self._contains_forbidden_analyze_only_claim(output):
+            raise ValueError(
+                "LLM solution recommendation claimed implementation work was completed"
+            )
+
+        if self._contains_unbalanced_inline_code(output):
+            raise ValueError(
+                "LLM solution recommendation contains unbalanced inline code markers"
+            )
+
+        return SolutionRecommendation(
+            recommendation_id=new_recommendation_id(),
+            incident_id=rca_report.incident_id,
+            rca_report_id=rca_report.report_id,
+            summary=output.summary,
+            immediate_steps=output.immediate_steps,
+            long_term_steps=output.long_term_steps,
+            tests_to_add=output.tests_to_add,
+            monitoring_improvements=output.monitoring_improvements,
+            risk_notes=output.risk_notes,
+            confidence_score=output.confidence_score,
+            evidence_ids=evidence_ids,
+        )
+
+    def _contains_forbidden_analyze_only_claim(
+        self,
+        output: SolutionRecommendationOutput,
+    ) -> bool:
+        values = [
+            output.summary,
+            *output.immediate_steps,
+            *output.long_term_steps,
+            *output.tests_to_add,
+            *output.monitoring_improvements,
+            *output.risk_notes,
+        ]
+        combined_text = "\n".join(values).lower()
+        return any(phrase in combined_text for phrase in ANALYZE_ONLY_FORBIDDEN_PHRASES)
+
+    def _contains_unbalanced_inline_code(
+        self,
+        output: SolutionRecommendationOutput,
+    ) -> bool:
+        return any(value.count("`") % 2 == 1 for value in self._output_text_values(output))
+
+    def _output_text_values(self, output: SolutionRecommendationOutput) -> list[str]:
+        return [
+            output.summary,
+            *output.immediate_steps,
+            *output.long_term_steps,
+            *output.tests_to_add,
+            *output.monitoring_improvements,
+            *output.risk_notes,
+        ]
+
+    def _build_system_prompt(self) -> str:
+        return (
+            "You write analyze-only production fix recommendations from RCA reports. "
+            "Do not claim a fix has been applied. Do not invent evidence, files, "
+            "owners, timelines, or implementation details. Reference only evidence "
+            "IDs from the RCA."
+        )
+
+    def _build_prompt(
+        self,
+        rca_report: RCAReport,
+        deterministic_recommendation: SolutionRecommendation,
+    ) -> str:
+        return (
+            "Write a structured solution recommendation from this RCA.\n\n"
+            f"Incident ID: {rca_report.incident_id}\n"
+            f"RCA report ID: {rca_report.report_id}\n"
+            f"Title: {rca_report.title}\n"
+            f"Root cause: {rca_report.root_cause}\n"
+            f"Technical explanation: {rca_report.technical_explanation}\n"
+            f"Immediate fix baseline: {rca_report.immediate_fix or 'not specified'}\n"
+            f"Long-term prevention baseline: "
+            f"{rca_report.long_term_prevention or 'not specified'}\n"
+            f"Tests baseline: {', '.join(rca_report.tests_to_add) or 'none'}\n"
+            f"Open questions: {', '.join(rca_report.open_questions) or 'none'}\n"
+            f"RCA confidence: {rca_report.confidence_score}\n"
+            f"Allowed evidence IDs: {', '.join(rca_report.evidence_ids)}\n\n"
+            "Deterministic baseline recommendation for grounding:\n"
+            f"Summary: {deterministic_recommendation.summary}\n"
+            "Immediate steps:\n"
+            f"{chr(10).join(f'- {step}' for step in deterministic_recommendation.immediate_steps)}\n"
+            "Long-term steps:\n"
+            f"{chr(10).join(f'- {step}' for step in deterministic_recommendation.long_term_steps)}\n"
+            "Monitoring improvements:\n"
+            f"{chr(10).join(f'- {step}' for step in deterministic_recommendation.monitoring_improvements)}\n\n"
+            "Return concrete immediate steps, long-term steps, tests to add, "
+            "monitoring improvements, risk notes, confidence, and evidence IDs."
         )
