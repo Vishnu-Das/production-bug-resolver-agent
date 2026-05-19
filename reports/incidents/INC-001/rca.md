@@ -12,30 +12,33 @@ Affected service: conversational_rag. Affected area: automatic retrieval routing
 
 - Users report that broad summary questions in auto retrieval mode intermittently use the fallback router instead of the LLM router, reducing retrieval quality and making answers less relevant.
 - 2026-05-19T10:45:12Z ERROR conversational_rag request_id=req-inc-001 trace_id=trace-router-001 LLM router failed. Fallback used. Error: Invalid strategy: summary. Fallback reason: summary queries should use parent_child retrieval.
+
+```text
 Traceback (most recent call last):
   File "src/rag/service.py", line 55, in resolve_retrieval_strategy
     router_result = router.route(query=user_input, selected_document=selected_document)
   File "src/rag/routing/llm.py", line 82, in route
     raise ValueError(f"Invalid strategy: {result.strategy}")
 ValueError: Invalid strategy: summary
+```
 - 2026-05-19T10:45:12Z WARNING conversational_rag request_id=req-inc-001 trace_id=trace-router-001 router_type=llm_fallback query="summarize this document" selected_document="transformer_notes.pdf" resolved_strategy=parent_child
 
 ## Log Findings
 
-- Retrieved log evidence from log-001.
-- Retrieved log evidence from log-002.
+- log-001 shows the LLM router failed with `ValueError: Invalid strategy: summary` and triggered fallback.
+- log-002 shows the fallback resolved the summary-style query to the supported `parent_child` retrieval strategy.
 
 ## Code Findings
 
-- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:71-138.
-- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:1-80.
-- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\llm.py:71-110.
-- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\factory.py:1-37.
-- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\test_service.py:71-150.
+- C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:71-138 validates the LLM router strategy and raises an error when the model returns an unsupported value.
+- C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:1-80 shows relevant implementation behavior: from unittest.mock import Mock, patch import pytest from langchain_core.runnables import RunnableLambda from src.rag.retrieval.factory import RetrievalStrategyFactory from src.r...
+- C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\factory.py:1-37 shows relevant implementation behavior: from src.config import ( ROUTER_TYPE ) from src.rag.routing.base import ( BaseRouterStrategy ) from src.rag.routing.rule_based import ( RuleBasedRouterStrategy ) from src.rag.ro...
+- C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\llm.py:1-80 shows relevant implementation behavior: from langchain_openai import ChatOpenAI from src.config import ( ROUTER_MODEL_NAME ) from src.rag.models import ( RouterResult ) from src.rag.prompts import ( router_prompt ) fr...
+- C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_rule_based_router.py:1-80 maps summary-style selected-document queries to the supported `parent_child` retrieval strategy.
 
 ## Knowledge Base Findings
 
-- Retrieved knowledge_base evidence from sample_data\knowledge_base\README.md.
+- sample_data\knowledge_base\README.md documents expected behavior relevant to the incident: # Conversational RAG Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents. The system comb...
 
 ## Hypotheses Considered
 
@@ -49,18 +52,18 @@ The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a
 
 ## Technical Explanation
 
-The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. Code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\llm.py:71-110 points to the LLM routing path where the returned strategy is validated. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
+The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. Code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\llm.py:1-80 points to the LLM routing path where the returned strategy is validated. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
 
 ## Evidence
 
-- EVID-LOG-8DAB2183
-- EVID-LOG-322BB242
+- EVID-LOG-57C35B04
+- EVID-LOG-B7FF02ED
 - evidence-kb-README
-- evidence-tests\rag\routing\test_llm_router.py:71-138
-- evidence-tests\rag\routing\test_llm_router.py:1-80
-- evidence-src\rag\routing\llm.py:71-110
-- evidence-src\rag\routing\factory.py:1-37
-- evidence-tests\rag\test_service.py:71-150
+- evidence-tests/rag/routing/test_llm_router.py:71-138
+- evidence-tests/rag/routing/test_llm_router.py:1-80
+- evidence-src/rag/routing/factory.py:1-37
+- evidence-src/rag/routing/llm.py:1-80
+- evidence-tests/rag/routing/test_rule_based_router.py:1-80
 
 ## Confidence
 

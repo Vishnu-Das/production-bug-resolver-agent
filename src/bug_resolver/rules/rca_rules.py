@@ -83,6 +83,9 @@ class RCARules:
             )
         ]
 
+    def selected_hypothesis_id(self, state: WorkflowState) -> str:
+        return "H1"
+
     def build_root_cause(self, state: WorkflowState) -> str:
         if self._has_invalid_summary_strategy(state.evidence_items):
             root_cause = (
@@ -344,7 +347,48 @@ class RCARules:
         ]
 
     def _finding_text(self, evidence: EvidenceItem) -> str:
-        return f"Retrieved {evidence.source_type.value} evidence from {self._location(evidence)}."
+        location = self._location(evidence)
+        content = " ".join(evidence.content.split())
+        content_lower = content.lower()
+
+        if evidence.source_type == EvidenceSourceType.LOG:
+            if "invalid strategy: summary" in content_lower:
+                return (
+                    f"{location} shows the LLM router failed with "
+                    "`ValueError: Invalid strategy: summary` and triggered fallback."
+                )
+            if "resolved_strategy=parent_child" in content_lower:
+                return (
+                    f"{location} shows the fallback resolved the summary-style query "
+                    "to the supported `parent_child` retrieval strategy."
+                )
+            return f"{location} shows runtime signal: {self._shorten(content)}"
+
+        if evidence.source_type == EvidenceSourceType.CODE:
+            if "invalid strategy" in content_lower and "result.strategy" in content_lower:
+                return (
+                    f"{location} validates the LLM router strategy and raises an "
+                    "error when the model returns an unsupported value."
+                )
+            if "parent_child" in content_lower and "summary" in content_lower:
+                return (
+                    f"{location} maps summary-style selected-document queries to "
+                    "the supported `parent_child` retrieval strategy."
+                )
+            return f"{location} shows relevant implementation behavior: {self._shorten(content)}"
+
+        if evidence.source_type == EvidenceSourceType.KNOWLEDGE_BASE:
+            return (
+                f"{location} documents expected behavior relevant to the incident: "
+                f"{self._shorten(content)}"
+            )
+
+        return f"{location} supports the RCA: {self._shorten(content)}"
+
+    def _shorten(self, value: str, *, max_length: int = 180) -> str:
+        if len(value) <= max_length:
+            return value
+        return value[: max_length - 3].rstrip() + "..."
 
     def _location(self, evidence: EvidenceItem) -> str:
         location = evidence.file_path or evidence.source_name

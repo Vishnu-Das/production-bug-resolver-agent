@@ -48,12 +48,12 @@ async def test_solution_recommendation_agent_builds_recommendation_from_rca() ->
     ]
     assert result.long_term_steps == [
         "Add structured output validation for router responses.",
-        "Improve defensive handling around the failing code path.",
+        "Add input and output contract checks around the implicated code path.",
         "Document the expected behavior and failure mode for future incidents.",
     ]
     assert result.tests_to_add == ["Add regression test for missing output key."]
     assert result.monitoring_improvements == [
-        "Add structured logging around the failing code path.",
+        "Add structured logging around the implicated code path.",
         "Log request or trace identifiers with the error when available.",
     ]
     assert result.risk_notes == []

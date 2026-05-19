@@ -144,7 +144,15 @@ Reason: {report.confidence_reason}
         if not values:
             return "- None"
 
-        return "\n".join(f"- {value}" for value in values)
+        return "\n".join(self._render_list_item(value) for value in values)
+
+    def _render_list_item(self, value: str) -> str:
+        if "\n" not in value:
+            return f"- {value}"
+
+        first_line, *remaining_lines = value.splitlines()
+        fenced_content = "\n".join(remaining_lines)
+        return f"- {first_line}\n\n```text\n{fenced_content}\n```"
 
     def _render_metadata(self, metadata: dict[str, str]) -> str:
         if not metadata:

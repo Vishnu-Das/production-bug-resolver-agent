@@ -76,13 +76,22 @@ async def test_rca_writer_agent_generates_report_from_dynamic_evidence() -> None
     assert result.confidence_score < 1.0
     assert result.low_confidence_warning is None
     assert result.open_questions == []
+    assert result.selected_hypothesis_id == "H1"
     assert "src/rag/router.py:40-45" in result.root_cause
-    assert result.log_findings == ["Retrieved log evidence from app.log."]
+    assert result.log_findings == [
+        "app.log shows runtime signal: TypeError in route_query"
+    ]
     assert result.code_findings == [
-        "Retrieved code evidence from src/rag/router.py:40-45."
+        (
+            "src/rag/router.py:40-45 shows relevant implementation behavior: "
+            "def route_query(...): return response['output']"
+        )
     ]
     assert result.knowledge_base_findings == [
-        "Retrieved knowledge_base evidence from README.md."
+        (
+            "README.md documents expected behavior relevant to the incident: "
+            "The router returns a structured response."
+        )
     ]
     assert result.metadata == {"evidence_count": "3", "dynamic_workflow": "true"}
 

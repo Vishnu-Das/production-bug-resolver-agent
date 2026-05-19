@@ -25,8 +25,9 @@ class KnowledgeContext(StrictBaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
     def to_evidence_item(self) -> EvidenceItem:
+        normalized_context_id = self.context_id.replace("\\", "/")
         return EvidenceItem(
-            evidence_id=f"evidence-{self.context_id}",
+            evidence_id=f"evidence-{normalized_context_id}",
             source_type=EvidenceSourceType.KNOWLEDGE_BASE,
             source_name=self.document_name,
             file_path=self.file_path,

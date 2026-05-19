@@ -114,6 +114,35 @@ async def test_file_report_store_renders_none_for_empty_sections(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_file_report_store_renders_multiline_list_items_as_fenced_blocks(tmp_path):
+    report = RCAReport(
+        report_id="RCA-004",
+        incident_id="INC-004",
+        title="Multiline RCA",
+        incident_summary="Summary.",
+        symptoms=[
+            "Runtime error\nTraceback (most recent call last):\nValueError: boom",
+        ],
+        root_cause="Root cause.",
+        technical_explanation="Technical explanation.",
+        confidence_score=0.9,
+        confidence_reason="Enough evidence exists.",
+    )
+
+    store = FileReportStore(reports_dir=tmp_path)
+
+    result = await store.save_report(report)
+
+    saved_markdown = result[0].read_text(encoding="utf-8")
+
+    assert "- Runtime error" in saved_markdown
+    assert (
+        "```text\nTraceback (most recent call last):\nValueError: boom\n```"
+        in saved_markdown
+    )
+
+
+@pytest.mark.asyncio
 async def test_file_report_store_can_overwrite_existing_report(tmp_path):
     first_report = RCAReport(
         report_id="RCA-003",

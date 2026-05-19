@@ -26,7 +26,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             code_findings=self._rules.build_code_findings(input_data),
             knowledge_base_findings=self._rules.build_knowledge_base_findings(input_data),
             hypotheses_considered=self._rules.build_hypotheses_considered(input_data),
-            selected_hypothesis_id=None,
+            selected_hypothesis_id=self._rules.selected_hypothesis_id(input_data),
             root_cause=self._rules.build_root_cause(input_data),
             technical_explanation=self._rules.build_technical_explanation(input_data),
             evidence_ids=self._rules.evidence_ids(input_data),
