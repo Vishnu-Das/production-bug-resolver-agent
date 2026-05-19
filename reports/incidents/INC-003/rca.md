@@ -1,31 +1,27 @@
-# RCA for Selected document summary returns no answer
+# RCA for Selected Document Summary Returns No Answer
 
 ## Incident Summary
 
-Incident INC-003: Users selecting a specific PDF and asking for a summary receive an empty or irrelevant answer even though the document exists in the vector store.
+Users experienced an issue where selecting a specific PDF document to summarize resulted in either an empty or irrelevant answer. This occurred despite the document being present in the vector store.
 
 ## Impact
 
-Affected service: conversational_rag. Affected area: selected document retrieval.
+High severity incident affecting the conversational_rag service, specifically the selected document retrieval functionality.
 
 ## Symptoms
 
-- Users selecting a specific PDF and asking for a summary receive an empty or irrelevant answer even though the document exists in the vector store.
-- 2026-05-19T12:03:08Z WARNING conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 parent_child retrieval returned no matching sources selected_document="Transformer Notes.pdf" normalized_selected="Transformer Notes.pdf" available_source="transformer_notes.pdf"
-- 2026-05-19T12:03:09Z ERROR conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 query="summarize this document" selected_document="Transformer Notes.pdf" resolved_strategy=parent_child retrieved_docs_count=0 final_docs_count=0
+- Empty or irrelevant answers from the document summary request.
+- The specified document exists in the vector store.
 
 ## Log Findings
 
-- log-001 shows runtime signal: 2026-05-19T12:03:08Z WARNING conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 parent_child retrieval returned no matching sources selected_document="Tra...
-- log-002 shows the fallback resolved the summary-style query to the supported `parent_child` retrieval strategy.
+- WARNING: retrieval returned no matching sources for selected_document='Transformer Notes.pdf' (log-001)
+- ERROR: retrieved_docs_count=0 and final_docs_count=0 for query 'summarize this document' with selected_document='Transformer Notes.pdf' (log-002)
 
 ## Code Findings
 
-- eval/strategy_questions.json:1-24 contains evaluation context for retrieval or answer quality checks relevant to the incident.
-- eval/questions.json:1-50 contains evaluation context for retrieval or answer quality checks relevant to the incident.
-- src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
-- src/rag/retrieval/parent_child/strategy.py:71-114 contains implementation context relevant to the incident.
-- src/rag/retrievers.py:71-133 contains implementation context relevant to the incident.
+- The retrieval strategy implementation may misidentify documents based on filename normalization (src/rag/service.py:141-220, src/rag/service.py:71-150).
+- Caching mechanism in place; however, it may not account for document filename discrepancies (src/rag/cache.py:1-34).
 
 ## Knowledge Base Findings
 
@@ -33,8 +29,8 @@ Affected service: conversational_rag. Affected area: selected document retrieval
 
 ## Hypotheses Considered
 
-- H1: Runtime failure is caused by an implementation mismatch in the code path identified by the logs and code evidence.
-- H2: The observed behavior is caused by missing validation or insufficient normalization around the failing code path.
+- H1: The issue is caused by a mismatch between the filename provided by the UI and the filename in the vector store due to differences in case or format.
+- H2: An error in the retrieval strategy implementation causes it to fail in fetching correct documents.
 
 ## Final Root Cause
 
@@ -42,23 +38,21 @@ Selected-document retrieval returned zero documents because the UI-selected file
 
 ## Technical Explanation
 
-Runtime logs show `selected_document="Transformer Notes.pdf"` while available metadata contains `transformer_notes.pdf`, followed by `retrieved_docs_count=0`. The parent-child retrieval path filters sources by normalized filename, so filename casing, spacing, or underscore mismatches can exclude the intended document.
+Runtime logs indicate `selected_document="Transformer Notes.pdf"` while the available metadata contains `transformer_notes.pdf`. The parent-child retrieval path filters sources by normalized filename, so discrepancies in casing or formatting can lead to exclusion of the intended document.
 
 ## Evidence
 
-- EVID-LOG-2C79EA5F
-- EVID-LOG-15B291C4
-- eval/strategy_questions.json:1-24
-- eval/questions.json:1-50
+- EVID-LOG-EA5A6718
+- EVID-LOG-E1E9F537
+- src/rag/service.py:141-220
 - src/rag/service.py:71-150
-- src/rag/retrieval/parent_child/strategy.py:71-114
-- src/rag/retrievers.py:71-133
+- src/rag/cache.py:1-34
 
 ## Confidence
 
 Score: 0.75
 
-Reason: Confidence is based on available evidence quality, source diversity, and evaluator result: Evidence is sufficient to proceed to RCA writing.
+Reason: Confidence level is based on the quality and diversity of evidence available, combined with a thorough evaluation process.
 
 ## Recommended Fix
 
@@ -66,16 +60,17 @@ Normalize selected-document names and stored source metadata with the same case-
 
 ## Preventive Actions
 
-Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.
+Implement a robust validation mechanism for document filenames to ensure consistency and correctness before storing them in the vector store.
 
 ## Tests to Add
 
-- Add a regression test for incident INC-003.
-- Add a test covering the implicated implementation path.
+- Create tests to confirm that filenames are normalized before retrieval processes are executed.
+- Test retrieval functionality with various casing, spacing, and formatting scenarios to ensure document matching works correctly.
 
 ## Open Questions
 
-- None
+- What specific rules should be defined for filename normalization?
+- Are there other document retrieval scenarios affected by similar normalization issues?
 
 ## Low Confidence Warning
 
@@ -83,16 +78,14 @@ None
 
 ## Generation Details
 
-- writer: deterministic_fallback
-- llm_output_validated: false
-- fallback_used: true
-- fallback_reason: selected_hypothesis_id_not_found
+- writer: llm
+- llm_output_validated: true
+- fallback_used: false
 
 ## Metadata
 
 - evidence_count: 7
 - dynamic_workflow: true
-- rca_writer: deterministic_fallback
-- llm_output_validated: false
-- fallback_used: true
-- fallback_reason: selected_hypothesis_id_not_found
+- rca_writer: llm
+- llm_output_validated: true
+- fallback_used: false

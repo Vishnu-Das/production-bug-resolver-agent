@@ -2,25 +2,26 @@
 
 ## Incident Summary
 
-The incident involved critical failure of chat requests resulting in HTTP 500 errors after a deployment altered the retrieval strategy configuration to an unsupported value.
+This report analyzes the incident where chat requests failed with HTTP 500 errors after a deployment changed the retrieval strategy configuration to an unsupported value, specifically `semantic`.
 
 ## Impact
 
-Chat functionalities were severely disrupted, leading to potential loss of user engagement and satisfaction due to the inability to retrieve document responses.
+The chat service was completely unavailable for users, resulting in a critical application failure.
 
 ## Symptoms
 
-- HTTP 500 errors when making chat requests.
-- Chat response failures during document retrieval.
+- HTTP 500 errors on chat requests.
+- Retrieval strategy set to unsupported value `semantic`.
+- Logs indicating failure during document retrieval.
 
 ## Log Findings
 
-- EVID-LOG-90915FE1: ERROR indicating unsupported retrieval strategy: 'semantic'.
-- EVID-LOG-9AF7734D: WARNING that the retrieval strategy 'semantic' is not supported.
+- 2026-05-19T11:12:43Z ERROR conversational_rag request_id=req-inc-002 trace_id=trace-retrieval-002 Chat response failed during document retrieval. strategy_name=semantic selected_document=All Documents
+- 2026-05-19T11:12:43Z WARNING conversational_rag request_id=req-inc-002 trace_id=trace-retrieval-002 RETRIEVAL_STRATEGY=semantic is not one of supported strategies: hybrid,parent_child,fusion
 
 ## Code Findings
 
-- Evidence from `service.py` shows retrieval strategy is resolved from request and calls `RetrievalStrategyFactory.get_strategy`.
+- The retrieval strategy factory only supports `hybrid`, `parent_child`, and `fusion` as valid strategies.
 
 ## Knowledge Base Findings
 
@@ -28,48 +29,47 @@ Chat functionalities were severely disrupted, leading to potential loss of user 
 
 ## Hypotheses Considered
 
-- The retrieval strategy was incorrectly set in the configuration file.
-- A recent change introduced an unsupported retrieval strategy.
+- H1: The configuration for the retrieval strategy was not validated upon startup.
+- H2: There was a change in deployment that mistakenly set the retrieval strategy to an unsupported value.
 
 ## Final Root Cause
 
-The configured or resolved retrieval strategy was `semantic`, which is not supported. The retrieval factory rejected the value and raised a `ValueError`.
+The configured retrieval strategy was `semantic`, which is unsupported by the system. The factory method `RetrievalStrategyFactory.get_strategy` raised a `ValueError` exception when attempting to utilize this strategy, leading to the chat requests failing.
 
 ## Technical Explanation
 
-Logs reveal that `RETRIEVAL_STRATEGY=semantic` was utilized during document retrieval, while the factory only supports `hybrid`, `parent_child`, and `fusion`. This indicates a configuration mismatch between expected and provided values in the deployment settings.
+Runtime logs indicate that the variable `RETRIEVAL_STRATEGY` was set to `semantic` during the request process. The retrieval factory, however, only accepts specific strategies: `hybrid`, `parent_child`, and `fusion`. Any deviation results in an exception being thrown, causing the failure observed in the service.
 
 ## Evidence
 
-- EVID-LOG-90915FE1
-- EVID-LOG-9AF7734D
-- src/rag/service.py:141-220
-- src/rag/retrieval/hybrid/strategy.py:1-43
-- src/rag/service.py:71-150
+- EVID-LOG-AC3763A6
+- EVID-LOG-EE46901D
+- src/rag/retrieval/factory.py:1-42
+- tests/rag/retrieval/test_retrieval_factory.py:1-60
 
 ## Confidence
 
 Score: 0.75
 
-Reason: Evidence quality is assured with diverse sources highlighting the same failure mode.
+Reason: Confidence is based on the quality of the evidence, including logs and code inspections that confirm the root cause identified.
 
 ## Recommended Fix
 
-Validate `RETRIEVAL_STRATEGY` at startup; restrict to `hybrid`, `parent_child`, or `fusion`, and reject or normalize unsupported values.
+Implement a validation mechanism for the `RETRIEVAL_STRATEGY` configuration at startup to ensure it is one of the supported values: `hybrid`, `parent_child`, or `fusion`. Any unsupported value should be rejected or adjusted.
 
 ## Preventive Actions
 
-Implement a configuration validation mechanism that checks the setting of `RETRIEVAL_STRATEGY` before usage, ensuring only supported strategies are utilized.
+Establish configuration management practices to ensure that deployment settings are reviewed and validated before deployment, particularly for critical configurations like retrieval strategies.
 
 ## Tests to Add
 
-- Unit tests to validate that only supported retrieval strategies can be configured successfully.
-- Integration tests to simulate chat requests with various retrieval strategies to ensure proper handling of unsupported values.
+- Add unit tests to verify that unsupported retrieval strategies are rejected and handled gracefully.
+- Create integration tests to ensure that valid `RETRIEVAL_STRATEGY` values are processed and yield expected behavior.
 
 ## Open Questions
 
-- What processes led to the deployment of an unsupported retrieval strategy?
-- How can we enhance oversight to prevent unsupported configurations in the future?
+- What process led to the configuration of the unsupported retrieval strategy?
+- How can we improve deployment checks to prevent this type of configuration error in the future?
 
 ## Low Confidence Warning
 

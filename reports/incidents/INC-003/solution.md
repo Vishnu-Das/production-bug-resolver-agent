@@ -2,45 +2,42 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-8DBD23B6: Selected-document retrieval returned zero documents due to a mismatch between the UI-selected filename and the stored vector metadata source after normalization.
+Recommended solution based on RCA RCA-20260519-738A834E: Selected-document retrieval returned zero documents because the UI-selected filename did not match the stored vector metadata source for the same PDF after normalization.
 
 ## Immediate Steps
 
-- Normalize selected-document names and stored source metadata using consistent case-insensitive, separator-safe, and whitespace-safe rules before applying parent-child retrieval filters.
-- Reproduce the incident locally using the same failure scenario outlined in the RCA.
+- Normalize selected-document names and stored source metadata with the same case-insensitive, separator-safe, whitespace-safe rules before applying parent-child retrieval filters.
+- Reproduce the incident locally using the same failure scenario.
 - Verify the fix against the log symptoms and selected RCA evidence.
 
 ## Long-Term Steps
 
-- Add regression tests to ensure document retrieval functionality works correctly under varied filename conditions.
-- Centralize retrieval strategy validation to maintain consistency across implementations and usability in future developments.
-- Improve structured error handling to provide clearer feedback and prevent similar issues from occurring unnoticed.
-- Log raw router outputs during fallback occurrences to better understand retrieval failures in the future.
+- Implement a robust validation mechanism for document filenames to ensure consistency and correctness before storing them in the vector store.
+- Add input and output contract checks around the implicated code path.
+- Document the expected behavior and failure mode for future incidents.
 
 ## Tests to Add
 
-- Add a regression test specifically for incident INC-003 to validate resolution and ensure similar issues do not arise.
-- Implement test cases covering the full implementation path related to document retrieval to identify potential failure points.
+- Create tests to confirm that filenames are normalized before retrieval processes are executed.
+- Test retrieval functionality with various casing, spacing, and formatting scenarios to ensure document matching works correctly.
 
 ## Monitoring Improvements
 
-- Add structured logging around the document retrieval code path to capture detailed runtime information including filename matching processes.
-- Log request or trace identifiers with the error details for better tracking of issues when they occur.
+- Add structured logging around the implicated code path.
+- Log request or trace identifiers with the error when available.
 
 ## Risk Notes
 
-- The risk of document mismatch may occur again if filename handling processes remain inconsistent or inadequately normalized in future code implementations.
-- Potential delays in incident identification may arise if structured logging is not adequately implemented and monitored.
+- Filename normalization may introduce additional complexity in filenames if not carefully defined.
+- Potential for other document retrieval scenarios to be overlooked if they are not checked against normalization rules.
 
 ## Evidence
 
-- EVID-LOG-2C79EA5F
-- EVID-LOG-15B291C4
-- eval/strategy_questions.json:1-24
-- eval/questions.json:1-50
+- EVID-LOG-EA5A6718
+- EVID-LOG-E1E9F537
+- src/rag/service.py:141-220
 - src/rag/service.py:71-150
-- src/rag/retrieval/parent_child/strategy.py:71-114
-- src/rag/retrievers.py:71-133
+- src/rag/cache.py:1-34
 
 ## Generation Details
 
@@ -50,8 +47,8 @@ Recommended solution based on RCA RCA-20260519-8DBD23B6: Selected-document retri
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-EF188871
-- rca_report_id: RCA-20260519-8DBD23B6
+- recommendation_id: SOL-20260519-F54F4056
+- rca_report_id: RCA-20260519-738A834E
 - confidence_score: 0.75
 - solution_writer: llm
 - llm_output_validated: true

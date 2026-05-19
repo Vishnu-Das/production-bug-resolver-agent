@@ -2,24 +2,24 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-EBCA1712: The configured or resolved retrieval strategy was `semantic`, which is not supported. The retrieval factory rejected the value and raised a `ValueError`.
+Recommended solution based on RCA RCA-20260519-97FBB6C1: The configured retrieval strategy was `semantic`, which is unsupported by the system. The factory method `RetrievalStrategyFactory.get_strategy` raised a `ValueError` exception when attempting to utilize this strategy, leading to chat requests failing.
 
 ## Immediate Steps
 
-- Validate `RETRIEVAL_STRATEGY` at startup; restrict to `hybrid`, `parent_child`, or `fusion`, and reject or normalize unsupported values.
+- Implement a validation mechanism for the `RETRIEVAL_STRATEGY` configuration at startup to ensure it is one of the supported values: `hybrid`, `parent_child`, or `fusion`. Any unsupported value should be rejected or adjusted.
 - Reproduce the incident locally using the same failure scenario.
 - Verify the fix against the log symptoms and selected RCA evidence.
 
 ## Long-Term Steps
 
-- Implement a configuration validation mechanism that checks the setting of `RETRIEVAL_STRATEGY` before usage, ensuring only supported strategies are utilized.
+- Establish configuration management practices to ensure that deployment settings are reviewed and validated before deployment, particularly for critical configurations like retrieval strategies.
 - Add input and output contract checks around the implicated code path.
 - Document the expected behavior and failure mode for future incidents.
 
 ## Tests to Add
 
-- Unit tests to validate that only supported retrieval strategies can be configured successfully.
-- Integration tests to simulate chat requests with various retrieval strategies to ensure proper handling of unsupported values.
+- Add unit tests to verify that unsupported retrieval strategies are rejected and handled gracefully.
+- Create integration tests to ensure that valid `RETRIEVAL_STRATEGY` values are processed and yield expected behavior.
 
 ## Monitoring Improvements
 
@@ -28,16 +28,15 @@ Recommended solution based on RCA RCA-20260519-EBCA1712: The configured or resol
 
 ## Risk Notes
 
-- Failure to implement the immediate fix may lead to recurring incidents related to unsupported retrieval strategies.
-- Lack of oversight on configuration changes could result in further deployment issues.
+- There might be risks associated with the introduction of validation checks if not properly tested, which could lead to false positives and legitimate requests being rejected.
+- Inadequate documentation and training on configuration management may lead to future occurrences of similar incidents.
 
 ## Evidence
 
-- EVID-LOG-90915FE1
-- EVID-LOG-9AF7734D
-- src/rag/service.py:141-220
-- src/rag/retrieval/hybrid/strategy.py:1-43
-- src/rag/service.py:71-150
+- EVID-LOG-AC3763A6
+- EVID-LOG-EE46901D
+- src/rag/retrieval/factory.py:1-42
+- tests/rag/retrieval/test_retrieval_factory.py:1-60
 
 ## Generation Details
 
@@ -47,8 +46,8 @@ Recommended solution based on RCA RCA-20260519-EBCA1712: The configured or resol
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-4E32FA67
-- rca_report_id: RCA-20260519-EBCA1712
+- recommendation_id: SOL-20260519-6957DC3C
+- rca_report_id: RCA-20260519-97FBB6C1
 - confidence_score: 0.75
 - solution_writer: llm
 - llm_output_validated: true

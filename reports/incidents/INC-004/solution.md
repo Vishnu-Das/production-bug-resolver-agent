@@ -2,44 +2,41 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-CCBC63DB: Address the duplicate upload guard issue to prevent skipping revised PDF uploads, which leads to retrieval of stale content.
+Recommended solution based on RCA RCA-20260519-A0EA9BF9: A revised PDF upload with the same filename was skipped by duplicate upload guards, resulting in stale content being served instead of the updated document.
 
 ## Immediate Steps
 
-- Change duplicate filename handling so revised uploads are explicitly rejected, versioned, or re-ingested with cache reset instead of being silently skipped.
-- Reproduce the incident locally using the same failure scenario.
-- Verify the fix against the log symptoms and selected RCA evidence.
+- Change duplicate filename handling to explicitly reject, version, or re-ingest revised uploads with cache reset instead of being skipped.
+- Reproduce the incident locally using the same failure scenario identified in the RCA report.
+- Verify the changes against the log symptoms outlined in evidence ID EVID-LOG-AFF13819 and others.
 
 ## Long-Term Steps
 
-- Add regression tests specifically targeting the conditions identified in incident INC-004.
-- Centralize retrieval strategy validation to ensure consistent handling of uploaded documents.
-- Enhance structured error handling to provide clearer failures and fallback paths.
-- Log raw router outputs when fallback conditions occur for better traceability.
+- Implement a versioning system for files or establish a clear user prompt when an existing filename is detected, providing users with options to overwrite, version, or terminate the upload process.
+- Add input and output contract checks around the implicated code path to validate file handling behaviors.
+- Document the expected behavior and failure modes related to document uploads for future reference.
 
 ## Tests to Add
 
-- Add a regression test for incident INC-004.
-- Add a test covering the implicated implementation path in upload handling.
+- Unit tests for handling duplicate file uploads that ensure proper versioning or rejection of existing filenames.
+- Integration tests to verify that cache clearing and data retrieval accurately reflect the most recent version of uploaded documents.
 
 ## Monitoring Improvements
 
-- Add structured logging around the implicated code path to capture behaviors tied to uploads and cache resets.
-- Log request or trace identifiers with the error when available to facilitate easier debugging.
+- Add structured logging around the implicated code path to capture detailed information about file upload interactions.
+- Include request or trace identifiers with error logs when incidents occur to facilitate easier debugging.
 
 ## Risk Notes
 
-- There remains a risk of outdated or stale content being served if duplicate uploads are not properly handled in all cases.
+- There is a risk that any change to the upload functionality may affect other areas of the application if not thoroughly tested.
+- User experience may be impacted if the new prompts are not intuitive or clear, potentially leading to confusion during uploads.
 
 ## Evidence
 
-- EVID-LOG-D9C19A5D
-- EVID-LOG-11602D74
+- EVID-LOG-AFF13819
+- EVID-LOG-FB73282E
 - src/services/upload_service.py:1-77
-- src/rag/pipeline.py:1-58
-- src/conversationalAI.py:141-220
-- src/helpers/deduplication.py:1-21
-- tests/rag/utils/test_service_utils.py:1-80
+- src/rag/cache.py:1-34
 
 ## Generation Details
 
@@ -49,8 +46,8 @@ Recommended solution based on RCA RCA-20260519-CCBC63DB: Address the duplicate u
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-EAAEEAB1
-- rca_report_id: RCA-20260519-CCBC63DB
+- recommendation_id: SOL-20260519-6DDF99C3
+- rca_report_id: RCA-20260519-A0EA9BF9
 - confidence_score: 0.75
 - solution_writer: llm
 - llm_output_validated: true

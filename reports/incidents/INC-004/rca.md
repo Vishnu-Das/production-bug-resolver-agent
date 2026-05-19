@@ -1,31 +1,28 @@
-# RCA for Reuploaded PDF content is not refreshed
+# RCA Report for Incident INC-004: Reuploaded PDF Content Not Refreshing
 
 ## Incident Summary
 
-Incident INC-004: Users upload a revised PDF with the same filename, but the chat continues answering from the older document content.
+Users experienced issues where re-uploading a revised PDF with the same filename did not result in updated responses from the system, indicating that the older document content continued to be utilized instead of the new revision.
 
 ## Impact
 
-Affected service: conversational_rag. Affected area: document upload and ingestion.
+The incident affects the accuracy of responses provided by the conversational_rag service, which relies on correctly ingested document content. This could lead to user frustration and misinformation due to stale content being served.
 
 ## Symptoms
 
-- Users upload a revised PDF with the same filename, but the chat continues answering from the older document content.
-- 2026-05-19T13:21:44Z WARNING conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 upload ignored because filename already exists in session processed_uploads filename="policy_handbook.pdf" ingestion_started=false cache_reset=false
-- 2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename="policy_handbook.pdf" expected_revision="2026-Q2" indexed_revision="2026-Q1"
+- Revised PDF uploaded but older content served in responses.
+- Warning logs indicating upload ignored due to filename conflict.
+- Error logs showing stale document content served after duplicate upload.
 
 ## Log Findings
 
-- log-001 shows runtime signal: 2026-05-19T13:21:44Z WARNING conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 upload ignored because filename already exists in session processed_uploads file...
-- log-002 shows runtime signal: 2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename="policy_handbook.pdf...
+- 2026-05-19T13:21:44Z WARNING conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 upload ignored because filename already exists in session processed_uploads filename="policy_handbook.pdf" ingestion_started=false cache_reset=false
+- 2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename="policy_handbook.pdf" expected_revision="2026-Q2" indexed_revision="2026-Q1"
 
 ## Code Findings
 
-- src/services/upload_service.py:1-77 handles PDF uploads, duplicate filename checks, document ingestion, cache reset, and Streamlit upload state.
-- src/rag/pipeline.py:1-58 contains implementation context relevant to the incident.
-- src/conversationalAI.py:141-220 contains implementation context relevant to the incident.
-- src/helpers/deduplication.py:1-21 contains implementation context relevant to the incident.
-- tests/rag/utils/test_service_utils.py:1-80 contains implementation context relevant to the incident.
+- The upload_service.py implementation prevents re-uploading a file with the same name to safeguard against duplicate uploads, but it does not allow versioning or re-ingesting of updated documents with the same filename.
+- The reset_rag_caches function is not triggered when a duplicate file is attempted to be uploaded, leading to stale cached content being served.
 
 ## Knowledge Base Findings
 
@@ -33,8 +30,8 @@ Affected service: conversational_rag. Affected area: document upload and ingesti
 
 ## Hypotheses Considered
 
-- H1: Runtime failure is caused by an implementation mismatch in the code path identified by the logs and code evidence.
-- H2: The observed behavior is caused by missing validation or insufficient normalization around the failing code path.
+- H1: The system is configured to prevent duplicate file uploads without allowing for versioning or updates to existing files.
+- H2: The caching mechanism does not properly handle updates to documents with the same filename.
 
 ## Final Root Cause
 
@@ -42,17 +39,14 @@ A revised PDF upload with the same filename was skipped by duplicate upload guar
 
 ## Technical Explanation
 
-Runtime logs show a duplicate upload for `policy_handbook.pdf` was ignored before ingestion and cache reset, followed by stale answers from revision `2026-Q1` when `2026-Q2` was expected. The upload path therefore needs explicit replace/version/re-ingest behavior for same-name document revisions.
+Runtime logs show that the upload for `policy_handbook.pdf` was ignored due to existing records in `processed_uploads`, thus bypassing the necessary ingestion and cache reset processes. As a result, when the revised document was expected, stale content from an earlier version was served instead.
 
 ## Evidence
 
-- EVID-LOG-D9C19A5D
-- EVID-LOG-11602D74
+- EVID-LOG-AFF13819
+- EVID-LOG-FB73282E
 - src/services/upload_service.py:1-77
-- src/rag/pipeline.py:1-58
-- src/conversationalAI.py:141-220
-- src/helpers/deduplication.py:1-21
-- tests/rag/utils/test_service_utils.py:1-80
+- src/rag/cache.py:1-34
 
 ## Confidence
 
@@ -66,16 +60,18 @@ Change duplicate filename handling so revised uploads are explicitly rejected, v
 
 ## Preventive Actions
 
-Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.
+Implement a versioning system or a clear user prompt to notify users when an existing filename is detected, allowing them to choose whether to overwrite, version, or quit the upload process.
 
 ## Tests to Add
 
-- Add a regression test for incident INC-004.
-- Add a test covering the implicated implementation path.
+- Unit tests for handling duplicate file uploads to ensure proper versioning or rejection handling.
+- Integration tests to verify cache clearing and data retrieval accurately reflect the most recent document version.
 
 ## Open Questions
 
-- None
+- What user experience is desirable when an uploaded file conflicts with an existing filename?
+- Are there specific use cases where users need to retain multiple versions of the same document?
+- How will users be informed about the impact of their file uploads on the chat responses?
 
 ## Low Confidence Warning
 
@@ -83,16 +79,14 @@ None
 
 ## Generation Details
 
-- writer: deterministic_fallback
-- llm_output_validated: false
-- fallback_used: true
-- fallback_reason: selected_hypothesis_id_not_found
+- writer: llm
+- llm_output_validated: true
+- fallback_used: false
 
 ## Metadata
 
 - evidence_count: 7
 - dynamic_workflow: true
-- rca_writer: deterministic_fallback
-- llm_output_validated: false
-- fallback_used: true
-- fallback_reason: selected_hypothesis_id_not_found
+- rca_writer: llm
+- llm_output_validated: true
+- fallback_used: false

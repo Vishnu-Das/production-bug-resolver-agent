@@ -1,18 +1,18 @@
-# RCA Report for INC-001: LLM Router Fallback during Summary Questions
+# RCA Report for Incident INC-001
 
 ## Incident Summary
 
-Users reported that when using broad summary questions in auto retrieval mode, the system intermittently falls back to a less effective router instead of utilizing the LLM router, thereby degrading the retrieval quality of answers.
+Users reported that broad summary questions in auto retrieval mode intermittently used the fallback router instead of the LLM router, leading to reduced retrieval quality and less relevant answers.
 
 ## Impact
 
-Loss of retrieval accuracy on broad summary questions which affects user trust and satisfaction with the application.
+High impact on the quality of responses generated for user queries regarding broad summaries, leading to potential user dissatisfaction and decreased trust in the conversational agent's capabilities.
 
 ## Symptoms
 
-- Errors logged indicating LLM router fallback
-- Inconsistent retrieval results when querying summary-related documents
-- Reduction in answer relevancy for summary questions
+- LLM router fails during summary questions
+- Fallback routing occurs for summary queries
+- Users receive less relevant answers
 
 ## Log Findings
 
@@ -21,8 +21,8 @@ Loss of retrieval accuracy on broad summary questions which affects user trust a
 
 ## Code Findings
 
-- The LLM router validation step returns a ValueError when an unsupported strategy like 'summary' is produced, as seen in the path C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\llm.py:71-110.
-- The fallback router properly resolves broad summary queries using the parent_child strategy, confirming that this is the expected behavior for such queries.
+- The LLM router raises ValueError for invalid strategy in `src/rag/routing/llm.py` resulting in fallback to another router.
+- The fallback resolves summary-type queries correctly to parent_child retrieval in the routing logic.
 
 ## Knowledge Base Findings
 
@@ -30,30 +30,30 @@ Loss of retrieval accuracy on broad summary questions which affects user trust a
 
 ## Hypotheses Considered
 
-- H1: The LLM router is incorrectly generating 'summary' as a retrieval strategy, causing it to fall back to the rule-based router.
-- H2: The fallback behavior is a safety mechanism ensuring that unsupported retrieval strategies do not result in system failures.
+- H1: The LLM router emits an unsupported retrieval strategy causing the fallback to occur.
+- H2: The retrieval prompt fed to the LLM is incorrectly configured, leading to invalid strategies being returned.
 
 ## Final Root Cause
 
-The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, which caused the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.
+The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, causing the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.
 
 ## Technical Explanation
 
-The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. Code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\llm.py:71-110 points to the LLM routing path where the returned strategy is validated. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which serves as the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
+The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. Code evidence from `src/rag/routing/llm.py` points to the LLM routing path where the returned strategy is validated. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. The issue arises from a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
 
 ## Evidence
 
-- EVID-LOG-AAF4A2E5
-- EVID-LOG-03350DDE
+- EVID-LOG-6E169B71
+- EVID-LOG-6225C4F0
+- tests/rag/routing/test_llm_router.py:71-138
 - src/rag/routing/llm.py:71-110
-- src/rag/retrieval/parent_child/strategy.py:1-80
 - src/rag/retrieval/parent_child/strategy.py:71-114
 
 ## Confidence
 
 Score: 0.8
 
-Reason: Confidence is moderately high because logs show the exact exception `Invalid strategy: summary`, and code/test evidence points to the LLM routing validation path. Confidence is not 1.0 due to a lack of knowledge-base evidence and the exact raw LLM router output payload not being captured.
+Reason: Confidence is moderately high because logs show the exact exception `Invalid strategy: summary`, and code/test evidence points to the LLM routing validation path. Confidence is not 1.0 because knowledge-base evidence and the exact raw LLM router output payload were not captured.
 
 ## Recommended Fix
 
@@ -61,17 +61,17 @@ Update the LLM router prompt and/or structured output validation so the router e
 
 ## Preventive Actions
 
-Establish a more robust validation mechanism for router strategy outputs to ensure they conform to the predefined set of acceptable strategies before they are returned.
+Implement stricter validation on the retrieval strategy emitted from the LLM router and ensure alignment with supported strategies to prevent similar issues in the future.
 
 ## Tests to Add
 
-- Test scenarios where the LLM router returns unsupported strategies to ensure proper fallback behavior is triggered.
-- Unit tests to validate that valid strategies are consistently returned for summary queries.
+- Add unit tests to confirm proper emission of supported strategies from the LLM router for summary queries.
+- Create integration tests that validate the retrieval routing behavior for a variety of summary queries.
 
 ## Open Questions
 
-- What specific conditions lead the LLM router to output the invalid strategy 'summary'?
-- How can we improve logging around the retrieval strategies to capture more detailed output for analysis?
+- What specific changes to the LLM prompt will prevent it from emitting unsupported strategies?
+- Are there other queries not currently handled by supported strategies?
 
 ## Low Confidence Warning
 

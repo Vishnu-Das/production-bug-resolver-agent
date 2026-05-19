@@ -8,6 +8,7 @@ from bug_resolver.rules.rca_rules import RCARules
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas import RCAReport, WorkflowState
 from bug_resolver.utils.ids import new_rca_report_id
+from bug_resolver.utils.paths import to_repo_relative_display_path
 
 import re
 
@@ -317,7 +318,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         evidence_blocks: list[str] = []
 
         for evidence in state.evidence_items:
-            location = evidence.file_path or evidence.source_name
+            location = to_repo_relative_display_path(evidence.file_path or evidence.source_name)
             if evidence.line_start and evidence.line_end:
                 location = f"{location}:{evidence.line_start}-{evidence.line_end}"
 
