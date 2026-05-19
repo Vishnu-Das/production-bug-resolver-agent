@@ -82,133 +82,196 @@ class FileReportStore(ReportStore):
         )
 
     def _build_markdown(self, report: RCAReport) -> str:
-        return f"""# {report.title}
+        lines: list[str] = [f"# {report.title}"]
+        self._add_section(lines, "## Incident Summary", [report.incident_summary])
+        self._add_section(lines, "## Impact", [report.impact or "Not specified"])
+        self._add_section(lines, "## Symptoms", self._render_list_lines(report.symptoms))
+        self._add_section(
+            lines,
+            "## Log Findings",
+            self._render_list_lines(report.log_findings),
+        )
+        self._add_section(
+            lines,
+            "## Code Findings",
+            self._render_list_lines(report.code_findings),
+        )
+        self._add_section(
+            lines,
+            "## Knowledge Base Findings",
+            self._render_list_lines(report.knowledge_base_findings),
+        )
+        self._add_section(
+            lines,
+            "## Hypotheses Considered",
+            self._render_list_lines(report.hypotheses_considered),
+        )
+        self._add_section(lines, "## Final Root Cause", [report.root_cause])
+        self._add_section(
+            lines,
+            "## Technical Explanation",
+            [report.technical_explanation],
+        )
+        self._add_section(
+            lines,
+            "## Evidence",
+            self._render_list_lines(
+                [self._display_evidence_id(evidence_id) for evidence_id in report.evidence_ids]
+            ),
+        )
+        self._add_section(
+            lines,
+            "## Confidence",
+            [
+                f"Score: {report.confidence_score}",
+                "",
+                f"Reason: {report.confidence_reason}",
+            ],
+        )
+        self._add_section(
+            lines,
+            "## Recommended Fix",
+            [report.immediate_fix or "Not specified"],
+        )
+        self._add_section(
+            lines,
+            "## Preventive Actions",
+            [report.long_term_prevention or "Not specified"],
+        )
+        self._add_section(
+            lines,
+            "## Tests to Add",
+            self._render_list_lines(report.tests_to_add),
+        )
+        self._add_section(
+            lines,
+            "## Open Questions",
+            self._render_list_lines(report.open_questions),
+        )
+        self._add_section(
+            lines,
+            "## Low Confidence Warning",
+            [report.low_confidence_warning or "None"],
+        )
+        self._add_section(
+            lines,
+            "## Metadata",
+            self._render_metadata_lines(report.metadata),
+        )
 
-## Incident Summary
-
-{report.incident_summary}
-
-## Impact
-
-{report.impact or "Not specified"}
-
-## Symptoms
-
-{self._render_list(report.symptoms)}
-
-## Log Findings
-
-{self._render_list(report.log_findings)}
-
-## Code Findings
-
-{self._render_list(report.code_findings)}
-
-## Knowledge Base Findings
-
-{self._render_list(report.knowledge_base_findings)}
-
-## Hypotheses Considered
-
-{self._render_list(report.hypotheses_considered)}
-
-## Final Root Cause
-
-{report.root_cause}
-
-## Technical Explanation
-
-{report.technical_explanation}
-
-## Evidence
-
-{self._render_list(report.evidence_ids)}
-
-## Confidence
-
-Score: {report.confidence_score}
-
-Reason: {report.confidence_reason}
-
-## Recommended Fix
-
-{report.immediate_fix or "Not specified"}
-
-## Preventive Actions
-
-{report.long_term_prevention or "Not specified"}
-
-## Tests to Add
-
-{self._render_list(report.tests_to_add)}
-
-## Open Questions
-
-{self._render_list(report.open_questions)}
-
-## Low Confidence Warning
-
-{report.low_confidence_warning or "None"}
-
-## Metadata
-
-{self._render_metadata(report.metadata)}
-"""
+        return "\n".join(lines) + "\n"
 
     def _build_solution_markdown(self, solution: SolutionRecommendation) -> str:
-        return f"""# Solution Recommendation for {solution.incident_id}
+        lines: list[str] = [f"# Solution Recommendation for {solution.incident_id}"]
+        self._add_section(lines, "## Summary", [solution.summary])
+        self._add_section(
+            lines,
+            "## Immediate Steps",
+            self._render_list_lines(solution.immediate_steps),
+        )
+        self._add_section(
+            lines,
+            "## Long-Term Steps",
+            self._render_list_lines(solution.long_term_steps),
+        )
+        self._add_section(
+            lines,
+            "## Tests to Add",
+            self._render_list_lines(solution.tests_to_add),
+        )
+        self._add_section(
+            lines,
+            "## Monitoring Improvements",
+            self._render_list_lines(solution.monitoring_improvements),
+        )
+        self._add_section(
+            lines,
+            "## Risk Notes",
+            self._render_list_lines(solution.risk_notes),
+        )
+        self._add_section(
+            lines,
+            "## Evidence",
+            self._render_list_lines(
+                [
+                    self._display_evidence_id(evidence_id)
+                    for evidence_id in solution.evidence_ids
+                ]
+            ),
+        )
+        self._add_section(
+            lines,
+            "## Metadata",
+            [
+                f"- recommendation_id: {solution.recommendation_id}",
+                f"- rca_report_id: {solution.rca_report_id}",
+                f"- confidence_score: {solution.confidence_score}",
+            ],
+        )
 
-## Summary
-
-{solution.summary}
-
-## Immediate Steps
-
-{self._render_list(solution.immediate_steps)}
-
-## Long-Term Steps
-
-{self._render_list(solution.long_term_steps)}
-
-## Tests to Add
-
-{self._render_list(solution.tests_to_add)}
-
-## Monitoring Improvements
-
-{self._render_list(solution.monitoring_improvements)}
-
-## Risk Notes
-
-{self._render_list(solution.risk_notes)}
-
-## Evidence
-
-{self._render_list(solution.evidence_ids)}
-
-## Metadata
-
-- recommendation_id: {solution.recommendation_id}
-- rca_report_id: {solution.rca_report_id}
-- confidence_score: {solution.confidence_score}
-"""
+        return "\n".join(lines) + "\n"
 
     def _render_list(self, values: list[str]) -> str:
+        return "\n".join(self._render_list_lines(values))
+
+    def _render_list_lines(self, values: list[str]) -> list[str]:
         if not values:
-            return "- None"
+            return ["- None"]
 
-        return "\n".join(self._render_list_item(value) for value in values)
+        lines: list[str] = []
+        for value in values:
+            lines.extend(self._render_list_item_lines(value))
+        return lines
 
-    def _render_list_item(self, value: str) -> str:
+    def _render_list_item_lines(self, value: str) -> list[str]:
         if "\n" not in value:
-            return f"- {value}"
+            return [f"- {value}"]
 
         first_line, *remaining_lines = value.splitlines()
-        fenced_content = "\n".join(remaining_lines)
-        return f"- {first_line}\n\n```text\n{fenced_content}\n```"
+        return [
+            f"- {first_line}",
+            "",
+            "```text",
+            *remaining_lines,
+            "```",
+        ]
 
     def _render_metadata(self, metadata: dict[str, str]) -> str:
-        if not metadata:
-            return "- None"
+        return "\n".join(self._render_metadata_lines(metadata))
 
-        return "\n".join(f"- {key}: {value}" for key, value in metadata.items())
+    def _render_metadata_lines(self, metadata: dict[str, str]) -> list[str]:
+        if not metadata:
+            return ["- None"]
+
+        return [f"- {key}: {value}" for key, value in metadata.items()]
+
+    def _add_section(
+        self,
+        lines: list[str],
+        heading: str,
+        body_lines: list[str],
+    ) -> None:
+        if lines:
+            lines.append("")
+
+        lines.append(heading)
+        lines.append("")
+        lines.extend(body_lines)
+
+    def _display_evidence_id(self, evidence_id: str) -> str:
+        value = evidence_id.removeprefix("evidence-").replace("\\", "/")
+        repo_marker = "conversational_rag/"
+        if repo_marker in value.lower():
+            marker_index = value.lower().index(repo_marker)
+            value = value[marker_index + len(repo_marker) :]
+
+        for marker in ("src/", "tests/", "eval/", "docs/", "sample_data/"):
+            if value.startswith(marker):
+                break
+
+            marker_index = value.find(f"/{marker}")
+            if marker_index >= 0:
+                value = value[marker_index + 1 :]
+                break
+
+        return value if evidence_id.startswith("evidence-") else evidence_id

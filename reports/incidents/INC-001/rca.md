@@ -30,11 +30,11 @@ ValueError: Invalid strategy: summary
 
 ## Code Findings
 
-- tests/rag/routing/test_llm_router.py:71-138 validates the LLM router strategy and raises an error when the model returns an unsupported value.
-- C:/Users/vishn/Documents/Learning AI/conversational_rag/eval/evaluate_with_judge.py:71-150 shows relevant implementation behavior: response = judge_llm.invoke(prompt) return response.content def evaluate_case(case): question = case["question"] selected_document = case.get("selected_document") expected_strat...
-- tests/rag/routing/test_llm_router.py:1-80 selects the configured router implementation, including the LLM router path that produced the failure.
-- src/rag/routing/llm.py:71-110 validates the LLM router strategy and raises an error when the model returns an unsupported value.
-- tests/rag/routing/test_rule_based_router.py:1-80 maps summary-style selected-document queries to the supported `parent_child` retrieval strategy.
+- tests/rag/routing/test_llm_router.py:71-138 covers LLM router behavior and unsupported strategy validation for routing decisions.
+- eval/evaluate_with_judge.py:71-150 contains evaluation context for retrieval or answer quality checks relevant to the incident.
+- src/rag/routing/llm.py:71-110 invokes the LLM router and validates that the returned strategy is one of the supported retrieval strategy values.
+- tests/rag/routing/test_llm_router.py:1-80 covers LLM router behavior and unsupported strategy validation for routing decisions.
+- tests/rag/test_service.py:211-235 contains implementation context relevant to the incident.
 
 ## Knowledge Base Findings
 
@@ -56,13 +56,13 @@ The runtime logs show that the LLM router failed with `ValueError: Invalid strat
 
 ## Evidence
 
-- EVID-LOG-4A218560
-- EVID-LOG-838187AE
-- evidence-tests/rag/routing/test_llm_router.py:71-138
-- evidence-eval/evaluate_with_judge.py:71-150
-- evidence-tests/rag/routing/test_llm_router.py:1-80
-- evidence-src/rag/routing/llm.py:71-110
-- evidence-tests/rag/routing/test_rule_based_router.py:1-80
+- EVID-LOG-F3598923
+- EVID-LOG-514135EA
+- tests/rag/routing/test_llm_router.py:71-138
+- eval/evaluate_with_judge.py:71-150
+- src/rag/routing/llm.py:71-110
+- tests/rag/routing/test_llm_router.py:1-80
+- tests/rag/test_service.py:211-235
 
 ## Confidence
 

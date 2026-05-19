@@ -58,6 +58,33 @@ def build_vector_store() -> FAISSVectorStore:
     return store
 
 
+def build_vector_store_with_deprecated_match() -> FAISSVectorStore:
+    store = FAISSVectorStore(dimension=3)
+    store.add(
+        vectors=[
+            [0.0, 1.0, 0.0],
+            [0.0, 0.9, 0.1],
+        ],
+        metadata=[
+            {
+                "item_id": "src/obsolette_rag.py:1-20",
+                "file_path": "/repo/src/obsolette_rag.py",
+                "snippet": "deprecated implementation",
+                "line_start": 1,
+                "line_end": 20,
+            },
+            {
+                "item_id": "src/rag/service.py:1-20",
+                "file_path": "/repo/src/rag/service.py",
+                "snippet": "active implementation",
+                "line_start": 1,
+                "line_end": 20,
+            },
+        ],
+    )
+    return store
+
+
 @pytest.mark.asyncio
 async def test_faiss_code_context_provider_returns_matching_context():
     provider = FAISSCodeContextProvider(
@@ -139,3 +166,15 @@ async def test_faiss_code_context_provider_respects_limit():
     results = await provider.search_code(["search"], limit=1)
 
     assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_faiss_code_context_provider_filters_deprecated_paths():
+    provider = FAISSCodeContextProvider(
+        vector_store=build_vector_store_with_deprecated_match(),
+        embedding_client=FakeEmbeddingClient(),
+    )
+
+    results = await provider.search_code(["search"], limit=2)
+
+    assert [result.context_id for result in results] == ["src/rag/service.py:1-20"]

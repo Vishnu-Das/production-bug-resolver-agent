@@ -83,8 +83,8 @@ async def test_rca_writer_agent_generates_report_from_dynamic_evidence() -> None
     ]
     assert result.code_findings == [
         (
-            "src/rag/router.py:40-45 shows relevant implementation behavior: "
-            "def route_query(...): return response['output']"
+            "src/rag/router.py:40-45 contains implementation context relevant "
+            "to the incident."
         )
     ]
     assert result.knowledge_base_findings == [

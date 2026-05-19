@@ -21,11 +21,11 @@ Affected service: conversational_rag. Affected area: selected document retrieval
 
 ## Code Findings
 
-- src/obsolette_rag.py:1-80 shows relevant implementation behavior: ## This module is obselette and is not currently used in the application. # ## This module implements the core Retrieval-Augmented Generation (RAG) logic for the application. It...
-- src/rag/service.py:1-80 shows relevant implementation behavior: from typing import List, Optional, Tuple import time from langchain_core.messages import BaseMessage from langsmith import traceable from src.config import RETRIEVAL_STRATEGY fr...
-- src/rag/service.py:141-220 shows relevant implementation behavior: @traceable( name="RAG Stream Response", run_type="chain", ) def stream_response( user_input: str, chat_history: List[BaseMessage], selected_document: str = None, ): debug_info =...
-- C:/Users/vishn/Documents/Learning AI/conversational_rag/eval/evaluate_retrieval.py:1-80 shows relevant implementation behavior: import json import os import sys sys.path.append(os.getcwd()) from src.rag.service import stream_response def normalize_source_name(source: str) -> str: if not source: return ""...
-- tests/rag/test_service.py:211-235 shows relevant implementation behavior: document=doc, score=0.91, retrieval_source="parent_child", ) ] mock_qa_prompt.invoke.return_value = ["mock-message"] mock_llm.stream.return_value = iter(["answer chunk"]) stream...
+- src/rag/service.py:1-80 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- eval/strategy_questions.json:1-24 contains evaluation context for retrieval or answer quality checks relevant to the incident.
+- src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- eval/questions.json:1-50 contains evaluation context for retrieval or answer quality checks relevant to the incident.
+- src/rag/service.py:141-220 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
 
 ## Knowledge Base Findings
 
@@ -38,21 +38,21 @@ Affected service: conversational_rag. Affected area: selected document retrieval
 
 ## Final Root Cause
 
-The incident is most likely caused by a mismatch between the runtime failure observed in logs and the implementation behavior shown in src/obsolette_rag.py:1-80.
+Selected-document retrieval returned zero documents because the UI-selected filename did not match the stored vector metadata source for the same PDF after normalization.
 
 ## Technical Explanation
 
-EVID-LOG-0F439B4D: log-001 shows runtime signal: 2026-05-19T12:03:08Z WARNING conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 parent_child retrieval returned no matching sources selected_document="Tra... EVID-LOG-0A7E5E7B: log-002 shows the fallback resolved the summary-style query to the supported `parent_child` retrieval strategy. evidence-src/obsolette_rag.py:1-80: src/obsolette_rag.py:1-80 shows relevant implementation behavior: ## This module is obselette and is not currently used in the application. # ## This module implements the core Retrieval-Augmented Generation (RAG) logic for the application. It... evidence-src/rag/service.py:1-80: src/rag/service.py:1-80 shows relevant implementation behavior: from typing import List, Optional, Tuple import time from langchain_core.messages import BaseMessage from langsmith import traceable from src.config import RETRIEVAL_STRATEGY fr... evidence-src/rag/service.py:141-220: src/rag/service.py:141-220 shows relevant implementation behavior: @traceable( name="RAG Stream Response", run_type="chain", ) def stream_response( user_input: str, chat_history: List[BaseMessage], selected_document: str = None, ): debug_info =... evidence-eval/evaluate_retrieval.py:1-80: C:/Users/vishn/Documents/Learning AI/conversational_rag/eval/evaluate_retrieval.py:1-80 shows relevant implementation behavior: import json import os import sys sys.path.append(os.getcwd()) from src.rag.service import stream_response def normalize_source_name(source: str) -> str: if not source: return ""... evidence-tests/rag/test_service.py:211-235: tests/rag/test_service.py:211-235 shows relevant implementation behavior: document=doc, score=0.91, retrieval_source="parent_child", ) ] mock_qa_prompt.invoke.return_value = ["mock-message"] mock_llm.stream.return_value = iter(["answer chunk"]) stream...
+Runtime logs show `selected_document="Transformer Notes.pdf"` while available metadata contains `transformer_notes.pdf`, followed by `retrieved_docs_count=0`. The parent-child retrieval path filters sources by normalized filename, so filename casing, spacing, or underscore mismatches can exclude the intended document.
 
 ## Evidence
 
-- EVID-LOG-0F439B4D
-- EVID-LOG-0A7E5E7B
-- evidence-src/obsolette_rag.py:1-80
-- evidence-src/rag/service.py:1-80
-- evidence-src/rag/service.py:141-220
-- evidence-eval/evaluate_retrieval.py:1-80
-- evidence-tests/rag/test_service.py:211-235
+- EVID-LOG-1D114892
+- EVID-LOG-B6EB492A
+- src/rag/service.py:1-80
+- eval/strategy_questions.json:1-24
+- src/rag/service.py:71-150
+- eval/questions.json:1-50
+- src/rag/service.py:141-220
 
 ## Confidence
 
@@ -62,7 +62,7 @@ Reason: Confidence is based on available evidence quality, source diversity, and
 
 ## Recommended Fix
 
-Inspect and fix the code path at src/obsolette_rag.py:1-80.
+Normalize selected-document names and stored source metadata with the same case-insensitive, separator-safe, whitespace-safe rules before applying parent-child retrieval filters.
 
 ## Preventive Actions
 

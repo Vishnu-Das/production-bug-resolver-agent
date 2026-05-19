@@ -21,18 +21,15 @@ Affected service: conversational_rag. Affected area: document upload and ingesti
 
 ## Code Findings
 
-- src/rag/cache.py:1-34 shows relevant implementation behavior: from functools import lru_cache from src.rag.retrievers import ( get_history_aware_retriever, get_retriever, get_all_documents ) @lru_cache(maxsize=100) def cached_retrieval( us...
-- src/services/upload_service.py:1-77 shows relevant implementation behavior: import os import time import streamlit as st from src.config import DATA_DIR from src.ingest import ingest_single_document from src.rag.cache import reset_rag_caches def handle_...
-- src/ingest.py:71-85 shows relevant implementation behavior: ) vectorstore.add_documents( chunks ) ingest_parent_child_documents( raw_documents ) print(f"Ingested: {file_path}") if __name__ == "__main__": ingest_documents()
-- src/ingest.py:1-80 shows relevant implementation behavior: from langchain_openai import OpenAIEmbeddings from langchain_chroma import Chroma from src.vectorstore import ( load_documents, load_and_split_documents, load_single_document, s...
-- src/conversationalAI.py:141-220 shows relevant implementation behavior: # selected_document = st.sidebar.selectbox( # "Filter Documents", # ["All Documents"] + documents # ) # if "uploader_key" not in st.session_state: # st.session_state.uploader_ke...
+- src/services/upload_service.py:1-77 handles PDF uploads, duplicate filename checks, document ingestion, cache reset, and Streamlit upload state.
+- src/rag/retrievers.py:1-80 contains implementation context relevant to the incident.
+- src/conversationalAI.py:141-220 contains implementation context relevant to the incident.
+- src/reranker.py:1-80 contains implementation context relevant to the incident.
+- src/rag/cache.py:1-34 defines cache reset behavior for RAG retrievers and cached retrieval results.
 
 ## Knowledge Base Findings
 
-- sample_data/knowledge_base/README.md documents expected behavior relevant to the incident: # Conversational RAG Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents. The system comb...
-- sample_data/knowledge_base/upload-ingestion.md documents expected behavior relevant to the incident: # Upload And Ingestion Notes Uploading a PDF should write the file, ingest the document, reset RAG caches, and make the new chunks available to retrieval. Duplicate filenames re...
-- sample_data/knowledge_base/selected-document-routing.md documents expected behavior relevant to the incident: # Selected Document Retrieval Notes Selected-document retrieval depends on matching the UI-selected filename to the `source` metadata stored in the vector database. The matching...
-- sample_data/knowledge_base/retrieval-strategies.md documents expected behavior relevant to the incident: # Retrieval Strategy Contract The conversational RAG application supports exactly three retrieval strategy values at runtime: - `hybrid` - `parent_child` - `fusion` `RetrievalSt...
+- None
 
 ## Hypotheses Considered
 
@@ -41,35 +38,31 @@ Affected service: conversational_rag. Affected area: document upload and ingesti
 
 ## Final Root Cause
 
-The incident is most likely caused by a mismatch between the runtime failure observed in logs and the implementation behavior shown in src/rag/cache.py:1-34.
+A revised PDF upload with the same filename was skipped by duplicate upload guards, so ingestion and cache reset did not run and retrieval continued serving stale indexed content.
 
 ## Technical Explanation
 
-EVID-LOG-A080477F: log-001 shows runtime signal: 2026-05-19T13:21:44Z WARNING conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 upload ignored because filename already exists in session processed_uploads file... EVID-LOG-22620B7B: log-002 shows runtime signal: 2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename="policy_handbook.pdf... evidence-kb-README: sample_data/knowledge_base/README.md documents expected behavior relevant to the incident: # Conversational RAG Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents. The system comb... evidence-kb-upload-ingestion: sample_data/knowledge_base/upload-ingestion.md documents expected behavior relevant to the incident: # Upload And Ingestion Notes Uploading a PDF should write the file, ingest the document, reset RAG caches, and make the new chunks available to retrieval. Duplicate filenames re... evidence-kb-selected-document-routing: sample_data/knowledge_base/selected-document-routing.md documents expected behavior relevant to the incident: # Selected Document Retrieval Notes Selected-document retrieval depends on matching the UI-selected filename to the `source` metadata stored in the vector database. The matching... evidence-kb-retrieval-strategies: sample_data/knowledge_base/retrieval-strategies.md documents expected behavior relevant to the incident: # Retrieval Strategy Contract The conversational RAG application supports exactly three retrieval strategy values at runtime: - `hybrid` - `parent_child` - `fusion` `RetrievalSt... evidence-src/rag/cache.py:1-34: src/rag/cache.py:1-34 shows relevant implementation behavior: from functools import lru_cache from src.rag.retrievers import ( get_history_aware_retriever, get_retriever, get_all_documents ) @lru_cache(maxsize=100) def cached_retrieval( us... evidence-src/services/upload_service.py:1-77: src/services/upload_service.py:1-77 shows relevant implementation behavior: import os import time import streamlit as st from src.config import DATA_DIR from src.ingest import ingest_single_document from src.rag.cache import reset_rag_caches def handle_... evidence-src/ingest.py:71-85: src/ingest.py:71-85 shows relevant implementation behavior: ) vectorstore.add_documents( chunks ) ingest_parent_child_documents( raw_documents ) print(f"Ingested: {file_path}") if __name__ == "__main__": ingest_documents() evidence-src/ingest.py:1-80: src/ingest.py:1-80 shows relevant implementation behavior: from langchain_openai import OpenAIEmbeddings from langchain_chroma import Chroma from src.vectorstore import ( load_documents, load_and_split_documents, load_single_document, s... evidence-src/conversationalAI.py:141-220: src/conversationalAI.py:141-220 shows relevant implementation behavior: # selected_document = st.sidebar.selectbox( # "Filter Documents", # ["All Documents"] + documents # ) # if "uploader_key" not in st.session_state: # st.session_state.uploader_ke...
+Runtime logs show a duplicate upload for `policy_handbook.pdf` was ignored before ingestion and cache reset, followed by stale answers from revision `2026-Q1` when `2026-Q2` was expected. The upload path therefore needs explicit replace/version/re-ingest behavior for same-name document revisions.
 
 ## Evidence
 
-- EVID-LOG-A080477F
-- EVID-LOG-22620B7B
-- evidence-kb-README
-- evidence-kb-upload-ingestion
-- evidence-kb-selected-document-routing
-- evidence-kb-retrieval-strategies
-- evidence-src/rag/cache.py:1-34
-- evidence-src/services/upload_service.py:1-77
-- evidence-src/ingest.py:71-85
-- evidence-src/ingest.py:1-80
-- evidence-src/conversationalAI.py:141-220
+- EVID-LOG-1B081F12
+- EVID-LOG-78EE8605
+- src/services/upload_service.py:1-77
+- src/rag/retrievers.py:1-80
+- src/conversationalAI.py:141-220
+- src/reranker.py:1-80
+- src/rag/cache.py:1-34
 
 ## Confidence
 
-Score: 0.8
+Score: 0.75
 
 Reason: Confidence is based on available evidence quality, source diversity, and evaluator result: Evidence is sufficient to proceed to RCA writing.
 
 ## Recommended Fix
 
-Inspect and fix the code path at src/rag/cache.py:1-34.
+Change duplicate filename handling so revised uploads are explicitly rejected, versioned, or re-ingested with cache reset instead of being silently skipped.
 
 ## Preventive Actions
 
@@ -90,5 +83,5 @@ None
 
 ## Metadata
 
-- evidence_count: 11
+- evidence_count: 7
 - dynamic_workflow: true

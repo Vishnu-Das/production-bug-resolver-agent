@@ -77,6 +77,7 @@ async def test_file_report_store_saves_markdown_and_json(tmp_path):
     assert saved_json["metadata"]["environment"] == "local-test"
 
     assert "# Summary Query 500 Error RCA" in saved_markdown
+    assert "# Summary Query 500 Error RCA\n\n## Incident Summary" in saved_markdown
     assert "## Incident Summary" in saved_markdown
     assert "Users are getting 500 errors when asking summary questions." in saved_markdown
     assert "## Final Root Cause" in saved_markdown
@@ -84,6 +85,7 @@ async def test_file_report_store_saves_markdown_and_json(tmp_path):
     assert "## Technical Explanation" in saved_markdown
     assert "Application raised KeyError: output" in saved_markdown
     assert "- environment: local-test" in saved_markdown
+    assert "# Summary Query 500 Error RCA ## Incident Summary" not in saved_markdown
 
 
 @pytest.mark.asyncio
@@ -134,8 +136,13 @@ async def test_file_report_store_saves_solution_markdown_when_solution_is_provid
 
     saved_solution_markdown = solution_markdown_path.read_text(encoding="utf-8")
     assert "# Solution Recommendation for INC-001" in saved_solution_markdown
+    assert (
+        "# Solution Recommendation for INC-001\n\n## Summary"
+        in saved_solution_markdown
+    )
     assert "Fix the router output contract." in saved_solution_markdown
     assert "- Normalize unsupported router strategies." in saved_solution_markdown
+    assert "- src/rag/routing/llm.py:1-80" in saved_solution_markdown
     assert "- recommendation_id: SOL-001" in saved_solution_markdown
 
 

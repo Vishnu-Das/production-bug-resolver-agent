@@ -40,10 +40,13 @@ class FAISSCodeContextProvider(CodeContextProvider):
 
             search_results = self.vector_store.search(
                 query_vector=query_vector,
-                limit=per_query_limit,
+                limit=per_query_limit * 3,
             )
 
             for search_result in search_results:
+                if self._is_deprecated_path(search_result.metadata.get("file_path")):
+                    continue
+
                 context = self._to_code_context(
                     search_result=search_result,
                     retrieval_query=query,
@@ -68,6 +71,16 @@ class FAISSCodeContextProvider(CodeContextProvider):
         )
 
         return contexts[:limit]
+
+    def _is_deprecated_path(self, file_path: object) -> bool:
+        if file_path is None:
+            return False
+
+        normalized_path = str(file_path).replace("\\", "/").lower()
+        return any(
+            marker in normalized_path
+            for marker in ("obsolete", "obsolette", "deprecated")
+        )
 
     def _to_code_context(
         self,

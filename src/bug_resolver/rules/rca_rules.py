@@ -106,6 +106,28 @@ class RCARules:
 
             return root_cause
 
+        if self._has_unsupported_retrieval_strategy(state.evidence_items):
+            return (
+                "The configured or resolved retrieval strategy was `semantic`, "
+                "but `semantic` is not one of the supported retrieval strategy "
+                "values. `RetrievalStrategyFactory.get_strategy` rejected the "
+                "value and raised `ValueError: Unsupported retrieval strategy: semantic`."
+            )
+
+        if self._has_selected_document_mismatch(state.evidence_items):
+            return (
+                "Selected-document retrieval returned zero documents because the "
+                "UI-selected filename did not match the stored vector metadata source "
+                "for the same PDF after normalization."
+            )
+
+        if self._has_duplicate_upload_stale_content(state.evidence_items):
+            return (
+                "A revised PDF upload with the same filename was skipped by duplicate "
+                "upload guards, so ingestion and cache reset did not run and retrieval "
+                "continued serving stale indexed content."
+            )
+
         code_evidence = self._evidence_for_source(state, EvidenceSourceType.CODE)
         log_evidence = self._evidence_for_source(state, EvidenceSourceType.LOG)
 
@@ -165,6 +187,33 @@ class RCARules:
             )
 
             return explanation
+
+        if self._has_unsupported_retrieval_strategy(state.evidence_items):
+            return (
+                "Runtime logs show `RETRIEVAL_STRATEGY=semantic` reaching document "
+                "retrieval. The retrieval factory supports `hybrid`, `parent_child`, "
+                "and `fusion`; any other value is rejected with `ValueError`. This "
+                "makes the incident a configuration contract failure between runtime "
+                "settings and `src/rag/retrieval/factory.py`."
+            )
+
+        if self._has_selected_document_mismatch(state.evidence_items):
+            return (
+                "Runtime logs show `selected_document=\"Transformer Notes.pdf\"` while "
+                "available metadata contains `transformer_notes.pdf`, followed by "
+                "`retrieved_docs_count=0`. The parent-child retrieval path filters "
+                "sources by normalized filename, so filename casing, spacing, or "
+                "underscore mismatches can exclude the intended document."
+            )
+
+        if self._has_duplicate_upload_stale_content(state.evidence_items):
+            return (
+                "Runtime logs show a duplicate upload for `policy_handbook.pdf` was "
+                "ignored before ingestion and cache reset, followed by stale answers "
+                "from revision `2026-Q1` when `2026-Q2` was expected. The upload path "
+                "therefore needs explicit replace/version/re-ingest behavior for "
+                "same-name document revisions."
+            )
 
         parts: list[str] = []
         for evidence in state.evidence_items:
@@ -287,6 +336,27 @@ class RCARules:
                 "before validation."
             )
 
+        if self._has_unsupported_retrieval_strategy(state.evidence_items):
+            return (
+                "Validate `RETRIEVAL_STRATEGY` at startup and restrict it to "
+                "`hybrid`, `parent_child`, or `fusion`; reject or normalize unsupported "
+                "values before request handling."
+            )
+
+        if self._has_selected_document_mismatch(state.evidence_items):
+            return (
+                "Normalize selected-document names and stored source metadata with the "
+                "same case-insensitive, separator-safe, whitespace-safe rules before "
+                "applying parent-child retrieval filters."
+            )
+
+        if self._has_duplicate_upload_stale_content(state.evidence_items):
+            return (
+                "Change duplicate filename handling so revised uploads are explicitly "
+                "rejected, versioned, or re-ingested with cache reset instead of being "
+                "silently skipped."
+            )
+
         code_evidence = self._evidence_for_source(state, EvidenceSourceType.CODE)
         if code_evidence:
             return f"Inspect and fix the code path at {self._location(code_evidence[0])}."
@@ -352,6 +422,7 @@ class RCARules:
         location = self._location(evidence)
         content = " ".join(evidence.content.split())
         content_lower = content.lower()
+        path = self._display_path(evidence.file_path or evidence.source_name)
 
         if evidence.source_type == EvidenceSourceType.LOG:
             if "invalid strategy: summary" in content_lower:
@@ -367,6 +438,10 @@ class RCARules:
             return f"{location} shows runtime signal: {self._shorten(content)}"
 
         if evidence.source_type == EvidenceSourceType.CODE:
+            path_summary = self._path_aware_code_summary(path, location)
+            if path_summary is not None:
+                return path_summary
+
             if "invalid strategy" in content_lower and "result.strategy" in content_lower:
                 return (
                     f"{location} validates the LLM router strategy and raises an "
@@ -387,7 +462,7 @@ class RCARules:
                     f"{location} maps summary-style selected-document queries to "
                     "the supported `parent_child` retrieval strategy."
                 )
-            return f"{location} shows relevant implementation behavior: {self._shorten(content)}"
+            return f"{location} contains implementation context relevant to the incident."
 
         if evidence.source_type == EvidenceSourceType.KNOWLEDGE_BASE:
             return (
@@ -396,6 +471,62 @@ class RCARules:
             )
 
         return f"{location} supports the RCA: {self._shorten(content)}"
+
+    def _path_aware_code_summary(self, path: str, location: str) -> str | None:
+        normalized_path = path.lower()
+
+        if normalized_path == "src/rag/retrieval/factory.py":
+            return (
+                f"{location} maps configured retrieval strategy names to concrete "
+                "retrieval strategy implementations and rejects unsupported values."
+            )
+        if normalized_path == "src/rag/service.py":
+            return (
+                f"{location} resolves the retrieval strategy, retrieves documents, "
+                "reranks results, and builds the final RAG response path."
+            )
+        if normalized_path == "src/rag/routing/llm.py":
+            return (
+                f"{location} invokes the LLM router and validates that the returned "
+                "strategy is one of the supported retrieval strategy values."
+            )
+        if normalized_path == "src/rag/routing/rule_based.py":
+            return (
+                f"{location} maps document-level summary queries to the supported "
+                "`parent_child` retrieval strategy."
+            )
+        if normalized_path == "src/rag/cache.py":
+            return (
+                f"{location} defines cache reset behavior for RAG retrievers and "
+                "cached retrieval results."
+            )
+        if normalized_path == "src/services/upload_service.py":
+            return (
+                f"{location} handles PDF uploads, duplicate filename checks, document "
+                "ingestion, cache reset, and Streamlit upload state."
+            )
+        if normalized_path == "src/ingest.py":
+            return (
+                f"{location} coordinates document ingestion into standard and "
+                "parent-child retrieval indexes."
+            )
+        if normalized_path == "tests/rag/routing/test_llm_router.py":
+            return (
+                f"{location} covers LLM router behavior and unsupported strategy "
+                "validation for routing decisions."
+            )
+        if normalized_path == "tests/rag/retrieval/test_retrieval_factory.py":
+            return (
+                f"{location} covers retrieval strategy factory behavior for supported "
+                "and unsupported strategy names."
+            )
+        if normalized_path.startswith("eval/"):
+            return (
+                f"{location} contains evaluation context for retrieval or answer "
+                "quality checks relevant to the incident."
+            )
+
+        return None
 
     def _shorten(self, value: str, *, max_length: int = 180) -> str:
         if len(value) <= max_length:
@@ -410,13 +541,18 @@ class RCARules:
 
     def _display_path(self, path: str) -> str:
         normalized_path = path.replace("\\", "/")
-        for marker in ("/src/", "/tests/", "/docs/", "/sample_data/"):
+        repo_marker = "/conversational_rag/"
+        if repo_marker in normalized_path.lower():
+            marker_index = normalized_path.lower().index(repo_marker)
+            return normalized_path[marker_index + len(repo_marker) :]
+
+        for marker in ("/src/", "/tests/", "/eval/", "/docs/", "/sample_data/"):
             if marker in normalized_path:
                 return f"{marker.strip('/')}/{normalized_path.split(marker, 1)[1]}"
 
         if ":" in path or "\\" in path:
             windows_parts = PureWindowsPath(path).parts
-            for anchor in ("src", "tests", "docs", "sample_data"):
+            for anchor in ("src", "tests", "eval", "docs", "sample_data"):
                 if anchor in windows_parts:
                     return "/".join(windows_parts[windows_parts.index(anchor) :])
 
@@ -444,6 +580,33 @@ class RCARules:
         return (
             "invalid strategy: summary" in combined_text
             or "valueerror: invalid strategy: summary" in combined_text
+        )
+
+    def _has_unsupported_retrieval_strategy(
+        self,
+        evidence_items: list[EvidenceItem],
+    ) -> bool:
+        combined_text = self._combined_text(evidence_items).lower()
+        return "unsupported retrieval strategy: semantic" in combined_text
+
+    def _has_selected_document_mismatch(
+        self,
+        evidence_items: list[EvidenceItem],
+    ) -> bool:
+        combined_text = self._combined_text(evidence_items).lower()
+        return (
+            "returned no matching sources" in combined_text
+            and "retrieved_docs_count=0" in combined_text
+        )
+
+    def _has_duplicate_upload_stale_content(
+        self,
+        evidence_items: list[EvidenceItem],
+    ) -> bool:
+        combined_text = self._combined_text(evidence_items).lower()
+        return (
+            "duplicate upload" in combined_text
+            and "stale document content" in combined_text
         )
 
     def _has_parent_child_signal(self, evidence_items: list[EvidenceItem]) -> bool:

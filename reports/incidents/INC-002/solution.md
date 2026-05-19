@@ -2,11 +2,11 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-A2D768CF: The incident is most likely caused by a mismatch between the runtime failure observed in logs and the implementation behavior shown in src/rag/retrieval/factory.py:1-42.
+Recommended solution based on RCA RCA-20260519-564C3613: The configured or resolved retrieval strategy was `semantic`, but `semantic` is not one of the supported retrieval strategy values. `RetrievalStrategyFactory.get_strategy` rejected the value and raised `ValueError: Unsupported retrieval strategy: semantic`.
 
 ## Immediate Steps
 
-- Inspect and fix the code path at src/rag/retrieval/factory.py:1-42.
+- Validate `RETRIEVAL_STRATEGY` at startup and restrict it to `hybrid`, `parent_child`, or `fusion`; reject or normalize unsupported values before request handling.
 - Reproduce the incident locally using the same failure scenario.
 - Verify the fix against the log symptoms and selected RCA evidence.
 
@@ -32,16 +32,16 @@ Recommended solution based on RCA RCA-20260519-A2D768CF: The incident is most li
 
 ## Evidence
 
-- EVID-LOG-9A35466D
-- EVID-LOG-8E849FA9
-- evidence-src/rag/retrieval/factory.py:1-42
-- evidence-src/rag/service.py:71-150
-- evidence-src/rag/retrieval/hybrid/strategy.py:1-43
-- evidence-src/rag/retrieval/hybrid/__init__.py:1-40
-- evidence-tests/rag/retrieval/test_retrieval_factory.py:1-60
+- EVID-LOG-C4911603
+- EVID-LOG-46A22D95
+- eval/compare_retrieval_strategies.py:71-150
+- src/rag/service.py:71-150
+- tests/rag/retrieval/test_retrieval_factory.py:1-60
+- tests/rag/routing/test_rule_based_router.py:71-98
+- src/rag/retrieval/hybrid/__init__.py:1-40
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-84474ABC
-- rca_report_id: RCA-20260519-A2D768CF
+- recommendation_id: SOL-20260519-1C09B824
+- rca_report_id: RCA-20260519-564C3613
 - confidence_score: 0.75

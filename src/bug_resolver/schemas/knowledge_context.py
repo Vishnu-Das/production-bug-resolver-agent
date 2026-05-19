@@ -25,7 +25,7 @@ class KnowledgeContext(StrictBaseModel):
     metadata: dict[str, str] = Field(default_factory=dict)
 
     def to_evidence_item(self) -> EvidenceItem:
-        normalized_context_id = self.context_id.replace("\\", "/")
+        normalized_context_id = self._normalize_context_id(self.context_id)
         return EvidenceItem(
             evidence_id=f"evidence-{normalized_context_id}",
             source_type=EvidenceSourceType.KNOWLEDGE_BASE,
@@ -39,3 +39,11 @@ class KnowledgeContext(StrictBaseModel):
                 "section_title": self.section_title or "",
             },
         )
+
+    def _normalize_context_id(self, context_id: str) -> str:
+        value = context_id.replace("\\", "/")
+        for marker in ("sample_data/", "docs/"):
+            marker_index = value.find(marker)
+            if marker_index > 0:
+                return value[marker_index:]
+        return value

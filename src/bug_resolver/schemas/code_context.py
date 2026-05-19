@@ -35,7 +35,7 @@ class CodeContext(StrictBaseModel):
         return self
 
     def to_evidence_item(self) -> EvidenceItem:
-        normalized_context_id = self.context_id.replace("\\", "/")
+        normalized_context_id = self._normalize_context_id(self.context_id)
         return EvidenceItem(
             evidence_id=f"evidence-{normalized_context_id}",
             source_type=EvidenceSourceType.CODE,
@@ -50,3 +50,20 @@ class CodeContext(StrictBaseModel):
                 "context_id": self.context_id,
             },
         )
+
+    def _normalize_context_id(self, context_id: str) -> str:
+        value = context_id.replace("\\", "/")
+        repo_marker = "conversational_rag/"
+        if repo_marker in value.lower():
+            marker_index = value.lower().index(repo_marker)
+            value = value[marker_index + len(repo_marker) :]
+
+        for marker in ("src/", "tests/", "eval/", "docs/", "sample_data/"):
+            if value.startswith(marker):
+                return value
+
+            marker_index = value.find(f"/{marker}")
+            if marker_index >= 0:
+                return value[marker_index + 1 :]
+
+        return value

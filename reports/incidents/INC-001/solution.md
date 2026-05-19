@@ -2,7 +2,7 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-E6CA5783: The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, causing the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.
+Recommended solution based on RCA RCA-20260519-FB8D76D1: The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, causing the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.
 
 ## Immediate Steps
 
@@ -33,16 +33,16 @@ Recommended solution based on RCA RCA-20260519-E6CA5783: The LLM router emitted 
 
 ## Evidence
 
-- EVID-LOG-4A218560
-- EVID-LOG-838187AE
-- evidence-tests/rag/routing/test_llm_router.py:71-138
-- evidence-eval/evaluate_with_judge.py:71-150
-- evidence-tests/rag/routing/test_llm_router.py:1-80
-- evidence-src/rag/routing/llm.py:71-110
-- evidence-tests/rag/routing/test_rule_based_router.py:1-80
+- EVID-LOG-F3598923
+- EVID-LOG-514135EA
+- tests/rag/routing/test_llm_router.py:71-138
+- eval/evaluate_with_judge.py:71-150
+- src/rag/routing/llm.py:71-110
+- tests/rag/routing/test_llm_router.py:1-80
+- tests/rag/test_service.py:211-235
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-2DDE97EC
-- rca_report_id: RCA-20260519-E6CA5783
+- recommendation_id: SOL-20260519-A97F26D5
+- rca_report_id: RCA-20260519-FB8D76D1
 - confidence_score: 0.8

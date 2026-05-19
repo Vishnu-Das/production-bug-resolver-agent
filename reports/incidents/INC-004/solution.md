@@ -2,11 +2,11 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-9BADEF9F: The incident is most likely caused by a mismatch between the runtime failure observed in logs and the implementation behavior shown in src/rag/cache.py:1-34.
+Recommended solution based on RCA RCA-20260519-83573411: A revised PDF upload with the same filename was skipped by duplicate upload guards, so ingestion and cache reset did not run and retrieval continued serving stale indexed content.
 
 ## Immediate Steps
 
-- Inspect and fix the code path at src/rag/cache.py:1-34.
+- Change duplicate filename handling so revised uploads are explicitly rejected, versioned, or re-ingested with cache reset instead of being silently skipped.
 - Reproduce the incident locally using the same failure scenario.
 - Verify the fix against the log symptoms and selected RCA evidence.
 
@@ -32,20 +32,16 @@ Recommended solution based on RCA RCA-20260519-9BADEF9F: The incident is most li
 
 ## Evidence
 
-- EVID-LOG-A080477F
-- EVID-LOG-22620B7B
-- evidence-kb-README
-- evidence-kb-upload-ingestion
-- evidence-kb-selected-document-routing
-- evidence-kb-retrieval-strategies
-- evidence-src/rag/cache.py:1-34
-- evidence-src/services/upload_service.py:1-77
-- evidence-src/ingest.py:71-85
-- evidence-src/ingest.py:1-80
-- evidence-src/conversationalAI.py:141-220
+- EVID-LOG-1B081F12
+- EVID-LOG-78EE8605
+- src/services/upload_service.py:1-77
+- src/rag/retrievers.py:1-80
+- src/conversationalAI.py:141-220
+- src/reranker.py:1-80
+- src/rag/cache.py:1-34
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-BEB7B665
-- rca_report_id: RCA-20260519-9BADEF9F
-- confidence_score: 0.8
+- recommendation_id: SOL-20260519-D3AFF33B
+- rca_report_id: RCA-20260519-83573411
+- confidence_score: 0.75

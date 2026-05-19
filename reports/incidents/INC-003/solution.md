@@ -2,11 +2,11 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-5BB338A5: The incident is most likely caused by a mismatch between the runtime failure observed in logs and the implementation behavior shown in src/obsolette_rag.py:1-80.
+Recommended solution based on RCA RCA-20260519-19C18A25: Selected-document retrieval returned zero documents because the UI-selected filename did not match the stored vector metadata source for the same PDF after normalization.
 
 ## Immediate Steps
 
-- Inspect and fix the code path at src/obsolette_rag.py:1-80.
+- Normalize selected-document names and stored source metadata with the same case-insensitive, separator-safe, whitespace-safe rules before applying parent-child retrieval filters.
 - Reproduce the incident locally using the same failure scenario.
 - Verify the fix against the log symptoms and selected RCA evidence.
 
@@ -32,16 +32,16 @@ Recommended solution based on RCA RCA-20260519-5BB338A5: The incident is most li
 
 ## Evidence
 
-- EVID-LOG-0F439B4D
-- EVID-LOG-0A7E5E7B
-- evidence-src/obsolette_rag.py:1-80
-- evidence-src/rag/service.py:1-80
-- evidence-src/rag/service.py:141-220
-- evidence-eval/evaluate_retrieval.py:1-80
-- evidence-tests/rag/test_service.py:211-235
+- EVID-LOG-1D114892
+- EVID-LOG-B6EB492A
+- src/rag/service.py:1-80
+- eval/strategy_questions.json:1-24
+- src/rag/service.py:71-150
+- eval/questions.json:1-50
+- src/rag/service.py:141-220
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-0E59D303
-- rca_report_id: RCA-20260519-5BB338A5
+- recommendation_id: SOL-20260519-D8873728
+- rca_report_id: RCA-20260519-19C18A25
 - confidence_score: 0.75
