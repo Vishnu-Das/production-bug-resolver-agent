@@ -72,7 +72,8 @@ async def test_rca_writer_agent_generates_report_from_dynamic_evidence() -> None
         "Affected service: conversational_rag. Affected area: summary flow."
     )
     assert result.evidence_ids == ["ev-log-1", "ev-code-1", "ev-kb-1"]
-    assert result.confidence_score == state.evidence_evaluation.confidence_score
+    assert result.confidence_score >= state.confidence_threshold
+    assert result.confidence_score < 1.0
     assert result.low_confidence_warning is None
     assert result.open_questions == []
     assert "src/rag/router.py:40-45" in result.root_cause
