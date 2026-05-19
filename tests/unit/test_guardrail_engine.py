@@ -169,6 +169,77 @@ def test_guardrail_engine_allows_forced_repeated_control_agent_call() -> None:
     assert "repeated_agent_call_without_new_reason" not in result.violated_rules
 
 
+def test_guardrail_engine_allows_forced_control_agent_after_invocation_limit() -> None:
+    engine = GuardrailEngine()
+    state = make_state(max_agent_invocations_per_agent=1)
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-log-1",
+            source_type=EvidenceSourceType.LOG,
+            source_name="app.log",
+            content="TypeError in router",
+        )
+    )
+    state.record_agent_execution(
+        AgentExecutionRecord(
+            execution_id="execution-1",
+            agent_name=AgentName.EVIDENCE_EVALUATOR,
+            status=AgentRunStatus.SUCCEEDED,
+        )
+    )
+
+    decision = AgentDecision(
+        decision_id="decision-2",
+        next_agent=AgentName.EVIDENCE_EVALUATOR,
+        reason="Evaluate evidence after latest investigation step.",
+        queries=[],
+        expected_evidence=[],
+        metadata={"forced_by_workflow": "true"},
+    )
+
+    result = engine.validate_decision(state=state, decision=decision)
+
+    assert result.allowed is True
+    assert "max_agent_invocations_reached" not in result.violated_rules
+
+
+def test_guardrail_engine_routes_to_code_when_evaluation_says_code_is_missing() -> None:
+    engine = GuardrailEngine()
+    state = make_state()
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-log-1",
+            source_type=EvidenceSourceType.LOG,
+            source_name="app.log",
+            content="TypeError in router",
+        )
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-kb-1",
+            source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+            source_name="README.md",
+            content="Router docs.",
+        )
+    )
+    state.evidence_evaluation = EvidenceEvaluationResult(
+        evaluation_id="eval-1",
+        incident_id="INC-001",
+        confidence_score=0.7,
+        retry_required=True,
+        missing_evidence=["Implementation code evidence is missing."],
+        reason="Evidence is incomplete; supervisor should replan for more evidence.",
+    )
+
+    decision = make_decision(AgentName.LOG_INVESTIGATOR)
+
+    result = engine.validate_decision(state=state, decision=decision)
+
+    assert result.allowed is False
+    assert "missing_code_evidence_should_route_to_code" in result.violated_rules
+    assert result.fallback_next_agent == AgentName.CODE_INVESTIGATOR
+
+
 def test_guardrail_engine_blocks_rca_without_minimum_evidence() -> None:
     engine = GuardrailEngine()
     state = make_state(minimum_evidence_count_before_rca=2)

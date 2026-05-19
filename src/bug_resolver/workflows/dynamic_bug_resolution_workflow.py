@@ -131,6 +131,10 @@ class DynamicBugResolutionWorkflow:
                             state=state,
                             decision=fallback_decision,
                         )
+                        if state.investigation_status == InvestigationStatus.COMPLETED:
+                            return state
+                        if await self._finalize_if_ready(state):
+                            return state
                     continue
 
                 if decision.next_agent == AgentName.FINISH:

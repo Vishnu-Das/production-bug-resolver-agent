@@ -3,6 +3,7 @@ from __future__ import annotations
 from bug_resolver.schemas import (
     AgentDecision,
     AgentName,
+    EvidenceSourceType,
     GuardrailDecision,
     WorkflowState,
 )
@@ -63,8 +64,14 @@ class GuardrailEngine:
         if not state.can_take_step():
             violated_rules.append("max_steps_reached")
 
-        if not state.can_invoke_agent(decision.next_agent):
+        if (
+            not self._is_workflow_forced_control_decision(decision)
+            and not state.can_invoke_agent(decision.next_agent)
+        ):
             violated_rules.append("max_agent_invocations_reached")
+
+        if self._should_route_to_missing_code_evidence(state, decision):
+            violated_rules.append("missing_code_evidence_should_route_to_code")
 
         if self._is_repeated_agent_call_without_new_reason(state, decision):
             violated_rules.append("repeated_agent_call_without_new_reason")
@@ -127,10 +134,7 @@ class GuardrailEngine:
         # The repeated-call guardrail is meant to stop the supervisor from
         # repeatedly choosing the same investigation agent with no new reason.
         # It should not block deterministic workflow control steps.
-        if (
-            decision.metadata.get("forced_by_workflow") == "true"
-            and decision.next_agent in WORKFLOW_CONTROL_AGENT_NAMES
-        ):
+        if self._is_workflow_forced_control_decision(decision):
             return False
 
         previous_decisions = [
@@ -150,6 +154,41 @@ class GuardrailEngine:
             and previous_decision.queries == decision.queries
         )
 
+    def _is_workflow_forced_control_decision(self, decision: AgentDecision) -> bool:
+        return (
+            decision.metadata.get("forced_by_workflow") == "true"
+            and decision.next_agent in WORKFLOW_CONTROL_AGENT_NAMES
+        )
+
+    def _should_route_to_missing_code_evidence(
+        self,
+        state: WorkflowState,
+        decision: AgentDecision,
+    ) -> bool:
+        if self._is_workflow_forced_control_decision(decision):
+            return False
+
+        if decision.next_agent == AgentName.CODE_INVESTIGATOR:
+            return False
+
+        if not state.can_invoke_agent(AgentName.CODE_INVESTIGATOR):
+            return False
+
+        if state.evidence_evaluation is None:
+            return False
+
+        if state.evidence_evaluation.can_write_rca:
+            return False
+
+        source_types = {evidence.source_type for evidence in state.evidence_items}
+        if EvidenceSourceType.CODE in source_types:
+            return False
+
+        return any(
+            "code evidence is missing" in missing_evidence.lower()
+            for missing_evidence in state.evidence_evaluation.missing_evidence
+        )
+
     def _fallback_agent(
         self,
         *,
@@ -158,6 +197,11 @@ class GuardrailEngine:
     ) -> AgentName:
         if not state.evidence_items:
             return AgentName.LOG_INVESTIGATOR
+
+        if self._missing_code_evidence(state) and state.can_invoke_agent(
+            AgentName.CODE_INVESTIGATOR
+        ):
+            return AgentName.CODE_INVESTIGATOR
 
         if blocked_agent == AgentName.FINISH:
             return AgentName.EVIDENCE_EVALUATOR
@@ -178,6 +222,22 @@ class GuardrailEngine:
             return AgentName.FINISH
 
         return AgentName.EVIDENCE_EVALUATOR
+
+    def _missing_code_evidence(self, state: WorkflowState) -> bool:
+        if state.evidence_evaluation is None:
+            return False
+
+        if state.evidence_evaluation.can_write_rca:
+            return False
+
+        source_types = {evidence.source_type for evidence in state.evidence_items}
+        if EvidenceSourceType.CODE in source_types:
+            return False
+
+        return any(
+            "code evidence is missing" in missing_evidence.lower()
+            for missing_evidence in state.evidence_evaluation.missing_evidence
+        )
 
     def _can_finish(self, state: WorkflowState) -> bool:
         report_saved = (

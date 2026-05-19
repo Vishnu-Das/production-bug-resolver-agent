@@ -164,7 +164,7 @@ def make_workflow(supervisor: FakeSupervisorAgent) -> DynamicBugResolutionWorkfl
         rca_writer_agent=RCAWriterAgent(),
         solution_recommendation_agent=SolutionRecommendationAgent(),
         report_writer_agent=ReportWriterAgent(FakeReportStore()),
-        max_steps=8,
+        max_steps=12,
         max_replans=2,
         minimum_evidence_count_before_rca=2,
     )
@@ -226,8 +226,8 @@ async def test_dynamic_workflow_records_guardrail_blocked_decision() -> None:
 
     state = await workflow.run("INC-001")
 
-    assert state.low_confidence is True
-    assert state.investigation_status == InvestigationStatus.LOW_CONFIDENCE
+    assert state.low_confidence is False
+    assert state.investigation_status == InvestigationStatus.COMPLETED
     assert len(state.trace.guardrail_decisions) >= 2
     assert state.trace.guardrail_decisions[0].allowed is False
     assert state.trace.guardrail_decisions[0].fallback_next_agent == (
@@ -244,10 +244,15 @@ async def test_dynamic_workflow_records_guardrail_blocked_decision() -> None:
     assert state.trace.steps[1].agent_name == AgentName.LOG_INVESTIGATOR
     assert state.trace.steps[1].run_status == AgentRunStatus.SUCCEEDED
     assert len(state.evidence_items) >= 1
+    assert any(
+        step.agent_name == AgentName.CODE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
+    )
 
 
 @pytest.mark.asyncio
-async def test_dynamic_workflow_stops_on_finish_decision_when_low_confidence() -> None:
+async def test_dynamic_workflow_recovers_from_early_finish_decision() -> None:
     supervisor = FakeSupervisorAgent(
         [
             decision(
@@ -266,7 +271,7 @@ async def test_dynamic_workflow_stops_on_finish_decision_when_low_confidence() -
 
     workflow_state = await workflow.run("INC-001")
 
-    assert workflow_state.investigation_status == InvestigationStatus.LOW_CONFIDENCE
+    assert workflow_state.investigation_status == InvestigationStatus.COMPLETED
     assert workflow_state.trace.guardrail_decisions[0].allowed is False
     assert "runtime_evidence_required_first" in (
         workflow_state.trace.guardrail_decisions[0].violated_rules
@@ -279,6 +284,11 @@ async def test_dynamic_workflow_stops_on_finish_decision_when_low_confidence() -
     )
     assert workflow_state.trace.steps[1].agent_name == AgentName.LOG_INVESTIGATOR
     assert len(workflow_state.evidence_items) >= 1
+    assert any(
+        step.agent_name == AgentName.CODE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in workflow_state.trace.steps
+    )
 
 
 @pytest.mark.asyncio
@@ -305,3 +315,31 @@ async def test_dynamic_workflow_runs_final_rca_solution_and_report_routes() -> N
         AgentName.SOLUTION_RECOMMENDER,
         AgentName.REPORT_WRITER,
     ]
+
+
+@pytest.mark.asyncio
+async def test_dynamic_workflow_falls_back_to_code_when_supervisor_repeats_logs() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.KNOWLEDGE_BASE_INVESTIGATOR, ["router docs"]),
+            decision("decision-3", AgentName.LOG_INVESTIGATOR, ["more INC-001 logs"]),
+        ]
+    )
+    workflow = make_workflow(supervisor)
+
+    state = await workflow.run("INC-001")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert any(
+        "missing_code_evidence_should_route_to_code"
+        in guardrail_decision.violated_rules
+        for guardrail_decision in state.trace.guardrail_decisions
+    )
+    assert any(
+        step.agent_name == AgentName.CODE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
+    )
+    assert state.evidence_evaluation is not None
+    assert state.evidence_evaluation.can_write_rca is True

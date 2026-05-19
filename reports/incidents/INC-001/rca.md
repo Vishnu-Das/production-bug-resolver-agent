@@ -31,14 +31,14 @@ ValueError: Invalid strategy: summary
 ## Code Findings
 
 - tests/rag/routing/test_llm_router.py:71-138 validates the LLM router strategy and raises an error when the model returns an unsupported value.
-- src/rag/retrieval/factory.py:1-42 shows relevant implementation behavior: from src.rag.retrieval.base import ( BaseRetrievalStrategy ) from src.rag.retrieval.hybrid.strategy import ( HybridRetrievalStrategy ) from src.rag.retrieval.parent_child.strate...
-- src/rag/routing/rule_based.py:1-80 maps summary-style selected-document queries to the supported `parent_child` retrieval strategy.
-- C:/Users/vishn/Documents/Learning AI/conversational_rag/eval/compare_retrieval_strategies.py:71-150 shows relevant implementation behavior: actual_strategy = strategy_name if strategy_name == "auto": router = RouterStrategyFactory.get_router() router_result = router.route( query=question, selected_document=selected_...
-- tests/rag/retrieval/test_retrieval_factory.py:1-60 shows relevant implementation behavior: from unittest.mock import Mock, patch import pytest from src.rag.retrieval.factory import RetrievalStrategyFactory @patch("src.rag.retrieval.factory.HybridRetrievalStrategy") de...
+- C:/Users/vishn/Documents/Learning AI/conversational_rag/eval/evaluate_with_judge.py:71-150 shows relevant implementation behavior: response = judge_llm.invoke(prompt) return response.content def evaluate_case(case): question = case["question"] selected_document = case.get("selected_document") expected_strat...
+- tests/rag/routing/test_llm_router.py:1-80 selects the configured router implementation, including the LLM router path that produced the failure.
+- src/rag/routing/llm.py:71-110 validates the LLM router strategy and raises an error when the model returns an unsupported value.
+- tests/rag/routing/test_rule_based_router.py:1-80 maps summary-style selected-document queries to the supported `parent_child` retrieval strategy.
 
 ## Knowledge Base Findings
 
-- sample_data/knowledge_base/README.md documents expected behavior relevant to the incident: # Conversational RAG Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents. The system comb...
+- None
 
 ## Hypotheses Considered
 
@@ -52,24 +52,23 @@ The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a
 
 ## Technical Explanation
 
-The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
+The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. Code evidence from src/rag/routing/llm.py:71-110 points to the LLM routing path where the returned strategy is validated. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
 
 ## Evidence
 
-- EVID-LOG-3D205121
-- EVID-LOG-AD350D86
-- evidence-kb-README
+- EVID-LOG-4A218560
+- EVID-LOG-838187AE
 - evidence-tests/rag/routing/test_llm_router.py:71-138
-- evidence-src/rag/retrieval/factory.py:1-42
-- evidence-src/rag/routing/rule_based.py:1-80
-- evidence-eval/compare_retrieval_strategies.py:71-150
-- evidence-tests/rag/retrieval/test_retrieval_factory.py:1-60
+- evidence-eval/evaluate_with_judge.py:71-150
+- evidence-tests/rag/routing/test_llm_router.py:1-80
+- evidence-src/rag/routing/llm.py:71-110
+- evidence-tests/rag/routing/test_rule_based_router.py:1-80
 
 ## Confidence
 
-Score: 0.85
+Score: 0.8
 
-Reason: Confidence is high because logs show the exact exception `Invalid strategy: summary`, code evidence points to the LLM routing validation path, and knowledge-base evidence describes the expected summary-query routing behavior. Confidence is not 1.0 because the exact raw LLM router output payload and prompt response were not captured.
+Reason: Confidence is moderately high because logs show the exact exception `Invalid strategy: summary`, and code/test evidence points to the LLM routing validation path. Confidence is not 1.0 because knowledge-base evidence and the exact raw LLM router output payload were not captured.
 
 ## Recommended Fix
 
@@ -96,5 +95,5 @@ None
 
 ## Metadata
 
-- evidence_count: 8
+- evidence_count: 7
 - dynamic_workflow: true
