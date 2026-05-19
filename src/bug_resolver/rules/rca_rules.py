@@ -1,43 +1,19 @@
 from __future__ import annotations
 
-from bug_resolver.schemas import (
-    CodeContext,
-    Hypothesis,
-    Incident,
-    KnowledgeContext,
-    LogAnalysisResult,
-)
+from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 
 
 class RCARules:
-    """
-    Deterministic rules for building an RCA report from hypotheses and evidence.
+    """Deterministic RCA helpers for dynamic evidence-backed reports."""
 
-    The agent coordinates.
-    These rules select the strongest hypothesis and build report sections.
-    """
+    def build_title(self, state: WorkflowState) -> str:
+        return f"RCA for {state.incident.title}"
 
-    confidence_threshold = 0.75
+    def build_incident_summary(self, state: WorkflowState) -> str:
+        return f"Incident {state.incident.incident_id}: {state.incident.description}"
 
-    def select_strongest_hypothesis(
-        self,
-        hypotheses: list[Hypothesis],
-    ) -> Hypothesis:
-        return sorted(
-            hypotheses,
-            key=lambda hypothesis: hypothesis.confidence_score,
-            reverse=True,
-        )[0]
-
-    def build_title(self, incident: Incident) -> str:
-        return f"RCA for {incident.title}"
-
-    def build_incident_summary(self, incident: Incident) -> str:
-        return (
-            f"Incident {incident.incident_id}: {incident.description}"
-        )
-
-    def build_impact(self, incident: Incident) -> str | None:
+    def build_impact(self, state: WorkflowState) -> str | None:
+        incident = state.incident
         if incident.affected_service and incident.affected_area:
             return (
                 f"Affected service: {incident.affected_service}. "
@@ -52,189 +28,148 @@ class RCARules:
 
         return None
 
-    def build_symptoms(
-        self,
-        incident: Incident,
-        log_analysis: LogAnalysisResult,
-    ) -> list[str]:
-        symptoms = [incident.description]
-
-        if log_analysis.exception_type and log_analysis.exception_message:
-            symptoms.append(
-                f"{log_analysis.exception_type}: {log_analysis.exception_message}"
-            )
-
-        if log_analysis.likely_failure_point:
-            symptoms.append(
-                f"Likely failure point: {log_analysis.likely_failure_point}"
-            )
-
+    def build_symptoms(self, state: WorkflowState) -> list[str]:
+        symptoms = [state.incident.description]
+        symptoms.extend(
+            evidence.content
+            for evidence in state.evidence_items
+            if evidence.source_type == EvidenceSourceType.LOG
+        )
         return self.unique(symptoms)
 
-    def build_log_findings(
-        self,
-        log_analysis: LogAnalysisResult,
-    ) -> list[str]:
-        findings: list[str] = [log_analysis.summary]
+    def build_log_findings(self, state: WorkflowState) -> list[str]:
+        return self._findings_for_source(state.evidence_items, EvidenceSourceType.LOG)
 
-        if log_analysis.exception_type:
-            findings.append(f"Exception type: {log_analysis.exception_type}")
+    def build_code_findings(self, state: WorkflowState) -> list[str]:
+        return self._findings_for_source(state.evidence_items, EvidenceSourceType.CODE)
 
-        if log_analysis.exception_message:
-            findings.append(f"Exception message: {log_analysis.exception_message}")
+    def build_knowledge_base_findings(self, state: WorkflowState) -> list[str]:
+        return self._findings_for_source(
+            state.evidence_items,
+            EvidenceSourceType.KNOWLEDGE_BASE,
+        )
 
-        if log_analysis.likely_failure_point:
-            findings.append(f"Likely failure point: {log_analysis.likely_failure_point}")
+    def build_root_cause(self, state: WorkflowState) -> str:
+        code_evidence = self._evidence_for_source(state, EvidenceSourceType.CODE)
+        log_evidence = self._evidence_for_source(state, EvidenceSourceType.LOG)
 
-        if log_analysis.suspected_file_paths:
-            findings.append(
-                "Suspected files from logs: "
-                + ", ".join(log_analysis.suspected_file_paths)
-            )
-
-        if log_analysis.suspected_function_names:
-            findings.append(
-                "Suspected functions from logs: "
-                + ", ".join(log_analysis.suspected_function_names)
-            )
-
-        return self.unique(findings)
-
-    def build_code_findings(
-        self,
-        code_contexts: list[CodeContext],
-    ) -> list[str]:
-        findings: list[str] = []
-
-        for context in code_contexts:
-            location = context.file_path
-
-            if context.function_name:
-                location = f"{location}::{context.function_name}"
-
-            if context.line_start and context.line_end:
-                location = f"{location}:{context.line_start}-{context.line_end}"
-
-            findings.append(f"Retrieved code context from {location}.")
-
-        return self.unique(findings)
-
-    def build_knowledge_base_findings(
-        self,
-        knowledge_contexts: list[KnowledgeContext],
-    ) -> list[str]:
-        findings: list[str] = []
-
-        for context in knowledge_contexts:
-            location = context.document_name
-
-            if context.section_title:
-                location = f"{location}::{context.section_title}"
-
-            findings.append(f"Retrieved knowledge-base context from {location}.")
-
-        return self.unique(findings)
-
-    def build_hypotheses_considered(
-        self,
-        hypotheses: list[Hypothesis],
-    ) -> list[str]:
-        return [
-            (
-                f"{hypothesis.hypothesis_id}: {hypothesis.title} "
-                f"(confidence={hypothesis.confidence_score})"
-            )
-            for hypothesis in hypotheses
-        ]
-
-    def build_technical_explanation(
-        self,
-        selected_hypothesis: Hypothesis,
-        log_analysis: LogAnalysisResult,
-    ) -> str:
-        parts = [
-            selected_hypothesis.description,
-            f"Suspected root cause: {selected_hypothesis.suspected_root_cause}",
-        ]
-
-        if log_analysis.likely_failure_point:
-            parts.append(
-                f"The runtime evidence points to {log_analysis.likely_failure_point}."
-            )
-
-        return " ".join(parts)
-
-    def build_confidence_reason(
-        self,
-        selected_hypothesis: Hypothesis,
-    ) -> str:
-        if selected_hypothesis.confidence_score >= self.confidence_threshold:
+        if code_evidence and log_evidence:
             return (
-                "Confidence is high enough because the selected hypothesis is "
-                "supported by available evidence."
+                "The incident is most likely caused by the implementation behavior "
+                f"shown in {self._location(code_evidence[0])}, matching the runtime "
+                "failure observed in logs."
             )
 
-        return (
-            "Confidence is below threshold because available evidence is incomplete "
-            "or does not fully prove the root cause."
-        )
+        if code_evidence:
+            return (
+                "The incident is most likely caused by the implementation behavior "
+                f"shown in {self._location(code_evidence[0])}."
+            )
 
-    def build_immediate_fix(
-        self,
-        selected_hypothesis: Hypothesis,
-    ) -> str:
-        return (
-            "Inspect and fix the code path described by the selected hypothesis: "
-            f"{selected_hypothesis.suspected_root_cause}"
-        )
+        if log_evidence:
+            return (
+                "The incident root cause is not fully confirmed, but runtime logs "
+                "show the failing behavior that needs further investigation."
+            )
 
-    def build_long_term_prevention(self) -> str:
-        return (
-            "Add regression tests, improve error handling, and improve logging around "
-            "the failing code path."
-        )
+        return "The root cause cannot be determined from the available evidence."
 
-    def build_tests_to_add(
-        self,
-        incident: Incident,
-        selected_hypothesis: Hypothesis,
-    ) -> list[str]:
-        tests = [
-            f"Add a regression test for incident {incident.incident_id}.",
-            "Add a test covering the selected failing code path.",
+    def build_technical_explanation(self, state: WorkflowState) -> str:
+        parts: list[str] = []
+
+        for evidence in state.evidence_items:
+            parts.append(f"{evidence.evidence_id}: {self._finding_text(evidence)}")
+
+        return " ".join(parts) or "No technical evidence was available."
+
+    def evidence_ids(self, state: WorkflowState) -> list[str]:
+        return [evidence.evidence_id for evidence in state.evidence_items]
+
+    def confidence_score(self, state: WorkflowState) -> float:
+        if state.evidence_evaluation is not None:
+            return state.evidence_evaluation.confidence_score
+        return 0.0
+
+    def confidence_reason(self, state: WorkflowState) -> str:
+        if state.evidence_evaluation is None:
+            return "Evidence has not been evaluated."
+
+        return state.evidence_evaluation.reason
+
+    def open_questions(self, state: WorkflowState) -> list[str]:
+        if state.evidence_evaluation is None:
+            return ["What additional evidence is needed to confirm the root cause?"]
+
+        if state.evidence_evaluation.can_write_rca:
+            return []
+
+        return state.evidence_evaluation.missing_evidence or [
+            "What additional evidence is needed to confirm the root cause?"
         ]
 
-        if selected_hypothesis.supporting_evidence_ids:
-            tests.append(
-                "Add tests that verify behavior connected to the supporting evidence."
-            )
-
-        return tests
-
-    def build_open_questions(
-        self,
-        selected_hypothesis: Hypothesis,
-    ) -> list[str]:
-        questions = list(selected_hypothesis.open_questions)
-
-        if selected_hypothesis.confidence_score < self.confidence_threshold and not questions:
-            questions.append(
-                "What additional evidence is needed to confirm the root cause?"
-            )
-
-        return self.unique(questions)
-
-    def build_low_confidence_warning(
-        self,
-        selected_hypothesis: Hypothesis,
-    ) -> str | None:
-        if selected_hypothesis.confidence_score >= self.confidence_threshold:
+    def low_confidence_warning(self, state: WorkflowState) -> str | None:
+        confidence_score = self.confidence_score(state)
+        if confidence_score >= state.confidence_threshold:
             return None
 
         return (
-            "This RCA is low confidence because the selected hypothesis does not meet "
-            "the confidence threshold."
+            "This RCA is low confidence because collected evidence does not meet "
+            "the configured confidence threshold."
         )
+
+    def immediate_fix(self, state: WorkflowState) -> str:
+        code_evidence = self._evidence_for_source(state, EvidenceSourceType.CODE)
+        if code_evidence:
+            return f"Inspect and fix the code path at {self._location(code_evidence[0])}."
+
+        return "Collect code evidence before making a concrete fix recommendation."
+
+    def long_term_prevention(self) -> str:
+        return (
+            "Add regression tests, improve structured error handling, and improve "
+            "logging around the failing code path."
+        )
+
+    def tests_to_add(self, state: WorkflowState) -> list[str]:
+        tests = [f"Add a regression test for incident {state.incident.incident_id}."]
+
+        if self._evidence_for_source(state, EvidenceSourceType.CODE):
+            tests.append("Add a test covering the implicated implementation path.")
+
+        return tests
+
+    def _findings_for_source(
+        self,
+        evidence_items: list[EvidenceItem],
+        source_type: EvidenceSourceType,
+    ) -> list[str]:
+        return self.unique(
+            [
+                self._finding_text(evidence)
+                for evidence in evidence_items
+                if evidence.source_type == source_type
+            ]
+        )
+
+    def _evidence_for_source(
+        self,
+        state: WorkflowState,
+        source_type: EvidenceSourceType,
+    ) -> list[EvidenceItem]:
+        return [
+            evidence
+            for evidence in state.evidence_items
+            if evidence.source_type == source_type
+        ]
+
+    def _finding_text(self, evidence: EvidenceItem) -> str:
+        return f"Retrieved {evidence.source_type.value} evidence from {self._location(evidence)}."
+
+    def _location(self, evidence: EvidenceItem) -> str:
+        location = evidence.file_path or evidence.source_name
+        if evidence.line_start and evidence.line_end:
+            return f"{location}:{evidence.line_start}-{evidence.line_end}"
+        return location
 
     def unique(self, values: list[str] | object) -> list[str]:
         unique_values: list[str] = []

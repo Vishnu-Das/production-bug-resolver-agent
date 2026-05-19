@@ -1,40 +1,43 @@
 from bug_resolver.agents.base import BaseAgent
-from bug_resolver.agents.code_context_agent import CodeContextAgent, CodeContextInput
-from bug_resolver.agents.context_planning_agent import (
-    ContextPlanningAgent,
-    ContextPlanningInput,
+from bug_resolver.agents.code_investigator_agent import (
+    CodeInvestigatorAgent,
+    CodeInvestigatorInput,
 )
 from bug_resolver.agents.incident_intake_agent import IncidentIntakeAgent
-from bug_resolver.agents.knowledge_base_agent import (
-    KnowledgeBaseAgent,
-    KnowledgeBaseInput,
+from bug_resolver.agents.knowledge_base_investigator_agent import (
+    KnowledgeBaseInvestigatorAgent,
+    KnowledgeBaseInvestigatorInput,
 )
-from bug_resolver.agents.log_analysis_agent import LogAnalysisAgent
-from bug_resolver.agents.hypothesis_agent import HypothesisAgent, HypothesisInput
-from bug_resolver.agents.rca_agent import RCAAgent, RCAInput
+from bug_resolver.agents.log_investigator_agent import (
+    LogInvestigatorAgent,
+    LogInvestigatorInput,
+)
+from bug_resolver.agents.rca_writer_agent import RCAWriterAgent
 from bug_resolver.agents.evidence_evaluator_agent import EvidenceEvaluatorAgent
 from bug_resolver.agents.solution_recommendation_agent import SolutionRecommendationAgent
 from bug_resolver.agents.report_writer_agent import (
     ReportWriterAgent,
     ReportWriterInput,
 )
+from bug_resolver.agents.supervisor_agent import (
+    SupervisorAgent,
+    SupervisorRoutingOutput,
+)
 
 __all__ = [
     "BaseAgent",
-    "CodeContextAgent",
-    "CodeContextInput",
-    "ContextPlanningAgent",
-    "ContextPlanningInput",
+    "CodeInvestigatorAgent",
+    "CodeInvestigatorInput",
     "IncidentIntakeAgent",
-    "KnowledgeBaseAgent",
-    "KnowledgeBaseInput",
-    "LogAnalysisAgent",
-    "HypothesisAgent",
-    "HypothesisInput",
-    "RCAAgent",
-    "RCAInput",
+    "KnowledgeBaseInvestigatorAgent",
+    "KnowledgeBaseInvestigatorInput",
+    "LogInvestigatorAgent",
+    "LogInvestigatorInput",
+    "RCAWriterAgent",
     "EvidenceEvaluatorAgent",
     "SolutionRecommendationAgent",
     "ReportWriterAgent",
     "ReportWriterInput",
+    "SupervisorAgent",
+    "SupervisorRoutingOutput",
 ]

@@ -24,6 +24,8 @@ class AppSettings(BaseSettings):
     embedding_model: str = Field(default="text-embedding-3-small", alias="EMBEDDING_MODEL")
 
     target_repo_path: Path = Field(default=Path("sample_data/target_repos/conversational_rag"))
+    incidents_dir: Path = Field(default=Path("sample_data/incidents"))
+    logs_dir: Path = Field(default=Path("sample_data/logs"))
     reports_dir: Path = Field(default=Path("reports"))
     faiss_index_dir: Path = Field(default=Path("storage/faiss"))
     knowledge_base_dir: Path = Field(default=Path("sample_data/knowledge_base"))

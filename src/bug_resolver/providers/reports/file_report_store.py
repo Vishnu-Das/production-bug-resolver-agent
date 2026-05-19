@@ -3,14 +3,19 @@ from pathlib import Path
 
 from bug_resolver.providers.reports.base import ReportStore
 from bug_resolver.schemas.rca import RCAReport
-from bug_resolver.schemas.reports import ReportSaveResult
+from bug_resolver.schemas.solution import SolutionRecommendation
 
 
 class FileReportStore(ReportStore):
     def __init__(self, reports_dir: str | Path) -> None:
         self.reports_dir = Path(reports_dir)
 
-    def save_report(self, report: RCAReport) -> ReportSaveResult:
+    async def save_report(
+        self,
+        report: RCAReport,
+        *,
+        solution: SolutionRecommendation | None = None,
+    ) -> list[Path]:
         report_dir = self.reports_dir / "incidents" / report.incident_id
         report_dir.mkdir(parents=True, exist_ok=True)
 
@@ -20,17 +25,36 @@ class FileReportStore(ReportStore):
         self._save_json(report=report, json_path=json_path)
         self._save_markdown(report=report, markdown_path=markdown_path)
 
-        return ReportSaveResult(
-            incident_id=report.incident_id,
-            markdown_path=markdown_path,
-            json_path=json_path,
-            report_dir=report_dir,
-        )
+        if solution is not None:
+            solution_path = report_dir / "solution.json"
+            self._save_solution_json(solution=solution, json_path=solution_path)
+            return [markdown_path, json_path, solution_path]
+
+        return [markdown_path, json_path]
+
+    async def get_report(self, incident_id: str) -> RCAReport | None:
+        json_path = self.reports_dir / "incidents" / incident_id / "rca.json"
+        if not json_path.exists():
+            return None
+        return RCAReport.model_validate_json(json_path.read_text(encoding="utf-8"))
 
     def _save_json(self, report: RCAReport, json_path: Path) -> None:
         json_path.write_text(
             json.dumps(
                 report.model_dump(mode="json"),
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    def _save_solution_json(
+        self,
+        solution: SolutionRecommendation,
+        json_path: Path,
+    ) -> None:
+        json_path.write_text(
+            json.dumps(
+                solution.model_dump(mode="json"),
                 indent=2,
             ),
             encoding="utf-8",

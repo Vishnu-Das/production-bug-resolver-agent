@@ -16,12 +16,24 @@ def new_incident_id(prefix: str = "INC") -> str:
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
 
-def new_context_plan_id(prefix: str = "CTX") -> str:
+def new_agent_decision_id(prefix: str = "DEC") -> str:
     """
-    Generate a readable context plan id.
+    Generate a readable supervisor decision id.
 
     Example:
-        CTX-20260518-8F3A91C2
+        DEC-20260518-8F3A91C2
+    """
+
+    date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
+    random_part = uuid4().hex[:8].upper()
+    return f"{prefix}-{date_part}-{random_part}"
+
+def new_agent_execution_id(prefix: str = "RUN") -> str:
+    """
+    Generate a readable agent execution id.
+
+    Example:
+        RUN-20260518-8F3A91C2
     """
 
     date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
@@ -58,6 +70,18 @@ def new_evaluation_id(prefix: str = "EVAL") -> str:
 
     Example:
         EVAL-20260518-8F3A91C2
+    """
+
+    date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
+    random_part = uuid4().hex[:8].upper()
+    return f"{prefix}-{date_part}-{random_part}"
+
+def new_guardrail_id(prefix: str = "GRD") -> str:
+    """
+    Generate a readable guardrail decision id.
+
+    Example:
+        GRD-20260518-8F3A91C2
     """
 
     date_part = datetime.now(timezone.utc).strftime("%Y%m%d")

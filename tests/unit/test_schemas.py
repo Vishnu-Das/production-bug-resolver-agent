@@ -4,19 +4,26 @@ import pytest
 from pydantic import ValidationError
 
 from bug_resolver.schemas import (
+    AgentDecision,
+    AgentExecutionRecord,
+    AgentName,
+    AgentRunStatus,
     CodeContext,
-    ContextPlan,
     EvidenceItem,
     EvidenceSourceType,
+    GuardrailDecision,
     Hypothesis,
     Incident,
     IncidentSeverity,
+    InvestigationStatus,
+    InvestigationStep,
     KnowledgeContext,
     LogAnalysisResult,
     LogEntry,
     LogLevel,
     RCAReport,
     SolutionRecommendation,
+    ToolCallResult,
     WorkflowState,
 )
 
@@ -136,18 +143,6 @@ def test_log_analysis_result_schema() -> None:
     assert result.evidence_items[0].evidence_id == "ev-log-1"
 
 
-def test_context_plan_schema() -> None:
-    plan = ContextPlan(
-        plan_id="plan-1",
-        code_search_queries=["KeyError output get_openai_response"],
-        knowledge_search_queries=["response output format"],
-        files_to_prioritize=["src/client.py"],
-    )
-
-    assert plan.code_search_queries
-    assert plan.files_to_prioritize == ["src/client.py"]
-
-
 def test_hypothesis_requires_valid_confidence() -> None:
     with pytest.raises(ValidationError):
         Hypothesis(
@@ -219,18 +214,18 @@ def test_workflow_state_retry_helpers() -> None:
         title="Bug",
         description="Something failed",
     )
-    state = WorkflowState(incident=incident, max_retries=2)
+    state = WorkflowState(incident=incident, max_replans=2)
 
-    assert state.can_retry() is True
+    assert state.can_replan() is True
 
-    state.increment_retry()
-    state.increment_retry()
+    state.increment_replan()
+    state.increment_replan()
 
-    assert state.retry_count == 2
-    assert state.can_retry() is False
+    assert state.replan_count == 2
+    assert state.can_replan() is False
 
     with pytest.raises(ValueError):
-        state.increment_retry()
+        state.increment_replan()
 
 
 def test_workflow_state_accepts_report_path() -> None:
@@ -245,3 +240,196 @@ def test_workflow_state_accepts_report_path() -> None:
     )
 
     assert state.final_report_path == Path("reports/incidents/INC-001/rca.md")
+
+
+def test_agent_decision_rejects_invalid_agent_name() -> None:
+    with pytest.raises(ValidationError):
+        AgentDecision(
+            decision_id="decision-1",
+            next_agent="not_registered",
+            reason="Invalid route",
+        )
+
+
+def test_agent_decision_finish_must_stop_workflow() -> None:
+    with pytest.raises(ValidationError):
+        AgentDecision(
+            decision_id="decision-1",
+            next_agent=AgentName.FINISH,
+            reason="Investigation is complete.",
+            should_continue=True,
+        )
+
+
+def test_guardrail_decision_requires_fallback_or_rule_when_blocked() -> None:
+    with pytest.raises(ValidationError):
+        GuardrailDecision(
+            guardrail_id="guardrail-1",
+            allowed=False,
+            reason="RCA writer is blocked.",
+        )
+
+
+def test_workflow_state_records_dynamic_investigation_trace() -> None:
+    incident = Incident(
+        incident_id="INC-001",
+        title="Bug",
+        description="Something failed",
+    )
+    state = WorkflowState(incident=incident)
+
+    decision = AgentDecision(
+        decision_id="decision-1",
+        next_agent=AgentName.LOG_INVESTIGATOR,
+        reason="Runtime evidence is missing.",
+        queries=["INC-001 logs"],
+        expected_evidence=["exception type"],
+    )
+    guardrail = GuardrailDecision(
+        guardrail_id="guardrail-1",
+        allowed=True,
+        reason="Log investigation is allowed.",
+    )
+    execution = AgentExecutionRecord(
+        execution_id="execution-1",
+        agent_name=AgentName.LOG_INVESTIGATOR,
+        status=AgentRunStatus.SUCCEEDED,
+        decision_id="decision-1",
+        evidence_ids=["ev-log-1"],
+    )
+    step = InvestigationStep(
+        step_number=state.trace.next_step_number(),
+        agent_name=AgentName.LOG_INVESTIGATOR,
+        run_status=AgentRunStatus.SUCCEEDED,
+        decision_id="decision-1",
+        guardrail_id="guardrail-1",
+        execution_id="execution-1",
+        evidence_ids=["ev-log-1"],
+    )
+
+    state.record_decision(decision)
+    state.record_guardrail_decision(guardrail)
+    state.record_agent_execution(execution)
+    state.add_investigation_step(step)
+
+    assert state.current_decision == decision
+    assert state.trace.decisions == [decision]
+    assert state.trace.guardrail_decisions == [guardrail]
+    assert state.trace.agent_executions == [execution]
+    assert state.trace.steps == [step]
+    assert state.agent_invocation_counts[AgentName.LOG_INVESTIGATOR] == 1
+
+
+def test_workflow_state_enforces_max_steps() -> None:
+    incident = Incident(
+        incident_id="INC-001",
+        title="Bug",
+        description="Something failed",
+    )
+    state = WorkflowState(incident=incident, max_steps=1)
+
+    state.add_investigation_step(
+        InvestigationStep(
+            step_number=1,
+            agent_name=AgentName.LOG_INVESTIGATOR,
+        )
+    )
+
+    with pytest.raises(ValueError):
+        state.add_investigation_step(
+            InvestigationStep(
+                step_number=2,
+                agent_name=AgentName.CODE_INVESTIGATOR,
+            )
+        )
+
+    assert state.investigation_status == InvestigationStatus.MAX_STEPS_REACHED
+
+
+def test_failed_tool_call_result_requires_error() -> None:
+    with pytest.raises(ValidationError):
+        ToolCallResult(
+            tool_call_id="tool-1",
+            tool_name="search_logs",
+            succeeded=False,
+        )
+
+
+def test_failed_agent_execution_requires_error() -> None:
+    with pytest.raises(ValidationError):
+        AgentExecutionRecord(
+            execution_id="execution-1",
+            agent_name=AgentName.CODE_INVESTIGATOR,
+            status=AgentRunStatus.FAILED,
+        )
+
+
+def test_workflow_state_tracks_evidence_threshold() -> None:
+    incident = Incident(
+        incident_id="INC-001",
+        title="Bug",
+        description="Something failed",
+    )
+    state = WorkflowState(incident=incident, minimum_evidence_count_before_rca=2)
+
+    assert state.has_minimum_evidence_for_rca() is False
+
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-log-1",
+            source_type=EvidenceSourceType.LOG,
+            source_name="app.log",
+            content="TypeError in router",
+        )
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-code-1",
+            source_type=EvidenceSourceType.CODE,
+            source_name="router.py",
+            content="Router expects a dict response.",
+            file_path="src/router.py",
+            line_start=12,
+            line_end=20,
+        )
+    )
+
+    assert state.has_minimum_evidence_for_rca() is True
+
+
+def test_workflow_state_marks_low_confidence() -> None:
+    incident = Incident(
+        incident_id="INC-001",
+        title="Bug",
+        description="Something failed",
+    )
+    state = WorkflowState(incident=incident)
+
+    state.mark_low_confidence()
+
+    assert state.low_confidence is True
+    assert state.investigation_status == InvestigationStatus.LOW_CONFIDENCE
+
+
+def test_workflow_state_enforces_agent_invocation_limit() -> None:
+    incident = Incident(
+        incident_id="INC-001",
+        title="Bug",
+        description="Something failed",
+    )
+    state = WorkflowState(
+        incident=incident,
+        max_agent_invocations_per_agent=1,
+    )
+
+    assert state.can_invoke_agent(AgentName.LOG_INVESTIGATOR) is True
+
+    state.record_agent_execution(
+        AgentExecutionRecord(
+            execution_id="execution-1",
+            agent_name=AgentName.LOG_INVESTIGATOR,
+            status=AgentRunStatus.SUCCEEDED,
+        )
+    )
+
+    assert state.can_invoke_agent(AgentName.LOG_INVESTIGATOR) is False

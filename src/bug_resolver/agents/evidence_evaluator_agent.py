@@ -2,19 +2,13 @@ from __future__ import annotations
 
 from bug_resolver.agents.base import BaseAgent
 from bug_resolver.rules.evidence_evaluation_rules import EvidenceEvaluationRules
-from bug_resolver.schemas import EvidenceEvaluationResult, RCAReport
+from bug_resolver.schemas import EvidenceEvaluationResult, WorkflowState
 from bug_resolver.utils.ids import new_evaluation_id
 
 
-class EvidenceEvaluatorAgent(BaseAgent[RCAReport, EvidenceEvaluationResult]):
+class EvidenceEvaluatorAgent(BaseAgent[WorkflowState, EvidenceEvaluationResult]):
     """
-    Coordinates RCA evidence evaluation.
-
-    Current version is deterministic:
-    - checks confidence threshold
-    - checks required evidence sections
-    - decides whether retry is required
-    - generates improved retrieval queries
+    Evaluates collected investigation evidence before RCA writing.
     """
 
     name = "evidence_evaluator_agent"
@@ -22,14 +16,17 @@ class EvidenceEvaluatorAgent(BaseAgent[RCAReport, EvidenceEvaluationResult]):
     def __init__(self, rules: EvidenceEvaluationRules | None = None) -> None:
         self._rules = rules or EvidenceEvaluationRules()
 
-    async def _run(self, input_data: RCAReport) -> EvidenceEvaluationResult:
-        retry_required = self._rules.retry_required(input_data)
+    async def _run(self, input_data: WorkflowState) -> EvidenceEvaluationResult:
+        confidence_score = self._rules.confidence_score(input_data)
+        can_write_rca = self._rules.can_write_rca(input_data, confidence_score)
+        retry_required = self._rules.retry_required(input_data, can_write_rca)
 
         return EvidenceEvaluationResult(
             evaluation_id=new_evaluation_id(),
-            incident_id=input_data.incident_id,
-            confidence_score=input_data.confidence_score,
+            incident_id=input_data.incident.incident_id,
+            confidence_score=confidence_score,
             retry_required=retry_required,
+            can_write_rca=can_write_rca,
             missing_evidence=self._rules.missing_evidence(input_data),
             conflicting_evidence=self._rules.conflicting_evidence(input_data),
             improved_code_queries=(
@@ -43,7 +40,7 @@ class EvidenceEvaluatorAgent(BaseAgent[RCAReport, EvidenceEvaluationResult]):
                 else []
             ),
             reason=self._rules.reason(
-                rca_report=input_data,
+                can_write_rca=can_write_rca,
                 retry_required=retry_required,
             ),
         )

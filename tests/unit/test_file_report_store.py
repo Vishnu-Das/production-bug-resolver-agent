@@ -4,7 +4,11 @@ from bug_resolver.providers.reports.file_report_store import FileReportStore
 from bug_resolver.schemas.rca import RCAReport
 
 
-def test_file_report_store_saves_markdown_and_json(tmp_path):
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_file_report_store_saves_markdown_and_json(tmp_path):
     report = RCAReport(
         report_id="RCA-001",
         incident_id="INC-001",
@@ -53,19 +57,17 @@ def test_file_report_store_saves_markdown_and_json(tmp_path):
 
     store = FileReportStore(reports_dir=tmp_path)
 
-    result = store.save_report(report)
+    result = await store.save_report(report)
 
-    assert result.incident_id == "INC-001"
-    assert result.report_dir.exists()
-    assert result.json_path.exists()
-    assert result.markdown_path.exists()
+    markdown_path = tmp_path / "incidents" / "INC-001" / "rca.md"
+    json_path = tmp_path / "incidents" / "INC-001" / "rca.json"
 
-    assert result.report_dir == tmp_path / "incidents" / "INC-001"
-    assert result.json_path == tmp_path / "incidents" / "INC-001" / "rca.json"
-    assert result.markdown_path == tmp_path / "incidents" / "INC-001" / "rca.md"
+    assert result == [markdown_path, json_path]
+    assert json_path.exists()
+    assert markdown_path.exists()
 
-    saved_json = json.loads(result.json_path.read_text(encoding="utf-8"))
-    saved_markdown = result.markdown_path.read_text(encoding="utf-8")
+    saved_json = json.loads(json_path.read_text(encoding="utf-8"))
+    saved_markdown = markdown_path.read_text(encoding="utf-8")
 
     assert saved_json["report_id"] == "RCA-001"
     assert saved_json["incident_id"] == "INC-001"
@@ -84,7 +86,8 @@ def test_file_report_store_saves_markdown_and_json(tmp_path):
     assert "- environment: local-test" in saved_markdown
 
 
-def test_file_report_store_renders_none_for_empty_sections(tmp_path):
+@pytest.mark.asyncio
+async def test_file_report_store_renders_none_for_empty_sections(tmp_path):
     report = RCAReport(
         report_id="RCA-002",
         incident_id="INC-002",
@@ -98,9 +101,9 @@ def test_file_report_store_renders_none_for_empty_sections(tmp_path):
 
     store = FileReportStore(reports_dir=tmp_path)
 
-    result = store.save_report(report)
+    result = await store.save_report(report)
 
-    saved_markdown = result.markdown_path.read_text(encoding="utf-8")
+    saved_markdown = result[0].read_text(encoding="utf-8")
 
     assert "## Symptoms" in saved_markdown
     assert "- None" in saved_markdown
@@ -110,7 +113,8 @@ def test_file_report_store_renders_none_for_empty_sections(tmp_path):
     assert "None" in saved_markdown
 
 
-def test_file_report_store_can_overwrite_existing_report(tmp_path):
+@pytest.mark.asyncio
+async def test_file_report_store_can_overwrite_existing_report(tmp_path):
     first_report = RCAReport(
         report_id="RCA-003",
         incident_id="INC-003",
@@ -135,14 +139,13 @@ def test_file_report_store_can_overwrite_existing_report(tmp_path):
 
     store = FileReportStore(reports_dir=tmp_path)
 
-    first_result = store.save_report(first_report)
-    second_result = store.save_report(second_report)
+    first_result = await store.save_report(first_report)
+    second_result = await store.save_report(second_report)
 
-    assert first_result.json_path == second_result.json_path
-    assert first_result.markdown_path == second_result.markdown_path
+    assert first_result == second_result
 
-    saved_json = json.loads(second_result.json_path.read_text(encoding="utf-8"))
-    saved_markdown = second_result.markdown_path.read_text(encoding="utf-8")
+    saved_json = json.loads(second_result[1].read_text(encoding="utf-8"))
+    saved_markdown = second_result[0].read_text(encoding="utf-8")
 
     assert saved_json["title"] == "Updated RCA"
     assert saved_json["root_cause"] == "Updated root cause."

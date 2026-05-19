@@ -1,113 +1,135 @@
 from __future__ import annotations
 
-from bug_resolver.schemas import RCAReport
+from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 
 
 class EvidenceEvaluationRules:
     """
-    Deterministic rules for deciding whether an RCA is sufficiently supported.
+    Deterministic rules for deciding whether collected evidence is enough for RCA.
 
-    The agent coordinates.
-    These rules decide retry need, missing evidence, and improved retrieval hints.
+    These rules evaluate the live investigation state before RCA writing. They do
+    not inspect or generate an RCA report.
     """
 
-    confidence_threshold = 0.75
+    def confidence_score(self, state: WorkflowState) -> float:
+        source_types = self._source_types(state.evidence_items)
+        if not source_types:
+            return 0.0
 
-    def retry_required(self, rca_report: RCAReport) -> bool:
-        if rca_report.confidence_score < self.confidence_threshold:
-            return True
+        score = 0.25
 
-        if rca_report.low_confidence_warning:
-            return True
+        if EvidenceSourceType.LOG in source_types:
+            score += 0.25
 
-        if not rca_report.evidence_ids:
-            return True
+        if EvidenceSourceType.CODE in source_types:
+            score += 0.30
 
-        if self.missing_evidence(rca_report):
-            return True
+        if EvidenceSourceType.KNOWLEDGE_BASE in source_types:
+            score += 0.15
 
-        return False
+        extra_evidence_count = max(
+            0,
+            len(state.evidence_items) - state.minimum_evidence_count_before_rca,
+        )
+        score += min(0.05, extra_evidence_count * 0.02)
 
-    def missing_evidence(self, rca_report: RCAReport) -> list[str]:
+        return round(min(score, 1.0), 2)
+
+    def can_write_rca(self, state: WorkflowState, confidence_score: float) -> bool:
+        if len(state.evidence_items) < state.minimum_evidence_count_before_rca:
+            return False
+
+        source_types = self._source_types(state.evidence_items)
+        has_primary_evidence = (
+            EvidenceSourceType.LOG in source_types
+            or EvidenceSourceType.CODE in source_types
+        )
+        if not has_primary_evidence:
+            return False
+
+        return confidence_score >= state.confidence_threshold
+
+    def retry_required(self, state: WorkflowState, can_write_rca: bool) -> bool:
+        return not can_write_rca and state.can_replan()
+
+    def missing_evidence(self, state: WorkflowState) -> list[str]:
         missing: list[str] = []
+        source_types = self._source_types(state.evidence_items)
 
-        if not rca_report.evidence_ids:
-            missing.append("RCA has no supporting evidence IDs.")
+        if not state.evidence_items:
+            missing.append("No evidence has been collected yet.")
 
-        if not rca_report.log_findings:
-            missing.append("RCA has no log findings.")
+        if len(state.evidence_items) < state.minimum_evidence_count_before_rca:
+            missing.append(
+                "Minimum evidence count has not been met before RCA writing."
+            )
 
-        if not rca_report.code_findings:
-            missing.append("RCA has no code findings.")
+        if EvidenceSourceType.LOG not in source_types:
+            missing.append("Runtime log evidence is missing.")
 
-        if not rca_report.knowledge_base_findings:
-            missing.append("RCA has no knowledge-base findings.")
+        if EvidenceSourceType.CODE not in source_types:
+            missing.append("Implementation code evidence is missing.")
 
-        if not rca_report.selected_hypothesis_id:
-            missing.append("RCA has no selected hypothesis.")
+        if (
+            EvidenceSourceType.KNOWLEDGE_BASE not in source_types
+            and EvidenceSourceType.CODE not in source_types
+        ):
+            missing.append(
+                "Design or knowledge-base evidence may be needed to clarify expected behavior."
+            )
 
-        if rca_report.confidence_score < self.confidence_threshold:
-            missing.append("RCA confidence is below threshold.")
-
-        if rca_report.open_questions:
-            missing.append("RCA still has open questions.")
+        if not state.can_replan() and missing:
+            missing.append("Maximum replans have been reached.")
 
         return self.unique(missing)
 
-    def conflicting_evidence(self, rca_report: RCAReport) -> list[str]:
+    def conflicting_evidence(self, state: WorkflowState) -> list[str]:
         # Deterministic MVP version does not detect conflicts yet.
-        # Later, LLM/structured evidence comparison can populate this.
         return []
 
-    def improved_code_queries(self, rca_report: RCAReport) -> list[str]:
-        queries: list[str] = []
+    def improved_code_queries(self, state: WorkflowState) -> list[str]:
+        if EvidenceSourceType.CODE in self._source_types(state.evidence_items):
+            return []
 
-        if rca_report.root_cause:
-            queries.append(rca_report.root_cause)
+        queries = [
+            state.incident.title,
+            state.incident.description,
+        ]
 
-        if rca_report.technical_explanation:
-            queries.append(rca_report.technical_explanation)
-
-        queries.extend(rca_report.symptoms)
-
-        for question in rca_report.open_questions:
-            if "source file" in question.lower() or "code" in question.lower():
-                queries.append(question)
-
-        if not rca_report.code_findings:
-            queries.append("Find implementation code path related to the RCA root cause.")
+        for evidence in state.evidence_items:
+            if evidence.source_type == EvidenceSourceType.LOG:
+                queries.append(evidence.content)
 
         return self.unique(queries)
 
-    def improved_knowledge_queries(self, rca_report: RCAReport) -> list[str]:
-        queries: list[str] = []
+    def improved_knowledge_queries(self, state: WorkflowState) -> list[str]:
+        if EvidenceSourceType.KNOWLEDGE_BASE in self._source_types(state.evidence_items):
+            return []
 
-        queries.extend(rca_report.symptoms)
+        queries = [
+            f"{state.incident.title} expected behavior",
+            f"{state.incident.title} design documentation",
+        ]
 
-        for question in rca_report.open_questions:
-            if (
-                "expected behavior" in question.lower()
-                or "documentation" in question.lower()
-                or "knowledge" in question.lower()
-            ):
-                queries.append(question)
-
-        if not rca_report.knowledge_base_findings:
-            queries.append("Find expected behavior or design documentation for this incident.")
+        if state.incident.affected_service:
+            queries.append(f"{state.incident.affected_service} architecture")
 
         return self.unique(queries)
 
-    def reason(self, rca_report: RCAReport, retry_required: bool) -> str:
+    def reason(self, can_write_rca: bool, retry_required: bool) -> str:
+        if can_write_rca:
+            return "Evidence is sufficient to proceed to RCA writing."
+
         if retry_required:
-            return (
-                "Retry is required because the RCA is not sufficiently supported by "
-                "the available evidence."
-            )
+            return "Evidence is incomplete; supervisor should replan for more evidence."
 
         return (
-            "Retry is not required because the RCA confidence meets the threshold "
-            "and required evidence is present."
+            "Evidence is incomplete, but replanning is no longer available under "
+            "the configured limits."
         )
+
+    def _source_types(self, evidence_items: list[EvidenceItem]) -> set[EvidenceSourceType]:
+        return {evidence.source_type for evidence in evidence_items}
 
     def unique(self, values: list[str] | object) -> list[str]:
         unique_values: list[str] = []

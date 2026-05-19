@@ -5,7 +5,7 @@ class RCAPromptBuilder:
     """
     Placeholder prompt builder for future LLM-based RCA generation.
 
-    Current RCAAgent is deterministic.
+    Current RCAWriterAgent is deterministic.
     Later, this builder can create prompts for structured RCAReport output.
     """
 

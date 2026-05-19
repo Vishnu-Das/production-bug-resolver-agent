@@ -1,0 +1,22 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "error",
+    "message": "LLM router returned an invalid retrieval strategy and fallback routing was used.",
+    "service_name": "conversational_rag",
+    "environment": "local-sample",
+    "request_id": "req-inc-001",
+    "trace_id": "trace-router-001",
+    "raw": "2026-05-19T10:45:12Z ERROR conversational_rag request_id=req-inc-001 trace_id=trace-router-001 LLM router failed. Fallback used. Error: Invalid strategy: summary. Fallback reason: summary queries should use parent_child retrieval.\nTraceback (most recent call last):\n  File \"src/rag/service.py\", line 55, in resolve_retrieval_strategy\n    router_result = router.route(query=user_input, selected_document=selected_document)\n  File \"src/rag/routing/llm.py\", line 82, in route\n    raise ValueError(f\"Invalid strategy: {result.strategy}\")\nValueError: Invalid strategy: summary"
+  },
+  {
+    "log_id": "log-002",
+    "level": "warning",
+    "message": "Router fallback changed router_type to llm_fallback for a broad document summary query.",
+    "service_name": "conversational_rag",
+    "environment": "local-sample",
+    "request_id": "req-inc-001",
+    "trace_id": "trace-router-001",
+    "raw": "2026-05-19T10:45:12Z WARNING conversational_rag request_id=req-inc-001 trace_id=trace-router-001 router_type=llm_fallback query=\"summarize this document\" selected_document=\"transformer_notes.pdf\" resolved_strategy=parent_child"
+  }
+]

@@ -64,13 +64,3 @@ class HypothesisStatus(StrEnum):
     REJECTED = "rejected"
 
 
-class WorkflowStatus(StrEnum):
-    CREATED = "created"
-    LOGS_ANALYZED = "logs_analyzed"
-    CONTEXT_PLANNED = "context_planned"
-    CONTEXT_RETRIEVED = "context_retrieved"
-    HYPOTHESES_GENERATED = "hypotheses_generated"
-    RCA_GENERATED = "rca_generated"
-    SOLUTION_RECOMMENDED = "solution_recommended"
-    REPORT_SAVED = "report_saved"
-    FAILED = "failed"

@@ -11,6 +11,7 @@ class EvidenceEvaluationResult(StrictBaseModel):
 
     confidence_score: ConfidenceScore
     retry_required: bool = False
+    can_write_rca: bool = False
 
     missing_evidence: list[str] = Field(default_factory=list)
     conflicting_evidence: list[str] = Field(default_factory=list)

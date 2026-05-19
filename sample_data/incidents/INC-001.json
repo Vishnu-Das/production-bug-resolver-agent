@@ -1,0 +1,15 @@
+{
+  "incident_id": "INC-001",
+  "title": "LLM router falls back during summary questions",
+  "description": "Users report that broad summary questions in auto retrieval mode intermittently use the fallback router instead of the LLM router, reducing retrieval quality and making answers less relevant.",
+  "severity": "high",
+  "status": "new",
+  "affected_service": "conversational_rag",
+  "affected_area": "automatic retrieval routing",
+  "reporter": "sample-production-monitor",
+  "metadata": {
+    "environment": "local-sample",
+    "entrypoint": "src/rag/service.py::resolve_retrieval_strategy",
+    "suspected_component": "src/rag/routing/llm.py::LLMRouterStrategy.route"
+  }
+}
