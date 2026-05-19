@@ -1,3 +1,5 @@
+"""Deterministic RCA construction rules used as writer fallback."""
+
 from __future__ import annotations
 
 from pathlib import PureWindowsPath
@@ -199,7 +201,7 @@ class RCARules:
 
         if self._has_selected_document_mismatch(state.evidence_items):
             return (
-                "Runtime logs show `selected_document=\"Transformer Notes.pdf\"` while "
+                'Runtime logs show `selected_document="Transformer Notes.pdf"` while '
                 "available metadata contains `transformer_notes.pdf`, followed by "
                 "`retrieved_docs_count=0`. The parent-child retrieval path filters "
                 "sources by normalized filename, so filename casing, spacing, or "
@@ -413,9 +415,7 @@ class RCARules:
         source_type: EvidenceSourceType,
     ) -> list[EvidenceItem]:
         return [
-            evidence
-            for evidence in state.evidence_items
-            if evidence.source_type == source_type
+            evidence for evidence in state.evidence_items if evidence.source_type == source_type
         ]
 
     def _finding_text(self, evidence: EvidenceItem) -> str:
@@ -604,10 +604,7 @@ class RCARules:
         evidence_items: list[EvidenceItem],
     ) -> bool:
         combined_text = self._combined_text(evidence_items).lower()
-        return (
-            "duplicate upload" in combined_text
-            and "stale document content" in combined_text
-        )
+        return "duplicate upload" in combined_text and "stale document content" in combined_text
 
     def _has_parent_child_signal(self, evidence_items: list[EvidenceItem]) -> bool:
         combined_text = self._combined_text(evidence_items).lower()
@@ -615,10 +612,7 @@ class RCARules:
 
     def _has_log_and_code_evidence(self, evidence_items: list[EvidenceItem]) -> bool:
         source_types = {evidence.source_type for evidence in evidence_items}
-        return (
-            EvidenceSourceType.LOG in source_types
-            and EvidenceSourceType.CODE in source_types
-        )
+        return EvidenceSourceType.LOG in source_types and EvidenceSourceType.CODE in source_types
 
     def _locations_matching(
         self,

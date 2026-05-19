@@ -1,3 +1,5 @@
+"""Tests for CLI commands and settings-driven workflow execution."""
+
 from pathlib import Path
 
 from typer.testing import CliRunner

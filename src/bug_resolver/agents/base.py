@@ -1,3 +1,5 @@
+"""Define the common template contract shared by all workflow agents."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

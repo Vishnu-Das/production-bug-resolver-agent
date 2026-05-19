@@ -1,3 +1,5 @@
+"""Tests for the local FAISS vector store wrapper."""
+
 import pytest
 
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore

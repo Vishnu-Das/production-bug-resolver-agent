@@ -1,3 +1,5 @@
+"""Mutable investigation state passed through the dynamic workflow."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,6 +39,8 @@ def _default_allowed_agent_names() -> list[AgentName]:
 
 
 class WorkflowState(StrictBaseModel):
+    """Investigation state shared across supervisor, guardrails, and agents."""
+
     incident: Incident
 
     investigation_status: InvestigationStatus = InvestigationStatus.CREATED

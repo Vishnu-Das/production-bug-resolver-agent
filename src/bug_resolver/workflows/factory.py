@@ -1,3 +1,5 @@
+"""Factory for wiring CLI settings into the dynamic investigation workflow."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,6 +37,7 @@ from bug_resolver.workflows.dynamic_bug_resolution_workflow import (
 
 
 async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionWorkflow:
+    """Build the fully wired dynamic workflow for CLI investigations."""
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is required to run investigations.")
 

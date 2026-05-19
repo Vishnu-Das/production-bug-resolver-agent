@@ -1,3 +1,5 @@
+"""Schema for evidence items passed between specialist agents and writers."""
+
 from __future__ import annotations
 
 from pydantic import Field, model_validator
@@ -10,6 +12,8 @@ from bug_resolver.schemas.common import (
 
 
 class EvidenceItem(StrictBaseModel):
+    """Normalized evidence record collected during an investigation."""
+
     evidence_id: str = Field(..., min_length=1)
 
     source_type: EvidenceSourceType

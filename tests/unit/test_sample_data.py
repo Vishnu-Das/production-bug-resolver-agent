@@ -1,3 +1,5 @@
+"""Tests that bundled sample incidents, logs, and knowledge base remain usable."""
+
 from pathlib import Path
 
 import pytest
@@ -44,15 +46,9 @@ async def test_sample_knowledge_base_covers_new_incident_themes() -> None:
         limit=3,
     )
 
-    assert any(
-        context.document_name == "retrieval-strategies.md"
-        for context in retrieval_context
-    )
+    assert any(context.document_name == "retrieval-strategies.md" for context in retrieval_context)
     assert any(
         context.document_name == "selected-document-routing.md"
         for context in selected_document_context
     )
-    assert any(
-        context.document_name == "upload-ingestion.md"
-        for context in upload_context
-    )
+    assert any(context.document_name == "upload-ingestion.md" for context in upload_context)

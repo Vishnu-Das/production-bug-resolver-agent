@@ -1,3 +1,5 @@
+"""Typer CLI entrypoint for running analyze-only bug investigations."""
+
 import asyncio
 
 import typer
@@ -65,25 +67,18 @@ def _print_trace(state) -> None:
         return
 
     guardrails_by_id = {
-        guardrail.guardrail_id: guardrail
-        for guardrail in state.trace.guardrail_decisions
+        guardrail.guardrail_id: guardrail for guardrail in state.trace.guardrail_decisions
     }
 
     console.print("[bold]Trace:[/bold]")
     for step in state.trace.steps:
         detail_parts = [f"{step.step_number}. {step.agent_name.value}", step.run_status.value]
         if step.evidence_ids:
-            detail_parts.append(
-                f"evidence_count={len(step.evidence_ids)}"
-            )
-            detail_parts.append(
-                f"evidence={_compact_evidence_ids(step.evidence_ids)}"
-            )
+            detail_parts.append(f"evidence_count={len(step.evidence_ids)}")
+            detail_parts.append(f"evidence={_compact_evidence_ids(step.evidence_ids)}")
 
         guardrail = (
-            guardrails_by_id.get(step.guardrail_id)
-            if step.guardrail_id is not None
-            else None
+            guardrails_by_id.get(step.guardrail_id) if step.guardrail_id is not None else None
         )
         if guardrail is not None and not guardrail.allowed:
             rules = ",".join(guardrail.violated_rules)

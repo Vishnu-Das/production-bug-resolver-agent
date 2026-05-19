@@ -1,3 +1,5 @@
+"""Tests for line-aware source chunking behavior."""
+
 import pytest
 
 from bug_resolver.retrieval.code_chunker import SimpleCodeChunker

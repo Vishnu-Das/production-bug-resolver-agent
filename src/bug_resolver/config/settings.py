@@ -1,3 +1,5 @@
+"""Application settings loaded from environment variables and local defaults."""
+
 from pathlib import Path
 
 from pydantic import Field
@@ -35,4 +37,5 @@ class AppSettings(BaseSettings):
 
 
 def get_settings() -> AppSettings:
+    """Load application settings from environment variables."""
     return AppSettings()

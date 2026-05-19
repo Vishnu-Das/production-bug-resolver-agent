@@ -1,3 +1,5 @@
+"""Evidence evaluator agent that decides whether the investigation has enough signal."""
+
 from __future__ import annotations
 
 from bug_resolver.agents.base import BaseAgent
@@ -30,14 +32,10 @@ class EvidenceEvaluatorAgent(BaseAgent[WorkflowState, EvidenceEvaluationResult])
             missing_evidence=self._rules.missing_evidence(input_data),
             conflicting_evidence=self._rules.conflicting_evidence(input_data),
             improved_code_queries=(
-                self._rules.improved_code_queries(input_data)
-                if retry_required
-                else []
+                self._rules.improved_code_queries(input_data) if retry_required else []
             ),
             improved_knowledge_queries=(
-                self._rules.improved_knowledge_queries(input_data)
-                if retry_required
-                else []
+                self._rules.improved_knowledge_queries(input_data) if retry_required else []
             ),
             reason=self._rules.reason(
                 can_write_rca=can_write_rca,

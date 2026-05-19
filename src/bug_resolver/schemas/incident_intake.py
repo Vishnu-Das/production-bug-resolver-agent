@@ -1,3 +1,5 @@
+"""Schema for free-form incident intake requests."""
+
 from __future__ import annotations
 
 from pydantic import Field, field_validator

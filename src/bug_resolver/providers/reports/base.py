@@ -1,3 +1,5 @@
+"""Report store protocol for persisting investigation artifacts."""
+
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 

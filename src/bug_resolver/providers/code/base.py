@@ -1,3 +1,5 @@
+"""Code context provider protocol for retrieving source evidence."""
+
 from typing import Protocol, runtime_checkable
 
 from bug_resolver.schemas import CodeContext

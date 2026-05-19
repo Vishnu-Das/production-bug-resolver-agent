@@ -1,9 +1,13 @@
+"""OpenAI-backed embedding client for indexing and retrieval."""
+
 from openai import AsyncOpenAI
 
 from bug_resolver.embeddings.base import EmbeddingClient
 
 
 class OpenAIEmbeddingClient(EmbeddingClient):
+    """Embedding client adapter around the OpenAI embeddings API."""
+
     def __init__(
         self,
         api_key: str,

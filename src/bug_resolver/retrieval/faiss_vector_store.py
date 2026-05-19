@@ -1,3 +1,5 @@
+"""Small FAISS vector store wrapper used by semantic retrieval providers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,12 +13,16 @@ from bug_resolver.schemas.common import StrictBaseModel
 
 
 class VectorSearchResult(StrictBaseModel):
+    """Search hit returned from the local FAISS vector store."""
+
     item_id: str = Field(..., min_length=1)
     score: float
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class FAISSVectorStore:
+    """Minimal inner-product FAISS store with JSON metadata persistence."""
+
     def __init__(self, dimension: int) -> None:
         if dimension <= 0:
             raise ValueError("dimension must be greater than 0")
@@ -122,8 +128,7 @@ class FAISSVectorStore:
 
         if vector_array.shape[1] != self.dimension:
             raise ValueError(
-                f"Expected vectors with dimension {self.dimension}, "
-                f"got {vector_array.shape[1]}"
+                f"Expected vectors with dimension {self.dimension}, got {vector_array.shape[1]}"
             )
 
         faiss.normalize_L2(vector_array)

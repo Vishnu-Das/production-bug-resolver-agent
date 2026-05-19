@@ -1,3 +1,5 @@
+"""File-backed log provider for local sample and CLI investigations."""
+
 import asyncio
 import json
 from pathlib import Path

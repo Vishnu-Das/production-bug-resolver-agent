@@ -1,3 +1,5 @@
+"""Incident provider protocol for loading investigation inputs."""
+
 from typing import Protocol, runtime_checkable
 
 from bug_resolver.schemas import Incident

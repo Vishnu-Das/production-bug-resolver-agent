@@ -1,3 +1,5 @@
+"""Build FAISS indexes from loaded and chunked target repository code."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -9,6 +11,8 @@ from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore
 
 
 class CodeIndexer:
+    """Create a searchable vector index from target repository code."""
+
     def __init__(
         self,
         file_loader: CodeFileLoader,

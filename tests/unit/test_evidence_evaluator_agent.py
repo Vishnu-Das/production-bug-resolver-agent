@@ -1,3 +1,5 @@
+"""Tests for evidence sufficiency decisions made by the evaluator agent."""
+
 from __future__ import annotations
 
 import pytest
@@ -73,9 +75,7 @@ async def test_evidence_evaluator_requires_retry_when_no_evidence_exists() -> No
     assert "Implementation code evidence is missing." in result.missing_evidence
     assert result.improved_code_queries != []
     assert result.improved_knowledge_queries != []
-    assert result.reason == (
-        "Evidence is incomplete; supervisor should replan for more evidence."
-    )
+    assert result.reason == ("Evidence is incomplete; supervisor should replan for more evidence.")
 
 
 @pytest.mark.asyncio
@@ -129,6 +129,5 @@ async def test_evidence_evaluator_stops_retry_when_replans_are_exhausted() -> No
     assert result.improved_code_queries == []
     assert result.improved_knowledge_queries == []
     assert result.reason == (
-        "Evidence is incomplete, but replanning is no longer available under "
-        "the configured limits."
+        "Evidence is incomplete, but replanning is no longer available under the configured limits."
     )

@@ -1,3 +1,5 @@
+"""Deterministic rules for judging whether collected evidence is sufficient."""
+
 from __future__ import annotations
 
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
@@ -41,8 +43,7 @@ class EvidenceEvaluationRules:
 
         source_types = self._source_types(state.evidence_items)
         has_primary_evidence = (
-            EvidenceSourceType.LOG in source_types
-            or EvidenceSourceType.CODE in source_types
+            EvidenceSourceType.LOG in source_types or EvidenceSourceType.CODE in source_types
         )
         if not has_primary_evidence:
             return False
@@ -60,9 +61,7 @@ class EvidenceEvaluationRules:
             missing.append("No evidence has been collected yet.")
 
         if len(state.evidence_items) < state.minimum_evidence_count_before_rca:
-            missing.append(
-                "Minimum evidence count has not been met before RCA writing."
-            )
+            missing.append("Minimum evidence count has not been met before RCA writing.")
 
         if EvidenceSourceType.LOG not in source_types:
             missing.append("Runtime log evidence is missing.")

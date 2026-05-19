@@ -1,3 +1,5 @@
+"""Tests that provider protocols are satisfied by runtime-compatible fakes."""
+
 from pathlib import Path
 
 import pytest

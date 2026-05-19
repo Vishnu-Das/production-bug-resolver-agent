@@ -1,3 +1,5 @@
+"""Embedding provider protocol used by code and knowledge retrieval adapters."""
+
 from typing import Protocol, runtime_checkable
 
 

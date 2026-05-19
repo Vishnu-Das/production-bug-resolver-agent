@@ -1,3 +1,5 @@
+"""Knowledge-base investigator agent that retrieves documentation context as evidence."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -10,13 +12,13 @@ from bug_resolver.schemas.orchestration import AgentDecision
 
 
 class KnowledgeBaseInvestigatorInput(StrictBaseModel):
+    """Input for a documentation search requested by the supervisor."""
+
     decision: AgentDecision
     limit: int = Field(default=5, ge=1)
 
 
-class KnowledgeBaseInvestigatorAgent(
-    BaseAgent[KnowledgeBaseInvestigatorInput, list[EvidenceItem]]
-):
+class KnowledgeBaseInvestigatorAgent(BaseAgent[KnowledgeBaseInvestigatorInput, list[EvidenceItem]]):
     """
     Retrieves README/docs/design context selected by the supervisor as evidence.
     """

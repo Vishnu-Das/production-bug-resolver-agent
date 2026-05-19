@@ -1,3 +1,5 @@
+"""Helpers for generating readable trace, report, and recommendation IDs."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -16,6 +18,7 @@ def new_incident_id(prefix: str = "INC") -> str:
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
 
+
 def new_agent_decision_id(prefix: str = "DEC") -> str:
     """
     Generate a readable supervisor decision id.
@@ -27,6 +30,7 @@ def new_agent_decision_id(prefix: str = "DEC") -> str:
     date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
+
 
 def new_agent_execution_id(prefix: str = "RUN") -> str:
     """
@@ -40,6 +44,7 @@ def new_agent_execution_id(prefix: str = "RUN") -> str:
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
 
+
 def new_hypothesis_id(prefix: str = "HYP") -> str:
     """
     Generate a readable hypothesis id.
@@ -51,6 +56,7 @@ def new_hypothesis_id(prefix: str = "HYP") -> str:
     date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
+
 
 def new_rca_report_id(prefix: str = "RCA") -> str:
     """
@@ -64,6 +70,7 @@ def new_rca_report_id(prefix: str = "RCA") -> str:
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
 
+
 def new_evaluation_id(prefix: str = "EVAL") -> str:
     """
     Generate a readable evidence evaluation id.
@@ -76,6 +83,7 @@ def new_evaluation_id(prefix: str = "EVAL") -> str:
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
 
+
 def new_guardrail_id(prefix: str = "GRD") -> str:
     """
     Generate a readable guardrail decision id.
@@ -87,6 +95,7 @@ def new_guardrail_id(prefix: str = "GRD") -> str:
     date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
+
 
 def new_recommendation_id(prefix: str = "SOL") -> str:
     """

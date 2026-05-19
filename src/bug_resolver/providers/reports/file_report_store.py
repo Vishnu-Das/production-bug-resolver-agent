@@ -1,3 +1,5 @@
+"""File-backed report store for JSON and Markdown RCA artifacts."""
+
 import json
 from pathlib import Path
 
@@ -7,6 +9,8 @@ from bug_resolver.schemas.solution import SolutionRecommendation
 
 
 class FileReportStore(ReportStore):
+    """Persist RCA and solution reports as JSON and Markdown files."""
+
     def __init__(self, reports_dir: str | Path) -> None:
         self.reports_dir = Path(reports_dir)
 
@@ -201,10 +205,7 @@ class FileReportStore(ReportStore):
             lines,
             "## Evidence",
             self._render_list_lines(
-                [
-                    self._display_evidence_id(evidence_id)
-                    for evidence_id in solution.evidence_ids
-                ]
+                [self._display_evidence_id(evidence_id) for evidence_id in solution.evidence_ids]
             ),
         )
         self._add_section(

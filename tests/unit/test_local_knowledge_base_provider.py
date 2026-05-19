@@ -1,3 +1,5 @@
+"""Tests for local Markdown knowledge-base retrieval."""
+
 from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
     LocalKnowledgeBaseProvider,
 )

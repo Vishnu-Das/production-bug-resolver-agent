@@ -1,3 +1,5 @@
+"""Schema for incident records loaded by the workflow."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -12,6 +14,8 @@ from bug_resolver.schemas.common import (
 
 
 class Incident(StrictBaseModel):
+    """Structured incident input consumed by the workflow."""
+
     incident_id: str = Field(..., min_length=1)
     title: str = Field(..., min_length=1)
     description: str = Field(..., min_length=1)

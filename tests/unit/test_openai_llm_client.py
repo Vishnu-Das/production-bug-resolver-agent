@@ -1,3 +1,5 @@
+"""Tests for the OpenAI LLM adapter with mocked API calls."""
+
 from pydantic import BaseModel
 import pytest
 

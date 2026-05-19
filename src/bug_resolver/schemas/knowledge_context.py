@@ -1,3 +1,5 @@
+"""Schemas for retrieved knowledge-base context and evidence conversion."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -11,6 +13,8 @@ from bug_resolver.schemas.evidence import EvidenceItem
 
 
 class KnowledgeContext(StrictBaseModel):
+    """Retrieved documentation context that can be promoted to evidence."""
+
     context_id: str = Field(..., min_length=1)
 
     document_name: str = Field(..., min_length=1)

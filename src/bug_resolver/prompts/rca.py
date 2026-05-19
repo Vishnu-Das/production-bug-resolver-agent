@@ -1,12 +1,14 @@
+"""Prompt helper for RCA generation experiments."""
+
 from __future__ import annotations
 
 
 class RCAPromptBuilder:
     """
-    Placeholder prompt builder for future LLM-based RCA generation.
+    Standalone RCA prompt template for prompt experiments.
 
-    Current RCAWriterAgent is deterministic.
-    Later, this builder can create prompts for structured RCAReport output.
+    The production RCAWriterAgent owns its runtime structured prompt directly;
+    keep this helper for isolated prompt iteration and documentation.
     """
 
     def build_prompt(self) -> str:

@@ -1,12 +1,14 @@
+"""Prompt helper for evidence evaluation language-model experiments."""
+
 from __future__ import annotations
 
 
 class EvidenceEvaluationPromptBuilder:
     """
-    Placeholder prompt builder for future LLM-based evidence evaluation.
+    Standalone evidence evaluation prompt template for prompt experiments.
 
-    Current EvidenceEvaluatorAgent is deterministic.
-    Later, this builder can create prompts for structured EvidenceEvaluationResult output.
+    The production EvidenceEvaluatorAgent is deterministic; keep this helper for
+    isolated prompt iteration if LLM evaluation is explored later.
     """
 
     def build_prompt(self) -> str:

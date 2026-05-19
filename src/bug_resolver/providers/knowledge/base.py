@@ -1,3 +1,5 @@
+"""Knowledge-base provider protocol for retrieving documentation evidence."""
+
 from typing import Protocol, runtime_checkable
 
 from bug_resolver.schemas import KnowledgeContext

@@ -1,3 +1,5 @@
+"""Tests for JSON and Markdown report persistence."""
+
 import json
 
 import pytest
@@ -75,7 +77,9 @@ async def test_file_report_store_saves_markdown_and_json(tmp_path):
     assert saved_json["report_id"] == "RCA-001"
     assert saved_json["incident_id"] == "INC-001"
     assert saved_json["title"] == "Summary Query 500 Error RCA"
-    assert saved_json["root_cause"] == "The summary response expected an output key that was missing."
+    assert (
+        saved_json["root_cause"] == "The summary response expected an output key that was missing."
+    )
     assert saved_json["confidence_score"] == 0.87
     assert saved_json["metadata"]["environment"] == "local-test"
 
@@ -149,10 +153,7 @@ async def test_file_report_store_saves_solution_markdown_when_solution_is_provid
 
     saved_solution_markdown = solution_markdown_path.read_text(encoding="utf-8")
     assert "# Solution Recommendation for INC-001" in saved_solution_markdown
-    assert (
-        "# Solution Recommendation for INC-001\n\n## Summary"
-        in saved_solution_markdown
-    )
+    assert "# Solution Recommendation for INC-001\n\n## Summary" in saved_solution_markdown
     assert "Fix the router output contract." in saved_solution_markdown
     assert "- Normalize unsupported router strategies." in saved_solution_markdown
     assert "- src/rag/routing/llm.py:1-80" in saved_solution_markdown
@@ -214,10 +215,7 @@ async def test_file_report_store_renders_multiline_list_items_as_fenced_blocks(t
     saved_markdown = result[0].read_text(encoding="utf-8")
 
     assert "- Runtime error" in saved_markdown
-    assert (
-        "```text\nTraceback (most recent call last):\nValueError: boom\n```"
-        in saved_markdown
-    )
+    assert "```text\nTraceback (most recent call last):\nValueError: boom\n```" in saved_markdown
 
 
 @pytest.mark.asyncio

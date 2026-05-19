@@ -1,3 +1,5 @@
+"""Local Markdown knowledge-base provider with lightweight keyword scoring."""
+
 from pathlib import Path
 
 from bug_resolver.providers.knowledge.base import KnowledgeBaseProvider
@@ -8,6 +10,8 @@ SUPPORTED_DOC_EXTENSIONS = {".md", ".txt"}
 
 
 class LocalKnowledgeBaseProvider(KnowledgeBaseProvider):
+    """Retrieve local Markdown knowledge-base context using keyword scoring."""
+
     def __init__(self, knowledge_base_dir: str | Path, max_results: int = 5) -> None:
         self.knowledge_base_dir = Path(knowledge_base_dir)
         self.max_results = max_results
@@ -108,11 +112,7 @@ class LocalKnowledgeBaseProvider(KnowledgeBaseProvider):
         return score, best_query
 
     def _split_query(self, query: str) -> list[str]:
-        return [
-            term.strip()
-            for term in query.lower().split()
-            if term.strip()
-        ]
+        return [term.strip() for term in query.lower().split() if term.strip()]
 
     def _to_knowledge_context(
         self,

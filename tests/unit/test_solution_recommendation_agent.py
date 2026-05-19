@@ -1,3 +1,5 @@
+"""Tests for LLM-first solution generation and deterministic fallback behavior."""
+
 from __future__ import annotations
 
 import pytest
@@ -83,8 +85,7 @@ async def test_solution_recommendation_agent_builds_recommendation_from_rca() ->
     assert result.incident_id == "INC-001"
     assert result.rca_report_id == "RCA-001"
     assert result.summary == (
-        "Recommended solution based on RCA RCA-001: "
-        "KeyError occurred because 'output' was missing."
+        "Recommended solution based on RCA RCA-001: KeyError occurred because 'output' was missing."
     )
     assert result.immediate_steps == [
         "Guard access to the output key before reading router response.",
@@ -158,8 +159,7 @@ async def test_solution_recommendation_agent_falls_back_when_llm_fails() -> None
     result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
 
     assert result.summary == (
-        "Recommended solution based on RCA RCA-001: "
-        "KeyError occurred because 'output' was missing."
+        "Recommended solution based on RCA RCA-001: KeyError occurred because 'output' was missing."
     )
     assert result.confidence_score == 0.90
     assert result.metadata["solution_writer"] == "deterministic_fallback"
@@ -287,7 +287,9 @@ async def test_solution_recommendation_agent_falls_back_without_tests() -> None:
 
 
 @pytest.mark.asyncio
-async def test_solution_recommendation_agent_uses_fallback_steps_when_rca_has_no_fix_fields() -> None:
+async def test_solution_recommendation_agent_uses_fallback_steps_when_rca_has_no_fix_fields() -> (
+    None
+):
     agent = SolutionRecommendationAgent()
 
     rca_report = RCAReport(

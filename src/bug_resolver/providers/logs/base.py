@@ -1,3 +1,5 @@
+"""Log provider protocol for retrieving incident-specific runtime logs."""
+
 from typing import Protocol, runtime_checkable
 
 from bug_resolver.schemas import LogEntry

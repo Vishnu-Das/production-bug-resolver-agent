@@ -1,3 +1,5 @@
+"""Schema for evidence sufficiency evaluation results."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -6,6 +8,8 @@ from bug_resolver.schemas.common import ConfidenceScore, StrictBaseModel
 
 
 class EvidenceEvaluationResult(StrictBaseModel):
+    """Result of deterministic evidence sufficiency evaluation."""
+
     evaluation_id: str = Field(..., min_length=1)
     incident_id: str = Field(..., min_length=1)
 

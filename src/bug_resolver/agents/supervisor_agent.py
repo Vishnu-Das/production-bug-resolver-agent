@@ -1,3 +1,5 @@
+"""Supervisor agent that chooses the next specialist in the dynamic investigation."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -11,6 +13,8 @@ from bug_resolver.utils.ids import new_agent_decision_id
 
 
 class SupervisorRoutingOutput(StrictBaseModel):
+    """Structured LLM response that becomes a supervisor routing decision."""
+
     next_agent: AgentName
     reason: str = Field(..., min_length=1)
     queries: list[str]
@@ -118,10 +122,7 @@ class SupervisorAgent(BaseAgent[WorkflowState, AgentDecision]):
             return "- No previous supervisor decisions."
 
         return "\n".join(
-            (
-                f"- {decision.decision_id}: {decision.next_agent.value} "
-                f"because {decision.reason}"
-            )
+            (f"- {decision.decision_id}: {decision.next_agent.value} because {decision.reason}")
             for decision in state.trace.decisions
         )
 

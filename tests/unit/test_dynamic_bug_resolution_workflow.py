@@ -1,3 +1,5 @@
+"""Tests for supervisor-led workflow routing, guardrails, and finalization."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -230,15 +232,9 @@ async def test_dynamic_workflow_records_guardrail_blocked_decision() -> None:
     assert state.investigation_status == InvestigationStatus.COMPLETED
     assert len(state.trace.guardrail_decisions) >= 2
     assert state.trace.guardrail_decisions[0].allowed is False
-    assert state.trace.guardrail_decisions[0].fallback_next_agent == (
-        AgentName.LOG_INVESTIGATOR
-    )
-    assert "runtime_evidence_required_first" in (
-        state.trace.guardrail_decisions[0].violated_rules
-    )
-    assert "minimum_evidence_not_met_for_rca" in (
-        state.trace.guardrail_decisions[0].violated_rules
-    )
+    assert state.trace.guardrail_decisions[0].fallback_next_agent == (AgentName.LOG_INVESTIGATOR)
+    assert "runtime_evidence_required_first" in (state.trace.guardrail_decisions[0].violated_rules)
+    assert "minimum_evidence_not_met_for_rca" in (state.trace.guardrail_decisions[0].violated_rules)
 
     assert state.trace.steps[0].run_status == AgentRunStatus.BLOCKED
     assert state.trace.steps[1].agent_name == AgentName.LOG_INVESTIGATOR
@@ -332,8 +328,7 @@ async def test_dynamic_workflow_falls_back_to_code_when_supervisor_repeats_logs(
 
     assert state.investigation_status == InvestigationStatus.COMPLETED
     assert any(
-        "missing_code_evidence_should_route_to_code"
-        in guardrail_decision.violated_rules
+        "missing_code_evidence_should_route_to_code" in guardrail_decision.violated_rules
         for guardrail_decision in state.trace.guardrail_decisions
     )
     assert any(

@@ -1,3 +1,5 @@
+"""Tests for LLM-first RCA generation and deterministic fallback behavior."""
+
 from __future__ import annotations
 
 import pytest
@@ -106,9 +108,7 @@ async def test_rca_writer_agent_generates_report_from_dynamic_evidence() -> None
     assert result.incident_id == "INC-001"
     assert result.title == "RCA for Summary route fails"
     assert "Users get 500 errors" in result.incident_summary
-    assert result.impact == (
-        "Affected service: conversational_rag. Affected area: summary flow."
-    )
+    assert result.impact == ("Affected service: conversational_rag. Affected area: summary flow.")
     assert result.evidence_ids == ["ev-log-1", "ev-code-1", "ev-kb-1"]
     assert result.confidence_score >= state.confidence_threshold
     assert result.confidence_score < 1.0
@@ -116,14 +116,9 @@ async def test_rca_writer_agent_generates_report_from_dynamic_evidence() -> None
     assert result.open_questions == []
     assert result.selected_hypothesis_id == "H1"
     assert "src/rag/router.py:40-45" in result.root_cause
-    assert result.log_findings == [
-        "app.log shows runtime signal: TypeError in route_query"
-    ]
+    assert result.log_findings == ["app.log shows runtime signal: TypeError in route_query"]
     assert result.code_findings == [
-        (
-            "src/rag/router.py:40-45 contains implementation context relevant "
-            "to the incident."
-        )
+        ("src/rag/router.py:40-45 contains implementation context relevant to the incident.")
     ]
     assert result.knowledge_base_findings == [
         (
@@ -272,9 +267,7 @@ async def test_rca_writer_agent_falls_back_when_llm_leaks_internal_evidence_path
             impact=None,
             symptoms=["Symptom"],
             log_findings=["Log finding"],
-            code_findings=[
-                "evidence-src/rag/router.py:1-20 shows the failing code path."
-            ],
+            code_findings=["evidence-src/rag/router.py:1-20 shows the failing code path."],
             knowledge_base_findings=[],
             hypotheses_considered=["H1: Contract mismatch."],
             selected_hypothesis_id="H1",

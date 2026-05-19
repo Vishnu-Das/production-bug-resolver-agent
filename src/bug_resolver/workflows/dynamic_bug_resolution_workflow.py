@@ -1,3 +1,5 @@
+"""Supervisor-led dynamic investigation workflow with guardrails and replanning."""
+
 from __future__ import annotations
 
 from bug_resolver.agents import (
@@ -33,9 +35,9 @@ class DynamicBugResolutionWorkflow:
     """
     Supervisor-led dynamic investigation workflow.
 
-    This first Milestone 7 slice covers dynamic evidence gathering and evidence
-    evaluation. RCA, solution, and report routing will be added after those
-    agents are refactored to consume dynamic evidence.
+    The workflow asks the supervisor for the next route, validates that route
+    with deterministic guardrails, gathers evidence through specialist agents,
+    and finalizes RCA, solution, and report artifacts once evidence is ready.
     """
 
     def __init__(
@@ -323,7 +325,7 @@ class DynamicBugResolutionWorkflow:
                 notes=["Agent execution is not wired in this workflow slice."],
             )
         )
-    
+
     async def _run_evidence_evaluator(self, state: WorkflowState) -> None:
         decision = AgentDecision(
             decision_id=new_agent_decision_id(),

@@ -1,3 +1,5 @@
+"""Export shared Pydantic schemas for investigations and reports."""
+
 from bug_resolver.schemas.code_context import CodeContext
 from bug_resolver.schemas.common import (
     EvidenceSourceType,

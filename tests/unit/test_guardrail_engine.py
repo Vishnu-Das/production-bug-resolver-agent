@@ -1,3 +1,5 @@
+"""Tests for deterministic routing guardrails around supervisor decisions."""
+
 import pytest
 
 from bug_resolver.rules import GuardrailEngine
@@ -382,7 +384,9 @@ def test_guardrail_engine_allows_finish_for_low_confidence_state() -> None:
     assert result.allowed is True
 
 
-def test_guardrail_engine_allows_investigation_when_max_replans_reached_but_steps_available() -> None:
+def test_guardrail_engine_allows_investigation_when_max_replans_reached_but_steps_available() -> (
+    None
+):
     engine = GuardrailEngine()
     state = make_state(max_replans=0)
     state.evidence_evaluation = EvidenceEvaluationResult(

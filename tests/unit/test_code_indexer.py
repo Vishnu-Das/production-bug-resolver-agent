@@ -1,3 +1,5 @@
+"""Tests for building code vector indexes from loaded chunks."""
+
 import pytest
 
 from bug_resolver.retrieval.code_chunker import SimpleCodeChunker

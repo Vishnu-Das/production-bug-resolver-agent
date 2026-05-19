@@ -1,3 +1,5 @@
+"""Utilities for loading supported source files from a target repository."""
+
 from pathlib import Path
 from pydantic import Field
 
@@ -14,6 +16,8 @@ SUPPORTED_CODE_EXTENSIONS = {
 
 
 class CodeFile(StrictBaseModel):
+    """Source file content loaded from a target repository."""
+
     file_path: str = Field(..., min_length=1)
     relative_path: str = Field(..., min_length=1)
     content: str = Field(..., min_length=1)
@@ -21,6 +25,8 @@ class CodeFile(StrictBaseModel):
 
 
 class CodeFileLoader:
+    """Load supported source and config files while skipping noisy directories."""
+
     def __init__(
         self,
         repo_path: str | Path,

@@ -1,3 +1,5 @@
+"""RCA writer agent with LLM-first generation and deterministic fallback."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -30,12 +32,16 @@ ANALYZE_ONLY_FORBIDDEN_PHRASES = (
 
 
 class RCAWriterFallback(Exception):
+    """Internal control exception carrying the deterministic fallback reason."""
+
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
 
 
 class RCAWriterOutput(StrictBaseModel):
+    """Structured LLM response expected from the RCA writer model."""
+
     title: str = Field(..., min_length=1)
     incident_summary: str = Field(..., min_length=1)
     impact: str | None = None
@@ -290,7 +296,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         ]
 
     def _build_system_prompt(self) -> str:
-         return (
+        return (
             "You write evidence-backed production RCA reports.\n"
             "Use only the provided incident and evidence. Do not invent files, logs, "
             "metrics, or facts. Keep the report analyze-only: recommend fixes and "
@@ -379,9 +385,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         selected_hypothesis_id: str | None,
     ) -> tuple[list[str], str | None]:
         cleaned_hypotheses = [
-            hypothesis.strip()
-            for hypothesis in hypotheses
-            if hypothesis and hypothesis.strip()
+            hypothesis.strip() for hypothesis in hypotheses if hypothesis and hypothesis.strip()
         ]
 
         normalized_hypotheses: list[str] = []

@@ -1,3 +1,5 @@
+"""Schema for generated RCA reports."""
+
 from __future__ import annotations
 
 from pydantic import Field, model_validator
@@ -6,6 +8,8 @@ from bug_resolver.schemas.common import ConfidenceScore, StrictBaseModel
 
 
 class RCAReport(StrictBaseModel):
+    """Evidence-backed root cause analysis report."""
+
     report_id: str = Field(..., min_length=1)
     incident_id: str = Field(..., min_length=1)
 

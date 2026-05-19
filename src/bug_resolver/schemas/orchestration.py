@@ -1,3 +1,5 @@
+"""Schemas for supervisor routing, guardrails, and investigation traces."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -10,6 +12,8 @@ from bug_resolver.schemas.common import StrictBaseModel
 
 
 class AgentName(StrEnum):
+    """Allowed supervisor routes and workflow control agents."""
+
     LOG_INVESTIGATOR = "log_investigator"
     CODE_INVESTIGATOR = "code_investigator"
     KNOWLEDGE_BASE_INVESTIGATOR = "knowledge_base_investigator"
@@ -24,6 +28,8 @@ class AgentName(StrEnum):
 
 
 class InvestigationStatus(StrEnum):
+    """Top-level workflow status values exposed by the CLI."""
+
     CREATED = "created"
     RUNNING = "running"
     WAITING_FOR_EVIDENCE = "waiting_for_evidence"
@@ -35,6 +41,8 @@ class InvestigationStatus(StrEnum):
 
 
 class AgentRunStatus(StrEnum):
+    """Execution status values for individual agent runs."""
+
     PENDING = "pending"
     RUNNING = "running"
     SUCCEEDED = "succeeded"
@@ -44,6 +52,8 @@ class AgentRunStatus(StrEnum):
 
 
 class AgentDecision(StrictBaseModel):
+    """Supervisor routing decision with reason and optional search queries."""
+
     decision_id: str = Field(..., min_length=1)
     next_agent: AgentName
     reason: str = Field(..., min_length=1)
@@ -60,6 +70,8 @@ class AgentDecision(StrictBaseModel):
 
 
 class GuardrailDecision(StrictBaseModel):
+    """Deterministic validation result for a supervisor decision."""
+
     guardrail_id: str = Field(..., min_length=1)
     allowed: bool
     reason: str = Field(..., min_length=1)
@@ -77,6 +89,8 @@ class GuardrailDecision(StrictBaseModel):
 
 
 class ToolCallRequest(StrictBaseModel):
+    """Trace record for a requested provider/tool call."""
+
     tool_call_id: str = Field(..., min_length=1)
     agent_name: AgentName
     tool_name: str = Field(..., min_length=1)
@@ -85,6 +99,8 @@ class ToolCallRequest(StrictBaseModel):
 
 
 class ToolCallResult(StrictBaseModel):
+    """Trace record for a completed provider/tool call."""
+
     tool_call_id: str = Field(..., min_length=1)
     tool_name: str = Field(..., min_length=1)
     succeeded: bool
@@ -99,6 +115,8 @@ class ToolCallResult(StrictBaseModel):
 
 
 class AgentExecutionRecord(StrictBaseModel):
+    """Trace record for an agent invocation."""
+
     execution_id: str = Field(..., min_length=1)
     agent_name: AgentName
     status: AgentRunStatus = AgentRunStatus.PENDING
@@ -119,6 +137,8 @@ class AgentExecutionRecord(StrictBaseModel):
 
 
 class InvestigationStep(StrictBaseModel):
+    """Human-readable workflow step shown in investigation traces."""
+
     step_number: int = Field(..., ge=1)
     agent_name: AgentName
     run_status: AgentRunStatus = AgentRunStatus.PENDING
@@ -130,6 +150,8 @@ class InvestigationStep(StrictBaseModel):
 
 
 class InvestigationTrace(StrictBaseModel):
+    """Accumulated routing, guardrail, and execution trace."""
+
     steps: list[InvestigationStep] = Field(default_factory=list)
     decisions: list[AgentDecision] = Field(default_factory=list)
     guardrail_decisions: list[GuardrailDecision] = Field(default_factory=list)

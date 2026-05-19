@@ -1,3 +1,5 @@
+"""Tests for the OpenAI embedding adapter with mocked API calls."""
+
 import pytest
 
 from bug_resolver.embeddings.openai_embedding_client import OpenAIEmbeddingClient

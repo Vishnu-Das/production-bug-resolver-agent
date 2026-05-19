@@ -1,3 +1,5 @@
+"""Incident intake agent that normalizes user-provided incident descriptions."""
+
 from __future__ import annotations
 
 from bug_resolver.agents.base import BaseAgent

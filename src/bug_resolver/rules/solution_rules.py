@@ -1,3 +1,5 @@
+"""Deterministic solution recommendation rules used as writer fallback."""
+
 from __future__ import annotations
 
 from bug_resolver.schemas import RCAReport
@@ -12,10 +14,7 @@ class SolutionRules:
     """
 
     def build_summary(self, rca_report: RCAReport) -> str:
-        return (
-            "Recommended solution based on RCA "
-            f"{rca_report.report_id}: {rca_report.root_cause}"
-        )
+        return f"Recommended solution based on RCA {rca_report.report_id}: {rca_report.root_cause}"
 
     def build_immediate_steps(self, rca_report: RCAReport) -> list[str]:
         steps: list[str] = []
@@ -48,12 +47,8 @@ class SolutionRules:
                 "for summary-style selected-document questions."
             )
         else:
-            steps.append(
-                "Add input and output contract checks around the implicated code path."
-            )
-            steps.append(
-                "Document the expected behavior and failure mode for future incidents."
-            )
+            steps.append("Add input and output contract checks around the implicated code path.")
+            steps.append("Document the expected behavior and failure mode for future incidents.")
 
         return self.unique(steps)
 
@@ -124,9 +119,7 @@ class SolutionRules:
             )
 
         if rca_report.confidence_score < 0.75:
-            risks.append(
-                "RCA confidence is below the production threshold of 0.75."
-            )
+            risks.append("RCA confidence is below the production threshold of 0.75.")
 
         return self.unique(risks)
 

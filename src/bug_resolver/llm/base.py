@@ -1,3 +1,5 @@
+"""LLM provider protocol used by supervisor and writer agents."""
+
 from typing import Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel

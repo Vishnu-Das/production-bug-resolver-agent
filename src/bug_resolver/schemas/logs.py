@@ -1,3 +1,5 @@
+"""Schemas for parsed logs and stack trace details."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -9,6 +11,8 @@ from bug_resolver.schemas.evidence import EvidenceItem
 
 
 class StackTraceFrame(StrictBaseModel):
+    """Single frame in a parsed stack trace."""
+
     file_path: str | None = None
     function_name: str | None = None
     line_number: int | None = Field(default=None, ge=1)
@@ -16,6 +20,8 @@ class StackTraceFrame(StrictBaseModel):
 
 
 class LogEntry(StrictBaseModel):
+    """Normalized runtime log entry loaded from a log provider."""
+
     log_id: str = Field(..., min_length=1)
 
     message: str = Field(..., min_length=1)
@@ -33,6 +39,8 @@ class LogEntry(StrictBaseModel):
 
 
 class LogAnalysisResult(StrictBaseModel):
+    """Summary of log analysis signals for an incident."""
+
     summary: str = Field(..., min_length=1)
 
     exception_type: str | None = None

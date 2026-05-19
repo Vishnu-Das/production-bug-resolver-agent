@@ -1,3 +1,5 @@
+"""Deterministic routing guardrails for supervisor decisions."""
+
 from __future__ import annotations
 
 from bug_resolver.schemas import (
@@ -64,9 +66,8 @@ class GuardrailEngine:
         if not state.can_take_step():
             violated_rules.append("max_steps_reached")
 
-        if (
-            not self._is_workflow_forced_control_decision(decision)
-            and not state.can_invoke_agent(decision.next_agent)
+        if not self._is_workflow_forced_control_decision(decision) and not state.can_invoke_agent(
+            decision.next_agent
         ):
             violated_rules.append("max_agent_invocations_reached")
 
@@ -240,10 +241,7 @@ class GuardrailEngine:
         )
 
     def _can_finish(self, state: WorkflowState) -> bool:
-        report_saved = (
-            state.report_save_result is not None
-            or state.final_report_path is not None
-        )
+        report_saved = state.report_save_result is not None or state.final_report_path is not None
         return report_saved or state.low_confidence
 
     def _blocked_reason(self, violated_rules: list[str]) -> str:

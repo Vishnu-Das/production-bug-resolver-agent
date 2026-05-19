@@ -1,3 +1,5 @@
+"""Report writer agent that persists RCA and solution artifacts."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,6 +11,8 @@ from bug_resolver.schemas.common import StrictBaseModel
 
 
 class ReportWriterInput(StrictBaseModel):
+    """Input bundle for persisting RCA and optional solution artifacts."""
+
     report: RCAReport
     solution: SolutionRecommendation | None = None
 

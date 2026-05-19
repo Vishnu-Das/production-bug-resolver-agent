@@ -1,3 +1,5 @@
+"""Code investigator agent that turns supervisor code-search decisions into evidence."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -10,6 +12,8 @@ from bug_resolver.schemas.orchestration import AgentDecision
 
 
 class CodeInvestigatorInput(StrictBaseModel):
+    """Input for a code investigation requested by the supervisor."""
+
     decision: AgentDecision
     limit: int = Field(default=5, ge=1)
 

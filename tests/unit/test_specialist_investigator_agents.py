@@ -1,3 +1,5 @@
+"""Tests for log, code, and knowledge-base specialist agents."""
+
 from __future__ import annotations
 
 import pytest

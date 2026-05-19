@@ -1,3 +1,5 @@
+"""Tests for semantic code context retrieval from FAISS metadata."""
+
 import pytest
 
 from bug_resolver.providers.code.faiss_code_context_provider import (

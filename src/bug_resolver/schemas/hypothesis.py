@@ -1,3 +1,5 @@
+"""Schema for candidate RCA hypotheses."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -10,6 +12,8 @@ from bug_resolver.schemas.common import (
 
 
 class Hypothesis(StrictBaseModel):
+    """Candidate root-cause hypothesis with confidence and supporting evidence."""
+
     hypothesis_id: str = Field(..., min_length=1)
 
     title: str = Field(..., min_length=1)

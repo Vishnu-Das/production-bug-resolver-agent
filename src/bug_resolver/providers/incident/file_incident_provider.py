@@ -1,3 +1,5 @@
+"""File-backed incident provider for local sample and CLI investigations."""
+
 import asyncio
 from pathlib import Path
 

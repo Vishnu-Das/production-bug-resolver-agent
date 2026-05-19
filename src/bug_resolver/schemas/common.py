@@ -1,3 +1,5 @@
+"""Shared enums, constrained types, and base model configuration."""
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -24,6 +26,8 @@ class StrictBaseModel(BaseModel):
 
 
 class IncidentSeverity(StrEnum):
+    """Severity values supported by incident records."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -32,6 +36,8 @@ class IncidentSeverity(StrEnum):
 
 
 class IncidentStatus(StrEnum):
+    """Lifecycle states supported by incident records."""
+
     NEW = "new"
     INVESTIGATING = "investigating"
     ANALYZED = "analyzed"
@@ -39,6 +45,8 @@ class IncidentStatus(StrEnum):
 
 
 class LogLevel(StrEnum):
+    """Log levels supported by parsed runtime entries."""
+
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
@@ -48,6 +56,8 @@ class LogLevel(StrEnum):
 
 
 class EvidenceSourceType(StrEnum):
+    """Evidence source categories produced by specialist agents."""
+
     LOG = "log"
     CODE = "code"
     KNOWLEDGE_BASE = "knowledge_base"
@@ -57,10 +67,10 @@ class EvidenceSourceType(StrEnum):
 
 
 class HypothesisStatus(StrEnum):
+    """Lifecycle states for candidate RCA hypotheses."""
+
     PROPOSED = "proposed"
     SUPPORTED = "supported"
     CONTRADICTED = "contradicted"
     SELECTED = "selected"
     REJECTED = "rejected"
-
-

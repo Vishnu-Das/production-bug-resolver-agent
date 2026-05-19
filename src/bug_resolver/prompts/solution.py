@@ -1,12 +1,14 @@
+"""Prompt helper for solution recommendation experiments."""
+
 from __future__ import annotations
 
 
 class SolutionPromptBuilder:
     """
-    Placeholder prompt builder for future LLM-based solution recommendation.
+    Standalone solution recommendation prompt template for prompt experiments.
 
-    Current SolutionRecommendationAgent is deterministic.
-    Later, this builder can create prompts for structured SolutionRecommendation output.
+    The production SolutionRecommendationAgent owns its runtime structured prompt
+    directly; keep this helper for isolated prompt iteration and documentation.
     """
 
     def build_prompt(self) -> str:

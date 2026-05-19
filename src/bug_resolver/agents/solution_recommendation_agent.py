@@ -1,3 +1,5 @@
+"""Solution recommendation agent with LLM-first generation and deterministic fallback."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -25,12 +27,16 @@ ANALYZE_ONLY_FORBIDDEN_PHRASES = (
 
 
 class SolutionRecommendationFallback(Exception):
+    """Internal control exception carrying the deterministic fallback reason."""
+
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
 
 
 class SolutionRecommendationOutput(StrictBaseModel):
+    """Structured LLM response expected from the solution writer model."""
+
     summary: str = Field(..., min_length=1)
     immediate_steps: list[str]
     long_term_steps: list[str]
@@ -45,11 +51,8 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
     """
     Coordinates analyze-only solution recommendation generation.
 
-    Current version is llm capable:
-    - converts RCA fields into immediate steps
-    - adds prevention steps
-    - carries tests and evidence IDs forward
-    - marks risks for low-confidence RCA reports
+    The agent asks an LLM for a structured recommendation first, validates the
+    output, and falls back to deterministic SolutionRules when validation fails.
     """
 
     name = "solution_recommendation_agent"

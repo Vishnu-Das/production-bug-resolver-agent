@@ -1,3 +1,5 @@
+"""Schema for analyze-only solution recommendations."""
+
 from __future__ import annotations
 
 from pydantic import Field
@@ -6,6 +8,8 @@ from bug_resolver.schemas.common import ConfidenceScore, StrictBaseModel
 
 
 class SolutionRecommendation(StrictBaseModel):
+    """Analyze-only fix recommendation derived from an RCA."""
+
     recommendation_id: str = Field(..., min_length=1)
     incident_id: str = Field(..., min_length=1)
     rca_report_id: str = Field(..., min_length=1)

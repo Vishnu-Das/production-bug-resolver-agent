@@ -1,3 +1,5 @@
+"""Utilities for splitting source files into line-aware retrieval chunks."""
+
 from pydantic import Field
 
 from bug_resolver.retrieval.code_file_loader import CodeFile
@@ -5,6 +7,8 @@ from bug_resolver.schemas.common import StrictBaseModel
 
 
 class CodeChunk(StrictBaseModel):
+    """Line-aware source snippet prepared for embedding and retrieval."""
+
     chunk_id: str = Field(..., min_length=1)
     file_path: str = Field(..., min_length=1)
     relative_path: str = Field(..., min_length=1)
@@ -16,6 +20,8 @@ class CodeChunk(StrictBaseModel):
 
 
 class SimpleCodeChunker:
+    """Split loaded source files into overlapping fixed-size chunks."""
+
     def __init__(
         self,
         max_lines_per_chunk: int = 80,

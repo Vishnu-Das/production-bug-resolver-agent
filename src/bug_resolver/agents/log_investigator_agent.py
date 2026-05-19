@@ -1,3 +1,5 @@
+"""Log investigator agent that retrieves incident logs as evidence."""
+
 from __future__ import annotations
 
 from bug_resolver.agents.base import BaseAgent
@@ -9,6 +11,8 @@ from bug_resolver.schemas.orchestration import AgentDecision
 
 
 class LogInvestigatorInput(StrictBaseModel):
+    """Input for a log search requested by the supervisor."""
+
     incident_id: str
     decision: AgentDecision
 

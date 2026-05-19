@@ -1,3 +1,5 @@
+"""Export agent implementations used by the dynamic investigation workflow."""
+
 from bug_resolver.agents.base import BaseAgent
 from bug_resolver.agents.code_investigator_agent import (
     CodeInvestigatorAgent,

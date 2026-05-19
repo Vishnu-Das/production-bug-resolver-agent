@@ -1,3 +1,5 @@
+"""Schemas for retrieved code context and code evidence conversion."""
+
 from __future__ import annotations
 
 from pydantic import Field, model_validator
@@ -11,6 +13,8 @@ from bug_resolver.schemas.evidence import EvidenceItem
 
 
 class CodeContext(StrictBaseModel):
+    """Retrieved source context that can be promoted to evidence."""
+
     context_id: str = Field(..., min_length=1)
 
     file_path: str = Field(..., min_length=1)

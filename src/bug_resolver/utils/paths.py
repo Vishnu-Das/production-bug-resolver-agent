@@ -1,3 +1,5 @@
+"""Path display helpers for converting local paths to repo-relative output."""
+
 from __future__ import annotations
 
 

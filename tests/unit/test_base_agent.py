@@ -1,3 +1,5 @@
+"""Tests for the shared BaseAgent execution template."""
+
 from __future__ import annotations
 
 import pytest

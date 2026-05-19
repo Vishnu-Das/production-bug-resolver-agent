@@ -1,3 +1,5 @@
+"""Tests for the report writer agent persistence contract."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,7 +30,11 @@ class FakeReportStore:
         ]
 
     async def get_report(self, incident_id: str) -> RCAReport | None:
-        return self.saved_report if self.saved_report and self.saved_report.incident_id == incident_id else None
+        return (
+            self.saved_report
+            if self.saved_report and self.saved_report.incident_id == incident_id
+            else None
+        )
 
 
 def build_rca_report() -> RCAReport:
@@ -40,9 +46,7 @@ def build_rca_report() -> RCAReport:
         symptoms=["Users get 500 error.", "KeyError: 'output'"],
         log_findings=["Found KeyError: 'output'."],
         code_findings=["Retrieved code context from src/rag/llm.py::route:18-18."],
-        knowledge_base_findings=[
-            "Retrieved knowledge-base context from README.md::Routing."
-        ],
+        knowledge_base_findings=["Retrieved knowledge-base context from README.md::Routing."],
         hypotheses_considered=["HYP-001: KeyError likely caused the incident."],
         selected_hypothesis_id="HYP-001",
         root_cause="KeyError occurred because 'output' was missing.",

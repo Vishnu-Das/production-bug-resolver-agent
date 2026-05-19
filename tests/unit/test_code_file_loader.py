@@ -1,3 +1,5 @@
+"""Tests for target repository file loading and skip rules."""
+
 from pathlib import Path
 
 from bug_resolver.retrieval.code_file_loader import CodeFileLoader

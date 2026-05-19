@@ -1,9 +1,13 @@
+"""OpenAI-backed LLM client for text and structured model outputs."""
+
 from openai import AsyncOpenAI
 
 from bug_resolver.llm.base import LLMClient, StructuredOutputT
 
 
 class OpenAILLMClient(LLMClient):
+    """LLM client adapter around OpenAI text and structured responses."""
+
     def __init__(
         self,
         api_key: str,

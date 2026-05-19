@@ -1,3 +1,5 @@
+"""FAISS-backed code context provider for semantic source search."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -9,6 +11,8 @@ from bug_resolver.schemas.code_context import CodeContext
 
 
 class FAISSCodeContextProvider(CodeContextProvider):
+    """Retrieve source-code evidence from a FAISS index of repository chunks."""
+
     def __init__(
         self,
         vector_store: FAISSVectorStore,
@@ -77,10 +81,7 @@ class FAISSCodeContextProvider(CodeContextProvider):
             return False
 
         normalized_path = str(file_path).replace("\\", "/").lower()
-        return any(
-            marker in normalized_path
-            for marker in ("obsolete", "obsolette", "deprecated")
-        )
+        return any(marker in normalized_path for marker in ("obsolete", "obsolette", "deprecated"))
 
     def _to_code_context(
         self,

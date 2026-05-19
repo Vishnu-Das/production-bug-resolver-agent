@@ -1,3 +1,5 @@
+"""Deterministic helpers for summarizing log evidence."""
+
 from __future__ import annotations
 
 import re
@@ -120,10 +122,7 @@ class LogAnalysisRules:
         last_frame = stack_trace[-1]
 
         if last_frame.file_path and last_frame.line_number and last_frame.function_name:
-            return (
-                f"{last_frame.file_path}:{last_frame.line_number} "
-                f"in {last_frame.function_name}"
-            )
+            return f"{last_frame.file_path}:{last_frame.line_number} in {last_frame.function_name}"
 
         return last_frame.raw_frame
 
@@ -141,10 +140,7 @@ class LogAnalysisRules:
             )
 
         if exception_type and exception_message:
-            return (
-                f"Analyzed {log_count} log entries. Found {exception_type}: "
-                f"{exception_message}."
-            )
+            return f"Analyzed {log_count} log entries. Found {exception_type}: {exception_message}."
 
         if likely_failure_point:
             return (
