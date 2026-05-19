@@ -45,10 +45,10 @@ def test_simple_code_chunker_chunks_multiple_files():
             extension=".py",
         ),
         CodeFile(
-            file_path="/repo/README.md",
-            relative_path="README.md",
+            file_path="/repo/README.py",
+            relative_path="README.py",
             content="# README",
-            extension=".md",
+            extension=".py",
         ),
     ]
 
@@ -58,7 +58,7 @@ def test_simple_code_chunker_chunks_multiple_files():
 
     assert len(chunks) == 2
     assert chunks[0].language == "python"
-    assert chunks[1].language == "markdown"
+    assert chunks[1].language == "python"
 
 
 def test_simple_code_chunker_rejects_invalid_max_lines():

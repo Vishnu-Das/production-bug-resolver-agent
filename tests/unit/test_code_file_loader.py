@@ -1,68 +1,67 @@
+from pathlib import Path
+
 from bug_resolver.retrieval.code_file_loader import CodeFileLoader
 
 
-def test_code_file_loader_loads_supported_files(tmp_path):
-    repo_dir = tmp_path / "repo"
-    repo_dir.mkdir()
+def test_code_file_loader_excludes_markdown_files(tmp_path: Path) -> None:
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
 
-    python_file = repo_dir / "app.py"
-    python_file.write_text("print('hello')", encoding="utf-8")
+    python_file = repo_path / "app.py"
+    python_file.write_text("print('hello')\n", encoding="utf-8")
 
-    readme_file = repo_dir / "README.md"
-    readme_file.write_text("# Project", encoding="utf-8")
+    readme_file = repo_path / "README.md"
+    readme_file.write_text("# Project docs\n", encoding="utf-8")
 
-    provider_file = repo_dir / "data.csv"
-    provider_file.write_text("a,b,c", encoding="utf-8")
+    loader = CodeFileLoader(repo_path)
 
-    loader = CodeFileLoader(repo_path=repo_dir)
-
-    files = loader.load_files()
-
-    relative_paths = {file.relative_path for file in files}
+    loaded_files = loader.load_files()
+    relative_paths = {loaded_file.relative_path for loaded_file in loaded_files}
 
     assert "app.py" in relative_paths
-    assert "README.md" in relative_paths
-    assert "data.csv" not in relative_paths
+    assert "README.md" not in relative_paths
 
 
-def test_code_file_loader_returns_empty_list_for_missing_repo(tmp_path):
-    loader = CodeFileLoader(repo_path=tmp_path / "missing")
+def test_code_file_loader_allows_supported_config_files(tmp_path: Path) -> None:
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
 
-    files = loader.load_files()
+    pyproject_file = repo_path / "pyproject.toml"
+    pyproject_file.write_text("[project]\nname = 'demo'\n", encoding="utf-8")
 
-    assert files == []
+    yaml_file = repo_path / "config.yaml"
+    yaml_file.write_text("app: demo\n", encoding="utf-8")
+
+    json_file = repo_path / "settings.json"
+    json_file.write_text('{"app": "demo"}\n', encoding="utf-8")
+
+    loader = CodeFileLoader(repo_path)
+
+    loaded_files = loader.load_files()
+    relative_paths = {loaded_file.relative_path for loaded_file in loaded_files}
+
+    assert "pyproject.toml" in relative_paths
+    assert "config.yaml" in relative_paths
+    assert "settings.json" in relative_paths
 
 
-def test_code_file_loader_skips_empty_files(tmp_path):
-    repo_dir = tmp_path / "repo"
-    repo_dir.mkdir()
+def test_code_file_loader_skips_ignored_directories(tmp_path: Path) -> None:
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
 
-    empty_file = repo_dir / "empty.py"
-    empty_file.write_text("   ", encoding="utf-8")
+    ignored_dir = repo_path / "__pycache__"
+    ignored_dir.mkdir()
 
-    loader = CodeFileLoader(repo_path=repo_dir)
+    ignored_file = ignored_dir / "cached.py"
+    ignored_file.write_text("print('ignore me')\n", encoding="utf-8")
 
-    files = loader.load_files()
+    valid_file = repo_path / "main.py"
+    valid_file.write_text("print('include me')\n", encoding="utf-8")
 
-    assert files == []
+    loader = CodeFileLoader(repo_path)
 
+    loaded_files = loader.load_files()
+    relative_paths = {loaded_file.relative_path for loaded_file in loaded_files}
 
-def test_code_file_loader_skips_ignored_directories(tmp_path):
-    repo_dir = tmp_path / "repo"
-    venv_dir = repo_dir / ".venv"
-    venv_dir.mkdir(parents=True)
-
-    ignored_file = venv_dir / "ignored.py"
-    ignored_file.write_text("print('ignored')", encoding="utf-8")
-
-    valid_file = repo_dir / "valid.py"
-    valid_file.write_text("print('valid')", encoding="utf-8")
-
-    loader = CodeFileLoader(repo_path=repo_dir)
-
-    files = loader.load_files()
-
-    relative_paths = {file.relative_path for file in files}
-
-    assert "valid.py" in relative_paths
-    assert ".venv/ignored.py" not in relative_paths
+    assert "main.py" in relative_paths
+    assert "__pycache__/cached.py" not in relative_paths

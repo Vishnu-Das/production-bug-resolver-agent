@@ -6,7 +6,6 @@ from bug_resolver.schemas.common import StrictBaseModel
 
 SUPPORTED_CODE_EXTENSIONS = {
     ".py",
-    ".md",
     ".toml",
     ".yaml",
     ".yml",

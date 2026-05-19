@@ -88,7 +88,6 @@ class SimpleCodeChunker:
     def _detect_language(self, extension: str) -> str:
         extension_to_language = {
             ".py": "python",
-            ".md": "markdown",
             ".toml": "toml",
             ".yaml": "yaml",
             ".yml": "yaml",

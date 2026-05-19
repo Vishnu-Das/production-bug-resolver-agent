@@ -1,36 +1,38 @@
 {
-  "recommendation_id": "SOL-20260519-30CD797E",
+  "recommendation_id": "SOL-20260519-D151CEF4",
   "incident_id": "INC-001",
-  "rca_report_id": "RCA-20260519-5FDBEF13",
-  "summary": "Recommended solution based on RCA RCA-20260519-5FDBEF13: The incident is most likely caused by the implementation behavior shown in C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\README.md:771-850, matching the runtime failure observed in logs.",
+  "rca_report_id": "RCA-20260519-EE68ED70",
+  "summary": "Recommended solution based on RCA RCA-20260519-EE68ED70: The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, causing the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.",
   "immediate_steps": [
-    "Inspect and fix the code path at C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\README.md:771-850.",
+    "Update the LLM router prompt and/or structured output validation so the router emits only supported retrieval strategy values. For broad summary questions over a selected document, return `parent_child` directly or normalize `summary` to `parent_child` before validation.",
     "Reproduce the incident locally using the same failure scenario.",
     "Verify the fix against the log symptoms and selected RCA evidence."
   ],
   "long_term_steps": [
-    "Add regression tests, improve structured error handling, and improve logging around the failing code path.",
+    "Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.",
     "Improve defensive handling around the failing code path.",
     "Document the expected behavior and failure mode for future incidents."
   ],
   "tests_to_add": [
-    "Add a regression test for incident INC-001.",
-    "Add a test covering the implicated implementation path."
+    "Add a regression test where query=\"summarize this document\" and a selected document is present; assert the resolved strategy is `parent_child`.",
+    "Add a test ensuring unsupported LLM strategy values are handled with a clear fallback reason and do not silently degrade routing quality.",
+    "Add a contract test ensuring the LLM router can emit only supported retrieval strategy enum values."
   ],
   "monitoring_improvements": [
     "Add structured logging around the failing code path.",
     "Log request or trace identifiers with the error when available."
   ],
-  "risk_notes": [],
-  "confidence_score": 1.0,
+  "risk_notes": [
+    "Some open questions remain, so the recommendation should be validated before implementation."
+  ],
+  "confidence_score": 0.8,
   "evidence_ids": [
-    "EVID-LOG-B2924331",
-    "EVID-LOG-E3B6AF26",
-    "evidence-kb-README",
-    "evidence-README.md:771-850",
-    "evidence-tests\\rag\\routing\\test_rule_based_router.py:1-80",
+    "EVID-LOG-CF52715B",
+    "EVID-LOG-09AB4383",
     "evidence-tests\\rag\\routing\\test_llm_router.py:71-138",
+    "evidence-tests\\rag\\routing\\test_llm_router.py:1-80",
+    "evidence-tests\\rag\\routing\\test_rule_based_router.py:1-80",
     "evidence-src\\rag\\routing\\rule_based.py:1-80",
-    "evidence-README.md:281-360"
+    "evidence-eval\\evaluate_retrieval.py:71-142"
   ]
 }

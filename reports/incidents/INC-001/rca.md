@@ -27,61 +27,64 @@ ValueError: Invalid strategy: summary
 
 ## Code Findings
 
-- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\README.md:771-850.
-- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_rule_based_router.py:1-80.
 - Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:71-138.
+- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:1-80.
+- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_rule_based_router.py:1-80.
 - Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\rule_based.py:1-80.
-- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\README.md:281-360.
+- Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\eval\evaluate_retrieval.py:71-142.
 
 ## Knowledge Base Findings
 
-- Retrieved knowledge_base evidence from sample_data\knowledge_base\README.md.
+- None
 
 ## Hypotheses Considered
 
-- None
+- H1: The LLM router emitted unsupported retrieval strategy value `summary`.
+- H2: Summary-style document queries are expected to map to `parent_child`, but the LLM router output contract allowed the conceptual label `summary`.
+- H3: Router validation rejects unsupported LLM strategy values and triggers fallback instead of normalizing the strategy.
 
 ## Final Root Cause
 
-The incident is most likely caused by the implementation behavior shown in C:\Users\vishn\Documents\Learning AI\conversational_rag\README.md:771-850, matching the runtime failure observed in logs.
+The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, causing the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.
 
 ## Technical Explanation
 
-EVID-LOG-B2924331: Retrieved log evidence from log-001. EVID-LOG-E3B6AF26: Retrieved log evidence from log-002. evidence-kb-README: Retrieved knowledge_base evidence from sample_data\knowledge_base\README.md. evidence-README.md:771-850: Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\README.md:771-850. evidence-tests\rag\routing\test_rule_based_router.py:1-80: Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_rule_based_router.py:1-80. evidence-tests\rag\routing\test_llm_router.py:71-138: Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:71-138. evidence-src\rag\routing\rule_based.py:1-80: Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\rule_based.py:1-80. evidence-README.md:281-360: Retrieved code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\README.md:281-360.
+The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
 
 ## Evidence
 
-- EVID-LOG-B2924331
-- EVID-LOG-E3B6AF26
-- evidence-kb-README
-- evidence-README.md:771-850
-- evidence-tests\rag\routing\test_rule_based_router.py:1-80
+- EVID-LOG-CF52715B
+- EVID-LOG-09AB4383
 - evidence-tests\rag\routing\test_llm_router.py:71-138
+- evidence-tests\rag\routing\test_llm_router.py:1-80
+- evidence-tests\rag\routing\test_rule_based_router.py:1-80
 - evidence-src\rag\routing\rule_based.py:1-80
-- evidence-README.md:281-360
+- evidence-eval\evaluate_retrieval.py:71-142
 
 ## Confidence
 
-Score: 1.0
+Score: 0.8
 
-Reason: Evidence is sufficient to proceed to RCA writing.
+Reason: Confidence is high because logs show the exact exception `Invalid strategy: summary`, code evidence points to the LLM routing validation path, and knowledge-base evidence describes the expected summary-query routing behavior. Confidence is not 1.0 because the exact raw LLM router output payload and prompt response were not captured.
 
 ## Recommended Fix
 
-Inspect and fix the code path at C:\Users\vishn\Documents\Learning AI\conversational_rag\README.md:771-850.
+Update the LLM router prompt and/or structured output validation so the router emits only supported retrieval strategy values. For broad summary questions over a selected document, return `parent_child` directly or normalize `summary` to `parent_child` before validation.
 
 ## Preventive Actions
 
-Add regression tests, improve structured error handling, and improve logging around the failing code path.
+Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.
 
 ## Tests to Add
 
-- Add a regression test for incident INC-001.
-- Add a test covering the implicated implementation path.
+- Add a regression test where query="summarize this document" and a selected document is present; assert the resolved strategy is `parent_child`.
+- Add a test ensuring unsupported LLM strategy values are handled with a clear fallback reason and do not silently degrade routing quality.
+- Add a contract test ensuring the LLM router can emit only supported retrieval strategy enum values.
 
 ## Open Questions
 
-- None
+- What exact raw structured output did the LLM router return before validation failed?
+- Does the LLM router prompt explicitly restrict strategy values to the supported retrieval strategy enum?
 
 ## Low Confidence Warning
 
@@ -89,5 +92,5 @@ None
 
 ## Metadata
 
-- evidence_count: 8
+- evidence_count: 7
 - dynamic_workflow: true
