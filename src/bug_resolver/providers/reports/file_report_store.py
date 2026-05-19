@@ -27,8 +27,13 @@ class FileReportStore(ReportStore):
 
         if solution is not None:
             solution_path = report_dir / "solution.json"
+            solution_markdown_path = report_dir / "solution.md"
             self._save_solution_json(solution=solution, json_path=solution_path)
-            return [markdown_path, json_path, solution_path]
+            self._save_solution_markdown(
+                solution=solution,
+                markdown_path=solution_markdown_path,
+            )
+            return [markdown_path, json_path, solution_path, solution_markdown_path]
 
         return [markdown_path, json_path]
 
@@ -57,6 +62,16 @@ class FileReportStore(ReportStore):
                 solution.model_dump(mode="json"),
                 indent=2,
             ),
+            encoding="utf-8",
+        )
+
+    def _save_solution_markdown(
+        self,
+        solution: SolutionRecommendation,
+        markdown_path: Path,
+    ) -> None:
+        markdown_path.write_text(
+            self._build_solution_markdown(solution),
             encoding="utf-8",
         )
 
@@ -138,6 +153,44 @@ Reason: {report.confidence_reason}
 ## Metadata
 
 {self._render_metadata(report.metadata)}
+"""
+
+    def _build_solution_markdown(self, solution: SolutionRecommendation) -> str:
+        return f"""# Solution Recommendation for {solution.incident_id}
+
+## Summary
+
+{solution.summary}
+
+## Immediate Steps
+
+{self._render_list(solution.immediate_steps)}
+
+## Long-Term Steps
+
+{self._render_list(solution.long_term_steps)}
+
+## Tests to Add
+
+{self._render_list(solution.tests_to_add)}
+
+## Monitoring Improvements
+
+{self._render_list(solution.monitoring_improvements)}
+
+## Risk Notes
+
+{self._render_list(solution.risk_notes)}
+
+## Evidence
+
+{self._render_list(solution.evidence_ids)}
+
+## Metadata
+
+- recommendation_id: {solution.recommendation_id}
+- rca_report_id: {solution.rca_report_id}
+- confidence_score: {solution.confidence_score}
 """
 
     def _render_list(self, values: list[str]) -> str:

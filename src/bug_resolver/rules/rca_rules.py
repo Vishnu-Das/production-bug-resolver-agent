@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import PureWindowsPath
+
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 
 
@@ -370,6 +372,16 @@ class RCARules:
                     f"{location} validates the LLM router strategy and raises an "
                     "error when the model returns an unsupported value."
                 )
+            if "chatopenai" in content_lower and "router_prompt" in content_lower:
+                return (
+                    f"{location} builds the LLM router around the router prompt, "
+                    "structured `RouterResult`, and configured router model."
+                )
+            if "router_type" in content_lower and "llmrouterstrategy" in content_lower:
+                return (
+                    f"{location} selects the configured router implementation, "
+                    "including the LLM router path that produced the failure."
+                )
             if "parent_child" in content_lower and "summary" in content_lower:
                 return (
                     f"{location} maps summary-style selected-document queries to "
@@ -391,10 +403,24 @@ class RCARules:
         return value[: max_length - 3].rstrip() + "..."
 
     def _location(self, evidence: EvidenceItem) -> str:
-        location = evidence.file_path or evidence.source_name
+        location = self._display_path(evidence.file_path or evidence.source_name)
         if evidence.line_start and evidence.line_end:
             return f"{location}:{evidence.line_start}-{evidence.line_end}"
         return location
+
+    def _display_path(self, path: str) -> str:
+        normalized_path = path.replace("\\", "/")
+        for marker in ("/src/", "/tests/", "/docs/", "/sample_data/"):
+            if marker in normalized_path:
+                return f"{marker.strip('/')}/{normalized_path.split(marker, 1)[1]}"
+
+        if ":" in path or "\\" in path:
+            windows_parts = PureWindowsPath(path).parts
+            for anchor in ("src", "tests", "docs", "sample_data"):
+                if anchor in windows_parts:
+                    return "/".join(windows_parts[windows_parts.index(anchor) :])
+
+        return normalized_path
 
     def _combined_text(self, evidence_items: list[EvidenceItem]) -> str:
         values: list[str] = []

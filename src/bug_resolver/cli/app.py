@@ -73,7 +73,12 @@ def _print_trace(state) -> None:
     for step in state.trace.steps:
         detail_parts = [f"{step.step_number}. {step.agent_name.value}", step.run_status.value]
         if step.evidence_ids:
-            detail_parts.append(f"evidence={','.join(step.evidence_ids)}")
+            detail_parts.append(
+                f"evidence_count={len(step.evidence_ids)}"
+            )
+            detail_parts.append(
+                f"evidence={_compact_evidence_ids(step.evidence_ids)}"
+            )
 
         guardrail = (
             guardrails_by_id.get(step.guardrail_id)
@@ -91,6 +96,26 @@ def _print_trace(state) -> None:
             detail_parts.append(f"fallback={fallback}")
 
         console.print(f"- {' | '.join(detail_parts)}")
+
+
+def _compact_evidence_ids(evidence_ids: list[str], *, limit: int = 3) -> str:
+    compact_ids = [_compact_evidence_id(evidence_id) for evidence_id in evidence_ids[:limit]]
+    remaining_count = len(evidence_ids) - len(compact_ids)
+    if remaining_count > 0:
+        compact_ids.append(f"+{remaining_count} more")
+    return ", ".join(compact_ids)
+
+
+def _compact_evidence_id(evidence_id: str) -> str:
+    if evidence_id.startswith("EVID-LOG-"):
+        return evidence_id
+
+    value = evidence_id.removeprefix("evidence-")
+    if ":" in value:
+        path, line_range = value.rsplit(":", 1)
+        return f"{path.split('/')[-1]}:{line_range}"
+
+    return value.split("/")[-1]
 
 
 async def _run_investigation(incident_id: str):

@@ -1,0 +1,17 @@
+{
+  "incident_id": "INC-002",
+  "title": "Unsupported retrieval strategy breaks chat responses",
+  "description": "Chat requests fail with HTTP 500 after a deployment changed the retrieval strategy configuration to an unsupported value.",
+  "severity": "critical",
+  "status": "new",
+  "affected_service": "conversational_rag",
+  "affected_area": "retrieval strategy selection",
+  "reporter": "sample-production-monitor",
+  "metadata": {
+    "environment": "local-sample",
+    "entrypoint": "src/rag/service.py::retrieve_documents",
+    "suspected_component": "src/rag/retrieval/factory.py::RetrievalStrategyFactory.get_strategy",
+    "config_key": "RETRIEVAL_STRATEGY",
+    "observed_value": "semantic"
+  }
+}

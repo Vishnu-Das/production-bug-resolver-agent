@@ -1,0 +1,16 @@
+{
+  "incident_id": "INC-004",
+  "title": "Reuploaded PDF content is not refreshed",
+  "description": "Users upload a revised PDF with the same filename, but the chat continues answering from the older document content.",
+  "severity": "medium",
+  "status": "new",
+  "affected_service": "conversational_rag",
+  "affected_area": "document upload and ingestion",
+  "reporter": "sample-production-monitor",
+  "metadata": {
+    "environment": "local-sample",
+    "entrypoint": "src/services/upload_service.py::handle_file_upload",
+    "suspected_component": "src/services/upload_service.py",
+    "filename": "policy_handbook.pdf"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "incident_id": "INC-003",
+  "title": "Selected document summary returns no answer",
+  "description": "Users selecting a specific PDF and asking for a summary receive an empty or irrelevant answer even though the document exists in the vector store.",
+  "severity": "high",
+  "status": "new",
+  "affected_service": "conversational_rag",
+  "affected_area": "selected document retrieval",
+  "reporter": "sample-production-monitor",
+  "metadata": {
+    "environment": "local-sample",
+    "entrypoint": "src/rag/retrieval/parent_child/strategy.py::ParentChildRetrievalStrategy.retrieve",
+    "suspected_component": "src/rag/retrieval/parent_child/strategy.py::get_matching_sources",
+    "selected_document": "Transformer Notes.pdf"
+  }
+}

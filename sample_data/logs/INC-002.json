@@ -1,0 +1,22 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "error",
+    "message": "Retrieval strategy factory rejected an unsupported configured strategy.",
+    "service_name": "conversational_rag",
+    "environment": "local-sample",
+    "request_id": "req-inc-002",
+    "trace_id": "trace-retrieval-002",
+    "raw": "2026-05-19T11:12:43Z ERROR conversational_rag request_id=req-inc-002 trace_id=trace-retrieval-002 Chat response failed during document retrieval. strategy_name=semantic selected_document=All Documents\nTraceback (most recent call last):\n  File \"src/rag/service.py\", line 84, in retrieve_documents\n    retrieval_strategy = RetrievalStrategyFactory.get_strategy(strategy_name)\n  File \"src/rag/retrieval/factory.py\", line 35, in get_strategy\n    raise ValueError(f\"Unsupported retrieval strategy: {strategy_name}\")\nValueError: Unsupported retrieval strategy: semantic"
+  },
+  {
+    "log_id": "log-002",
+    "level": "warning",
+    "message": "Runtime config contained a retrieval strategy not defined by the strategy factory.",
+    "service_name": "conversational_rag",
+    "environment": "local-sample",
+    "request_id": "req-inc-002",
+    "trace_id": "trace-retrieval-002",
+    "raw": "2026-05-19T11:12:43Z WARNING conversational_rag request_id=req-inc-002 trace_id=trace-retrieval-002 RETRIEVAL_STRATEGY=semantic is not one of supported strategies: hybrid,parent_child,fusion"
+  }
+]

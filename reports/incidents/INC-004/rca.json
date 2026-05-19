@@ -1,0 +1,63 @@
+{
+  "report_id": "RCA-20260519-9BADEF9F",
+  "incident_id": "INC-004",
+  "title": "RCA for Reuploaded PDF content is not refreshed",
+  "incident_summary": "Incident INC-004: Users upload a revised PDF with the same filename, but the chat continues answering from the older document content.",
+  "impact": "Affected service: conversational_rag. Affected area: document upload and ingestion.",
+  "symptoms": [
+    "Users upload a revised PDF with the same filename, but the chat continues answering from the older document content.",
+    "2026-05-19T13:21:44Z WARNING conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 upload ignored because filename already exists in session processed_uploads filename=\"policy_handbook.pdf\" ingestion_started=false cache_reset=false",
+    "2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename=\"policy_handbook.pdf\" expected_revision=\"2026-Q2\" indexed_revision=\"2026-Q1\""
+  ],
+  "log_findings": [
+    "log-001 shows runtime signal: 2026-05-19T13:21:44Z WARNING conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 upload ignored because filename already exists in session processed_uploads file...",
+    "log-002 shows runtime signal: 2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename=\"policy_handbook.pdf..."
+  ],
+  "code_findings": [
+    "src/rag/cache.py:1-34 shows relevant implementation behavior: from functools import lru_cache from src.rag.retrievers import ( get_history_aware_retriever, get_retriever, get_all_documents ) @lru_cache(maxsize=100) def cached_retrieval( us...",
+    "src/services/upload_service.py:1-77 shows relevant implementation behavior: import os import time import streamlit as st from src.config import DATA_DIR from src.ingest import ingest_single_document from src.rag.cache import reset_rag_caches def handle_...",
+    "src/ingest.py:71-85 shows relevant implementation behavior: ) vectorstore.add_documents( chunks ) ingest_parent_child_documents( raw_documents ) print(f\"Ingested: {file_path}\") if __name__ == \"__main__\": ingest_documents()",
+    "src/ingest.py:1-80 shows relevant implementation behavior: from langchain_openai import OpenAIEmbeddings from langchain_chroma import Chroma from src.vectorstore import ( load_documents, load_and_split_documents, load_single_document, s...",
+    "src/conversationalAI.py:141-220 shows relevant implementation behavior: # selected_document = st.sidebar.selectbox( # \"Filter Documents\", # [\"All Documents\"] + documents # ) # if \"uploader_key\" not in st.session_state: # st.session_state.uploader_ke..."
+  ],
+  "knowledge_base_findings": [
+    "sample_data/knowledge_base/README.md documents expected behavior relevant to the incident: # Conversational RAG Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents. The system comb...",
+    "sample_data/knowledge_base/upload-ingestion.md documents expected behavior relevant to the incident: # Upload And Ingestion Notes Uploading a PDF should write the file, ingest the document, reset RAG caches, and make the new chunks available to retrieval. Duplicate filenames re...",
+    "sample_data/knowledge_base/selected-document-routing.md documents expected behavior relevant to the incident: # Selected Document Retrieval Notes Selected-document retrieval depends on matching the UI-selected filename to the `source` metadata stored in the vector database. The matching...",
+    "sample_data/knowledge_base/retrieval-strategies.md documents expected behavior relevant to the incident: # Retrieval Strategy Contract The conversational RAG application supports exactly three retrieval strategy values at runtime: - `hybrid` - `parent_child` - `fusion` `RetrievalSt..."
+  ],
+  "hypotheses_considered": [
+    "H1: Runtime failure is caused by an implementation mismatch in the code path identified by the logs and code evidence.",
+    "H2: The observed behavior is caused by missing validation or insufficient normalization around the failing code path."
+  ],
+  "selected_hypothesis_id": "H1",
+  "root_cause": "The incident is most likely caused by a mismatch between the runtime failure observed in logs and the implementation behavior shown in src/rag/cache.py:1-34.",
+  "technical_explanation": "EVID-LOG-A080477F: log-001 shows runtime signal: 2026-05-19T13:21:44Z WARNING conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 upload ignored because filename already exists in session processed_uploads file... EVID-LOG-22620B7B: log-002 shows runtime signal: 2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename=\"policy_handbook.pdf... evidence-kb-README: sample_data/knowledge_base/README.md documents expected behavior relevant to the incident: # Conversational RAG Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents. The system comb... evidence-kb-upload-ingestion: sample_data/knowledge_base/upload-ingestion.md documents expected behavior relevant to the incident: # Upload And Ingestion Notes Uploading a PDF should write the file, ingest the document, reset RAG caches, and make the new chunks available to retrieval. Duplicate filenames re... evidence-kb-selected-document-routing: sample_data/knowledge_base/selected-document-routing.md documents expected behavior relevant to the incident: # Selected Document Retrieval Notes Selected-document retrieval depends on matching the UI-selected filename to the `source` metadata stored in the vector database. The matching... evidence-kb-retrieval-strategies: sample_data/knowledge_base/retrieval-strategies.md documents expected behavior relevant to the incident: # Retrieval Strategy Contract The conversational RAG application supports exactly three retrieval strategy values at runtime: - `hybrid` - `parent_child` - `fusion` `RetrievalSt... evidence-src/rag/cache.py:1-34: src/rag/cache.py:1-34 shows relevant implementation behavior: from functools import lru_cache from src.rag.retrievers import ( get_history_aware_retriever, get_retriever, get_all_documents ) @lru_cache(maxsize=100) def cached_retrieval( us... evidence-src/services/upload_service.py:1-77: src/services/upload_service.py:1-77 shows relevant implementation behavior: import os import time import streamlit as st from src.config import DATA_DIR from src.ingest import ingest_single_document from src.rag.cache import reset_rag_caches def handle_... evidence-src/ingest.py:71-85: src/ingest.py:71-85 shows relevant implementation behavior: ) vectorstore.add_documents( chunks ) ingest_parent_child_documents( raw_documents ) print(f\"Ingested: {file_path}\") if __name__ == \"__main__\": ingest_documents() evidence-src/ingest.py:1-80: src/ingest.py:1-80 shows relevant implementation behavior: from langchain_openai import OpenAIEmbeddings from langchain_chroma import Chroma from src.vectorstore import ( load_documents, load_and_split_documents, load_single_document, s... evidence-src/conversationalAI.py:141-220: src/conversationalAI.py:141-220 shows relevant implementation behavior: # selected_document = st.sidebar.selectbox( # \"Filter Documents\", # [\"All Documents\"] + documents # ) # if \"uploader_key\" not in st.session_state: # st.session_state.uploader_ke...",
+  "evidence_ids": [
+    "EVID-LOG-A080477F",
+    "EVID-LOG-22620B7B",
+    "evidence-kb-README",
+    "evidence-kb-upload-ingestion",
+    "evidence-kb-selected-document-routing",
+    "evidence-kb-retrieval-strategies",
+    "evidence-src/rag/cache.py:1-34",
+    "evidence-src/services/upload_service.py:1-77",
+    "evidence-src/ingest.py:71-85",
+    "evidence-src/ingest.py:1-80",
+    "evidence-src/conversationalAI.py:141-220"
+  ],
+  "confidence_score": 0.8,
+  "confidence_reason": "Confidence is based on available evidence quality, source diversity, and evaluator result: Evidence is sufficient to proceed to RCA writing.",
+  "immediate_fix": "Inspect and fix the code path at src/rag/cache.py:1-34.",
+  "long_term_prevention": "Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.",
+  "tests_to_add": [
+    "Add a regression test for incident INC-004.",
+    "Add a test covering the implicated implementation path."
+  ],
+  "open_questions": [],
+  "low_confidence_warning": null,
+  "metadata": {
+    "evidence_count": "11",
+    "dynamic_workflow": "true"
+  }
+}

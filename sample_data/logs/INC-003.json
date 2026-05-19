@@ -1,0 +1,22 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "warning",
+    "message": "Parent-child retrieval found no matching source for the selected document.",
+    "service_name": "conversational_rag",
+    "environment": "local-sample",
+    "request_id": "req-inc-003",
+    "trace_id": "trace-selected-doc-003",
+    "raw": "2026-05-19T12:03:08Z WARNING conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 parent_child retrieval returned no matching sources selected_document=\"Transformer Notes.pdf\" normalized_selected=\"Transformer Notes.pdf\" available_source=\"transformer_notes.pdf\""
+  },
+  {
+    "log_id": "log-002",
+    "level": "error",
+    "message": "Summary request completed with zero retrieved documents for a selected PDF.",
+    "service_name": "conversational_rag",
+    "environment": "local-sample",
+    "request_id": "req-inc-003",
+    "trace_id": "trace-selected-doc-003",
+    "raw": "2026-05-19T12:03:09Z ERROR conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 query=\"summarize this document\" selected_document=\"Transformer Notes.pdf\" resolved_strategy=parent_child retrieved_docs_count=0 final_docs_count=0"
+  }
+]

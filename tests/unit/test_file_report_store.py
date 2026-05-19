@@ -1,10 +1,10 @@
 import json
 
+import pytest
+
 from bug_resolver.providers.reports.file_report_store import FileReportStore
 from bug_resolver.schemas.rca import RCAReport
-
-
-import pytest
+from bug_resolver.schemas.solution import SolutionRecommendation
 
 
 @pytest.mark.asyncio
@@ -84,6 +84,59 @@ async def test_file_report_store_saves_markdown_and_json(tmp_path):
     assert "## Technical Explanation" in saved_markdown
     assert "Application raised KeyError: output" in saved_markdown
     assert "- environment: local-test" in saved_markdown
+
+
+@pytest.mark.asyncio
+async def test_file_report_store_saves_solution_markdown_when_solution_is_provided(
+    tmp_path,
+):
+    report = RCAReport(
+        report_id="RCA-001",
+        incident_id="INC-001",
+        title="RCA",
+        incident_summary="Summary.",
+        root_cause="Root cause.",
+        technical_explanation="Technical explanation.",
+        confidence_score=0.9,
+        confidence_reason="Enough evidence exists.",
+    )
+    solution = SolutionRecommendation(
+        recommendation_id="SOL-001",
+        incident_id="INC-001",
+        rca_report_id="RCA-001",
+        summary="Fix the router output contract.",
+        immediate_steps=["Normalize unsupported router strategies."],
+        long_term_steps=["Keep router schema and prompt in sync."],
+        tests_to_add=["Add routing regression test."],
+        monitoring_improvements=["Track unsupported router strategies."],
+        risk_notes=["Validate with production-like prompts."],
+        confidence_score=0.85,
+        evidence_ids=["evidence-src/rag/routing/llm.py:1-80"],
+    )
+
+    store = FileReportStore(reports_dir=tmp_path)
+
+    result = await store.save_report(report, solution=solution)
+
+    markdown_path = tmp_path / "incidents" / "INC-001" / "rca.md"
+    json_path = tmp_path / "incidents" / "INC-001" / "rca.json"
+    solution_json_path = tmp_path / "incidents" / "INC-001" / "solution.json"
+    solution_markdown_path = tmp_path / "incidents" / "INC-001" / "solution.md"
+
+    assert result == [
+        markdown_path,
+        json_path,
+        solution_json_path,
+        solution_markdown_path,
+    ]
+    assert solution_json_path.exists()
+    assert solution_markdown_path.exists()
+
+    saved_solution_markdown = solution_markdown_path.read_text(encoding="utf-8")
+    assert "# Solution Recommendation for INC-001" in saved_solution_markdown
+    assert "Fix the router output contract." in saved_solution_markdown
+    assert "- Normalize unsupported router strategies." in saved_solution_markdown
+    assert "- recommendation_id: SOL-001" in saved_solution_markdown
 
 
 @pytest.mark.asyncio

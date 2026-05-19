@@ -1,0 +1,22 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "warning",
+    "message": "Duplicate upload filename was ignored before ingestion.",
+    "service_name": "conversational_rag",
+    "environment": "local-sample",
+    "request_id": "req-inc-004",
+    "trace_id": "trace-upload-004",
+    "raw": "2026-05-19T13:21:44Z WARNING conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 upload ignored because filename already exists in session processed_uploads filename=\"policy_handbook.pdf\" ingestion_started=false cache_reset=false"
+  },
+  {
+    "log_id": "log-002",
+    "level": "error",
+    "message": "User received stale answer after uploading a revised document with the same filename.",
+    "service_name": "conversational_rag",
+    "environment": "local-sample",
+    "request_id": "req-inc-004",
+    "trace_id": "trace-upload-004",
+    "raw": "2026-05-19T13:22:10Z ERROR conversational_rag request_id=req-inc-004 trace_id=trace-upload-004 stale document content served after duplicate upload filename=\"policy_handbook.pdf\" expected_revision=\"2026-Q2\" indexed_revision=\"2026-Q1\""
+  }
+]

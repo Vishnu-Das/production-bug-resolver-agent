@@ -1,0 +1,87 @@
+# RCA for Selected document summary returns no answer
+
+## Incident Summary
+
+Incident INC-003: Users selecting a specific PDF and asking for a summary receive an empty or irrelevant answer even though the document exists in the vector store.
+
+## Impact
+
+Affected service: conversational_rag. Affected area: selected document retrieval.
+
+## Symptoms
+
+- Users selecting a specific PDF and asking for a summary receive an empty or irrelevant answer even though the document exists in the vector store.
+- 2026-05-19T12:03:08Z WARNING conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 parent_child retrieval returned no matching sources selected_document="Transformer Notes.pdf" normalized_selected="Transformer Notes.pdf" available_source="transformer_notes.pdf"
+- 2026-05-19T12:03:09Z ERROR conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 query="summarize this document" selected_document="Transformer Notes.pdf" resolved_strategy=parent_child retrieved_docs_count=0 final_docs_count=0
+
+## Log Findings
+
+- log-001 shows runtime signal: 2026-05-19T12:03:08Z WARNING conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 parent_child retrieval returned no matching sources selected_document="Tra...
+- log-002 shows the fallback resolved the summary-style query to the supported `parent_child` retrieval strategy.
+
+## Code Findings
+
+- src/obsolette_rag.py:1-80 shows relevant implementation behavior: ## This module is obselette and is not currently used in the application. # ## This module implements the core Retrieval-Augmented Generation (RAG) logic for the application. It...
+- src/rag/service.py:1-80 shows relevant implementation behavior: from typing import List, Optional, Tuple import time from langchain_core.messages import BaseMessage from langsmith import traceable from src.config import RETRIEVAL_STRATEGY fr...
+- src/rag/service.py:141-220 shows relevant implementation behavior: @traceable( name="RAG Stream Response", run_type="chain", ) def stream_response( user_input: str, chat_history: List[BaseMessage], selected_document: str = None, ): debug_info =...
+- C:/Users/vishn/Documents/Learning AI/conversational_rag/eval/evaluate_retrieval.py:1-80 shows relevant implementation behavior: import json import os import sys sys.path.append(os.getcwd()) from src.rag.service import stream_response def normalize_source_name(source: str) -> str: if not source: return ""...
+- tests/rag/test_service.py:211-235 shows relevant implementation behavior: document=doc, score=0.91, retrieval_source="parent_child", ) ] mock_qa_prompt.invoke.return_value = ["mock-message"] mock_llm.stream.return_value = iter(["answer chunk"]) stream...
+
+## Knowledge Base Findings
+
+- None
+
+## Hypotheses Considered
+
+- H1: Runtime failure is caused by an implementation mismatch in the code path identified by the logs and code evidence.
+- H2: The observed behavior is caused by missing validation or insufficient normalization around the failing code path.
+
+## Final Root Cause
+
+The incident is most likely caused by a mismatch between the runtime failure observed in logs and the implementation behavior shown in src/obsolette_rag.py:1-80.
+
+## Technical Explanation
+
+EVID-LOG-0F439B4D: log-001 shows runtime signal: 2026-05-19T12:03:08Z WARNING conversational_rag request_id=req-inc-003 trace_id=trace-selected-doc-003 parent_child retrieval returned no matching sources selected_document="Tra... EVID-LOG-0A7E5E7B: log-002 shows the fallback resolved the summary-style query to the supported `parent_child` retrieval strategy. evidence-src/obsolette_rag.py:1-80: src/obsolette_rag.py:1-80 shows relevant implementation behavior: ## This module is obselette and is not currently used in the application. # ## This module implements the core Retrieval-Augmented Generation (RAG) logic for the application. It... evidence-src/rag/service.py:1-80: src/rag/service.py:1-80 shows relevant implementation behavior: from typing import List, Optional, Tuple import time from langchain_core.messages import BaseMessage from langsmith import traceable from src.config import RETRIEVAL_STRATEGY fr... evidence-src/rag/service.py:141-220: src/rag/service.py:141-220 shows relevant implementation behavior: @traceable( name="RAG Stream Response", run_type="chain", ) def stream_response( user_input: str, chat_history: List[BaseMessage], selected_document: str = None, ): debug_info =... evidence-eval/evaluate_retrieval.py:1-80: C:/Users/vishn/Documents/Learning AI/conversational_rag/eval/evaluate_retrieval.py:1-80 shows relevant implementation behavior: import json import os import sys sys.path.append(os.getcwd()) from src.rag.service import stream_response def normalize_source_name(source: str) -> str: if not source: return ""... evidence-tests/rag/test_service.py:211-235: tests/rag/test_service.py:211-235 shows relevant implementation behavior: document=doc, score=0.91, retrieval_source="parent_child", ) ] mock_qa_prompt.invoke.return_value = ["mock-message"] mock_llm.stream.return_value = iter(["answer chunk"]) stream...
+
+## Evidence
+
+- EVID-LOG-0F439B4D
+- EVID-LOG-0A7E5E7B
+- evidence-src/obsolette_rag.py:1-80
+- evidence-src/rag/service.py:1-80
+- evidence-src/rag/service.py:141-220
+- evidence-eval/evaluate_retrieval.py:1-80
+- evidence-tests/rag/test_service.py:211-235
+
+## Confidence
+
+Score: 0.75
+
+Reason: Confidence is based on available evidence quality, source diversity, and evaluator result: Evidence is sufficient to proceed to RCA writing.
+
+## Recommended Fix
+
+Inspect and fix the code path at src/obsolette_rag.py:1-80.
+
+## Preventive Actions
+
+Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.
+
+## Tests to Add
+
+- Add a regression test for incident INC-003.
+- Add a test covering the implicated implementation path.
+
+## Open Questions
+
+- None
+
+## Low Confidence Warning
+
+None
+
+## Metadata
+
+- evidence_count: 7
+- dynamic_workflow: true

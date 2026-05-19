@@ -30,15 +30,15 @@ ValueError: Invalid strategy: summary
 
 ## Code Findings
 
-- C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:71-138 validates the LLM router strategy and raises an error when the model returns an unsupported value.
-- C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_llm_router.py:1-80 shows relevant implementation behavior: from unittest.mock import Mock, patch import pytest from langchain_core.runnables import RunnableLambda from src.rag.retrieval.factory import RetrievalStrategyFactory from src.r...
-- C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\factory.py:1-37 shows relevant implementation behavior: from src.config import ( ROUTER_TYPE ) from src.rag.routing.base import ( BaseRouterStrategy ) from src.rag.routing.rule_based import ( RuleBasedRouterStrategy ) from src.rag.ro...
-- C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\llm.py:1-80 shows relevant implementation behavior: from langchain_openai import ChatOpenAI from src.config import ( ROUTER_MODEL_NAME ) from src.rag.models import ( RouterResult ) from src.rag.prompts import ( router_prompt ) fr...
-- C:\Users\vishn\Documents\Learning AI\conversational_rag\tests\rag\routing\test_rule_based_router.py:1-80 maps summary-style selected-document queries to the supported `parent_child` retrieval strategy.
+- tests/rag/routing/test_llm_router.py:71-138 validates the LLM router strategy and raises an error when the model returns an unsupported value.
+- src/rag/retrieval/factory.py:1-42 shows relevant implementation behavior: from src.rag.retrieval.base import ( BaseRetrievalStrategy ) from src.rag.retrieval.hybrid.strategy import ( HybridRetrievalStrategy ) from src.rag.retrieval.parent_child.strate...
+- src/rag/routing/rule_based.py:1-80 maps summary-style selected-document queries to the supported `parent_child` retrieval strategy.
+- C:/Users/vishn/Documents/Learning AI/conversational_rag/eval/compare_retrieval_strategies.py:71-150 shows relevant implementation behavior: actual_strategy = strategy_name if strategy_name == "auto": router = RouterStrategyFactory.get_router() router_result = router.route( query=question, selected_document=selected_...
+- tests/rag/retrieval/test_retrieval_factory.py:1-60 shows relevant implementation behavior: from unittest.mock import Mock, patch import pytest from src.rag.retrieval.factory import RetrievalStrategyFactory @patch("src.rag.retrieval.factory.HybridRetrievalStrategy") de...
 
 ## Knowledge Base Findings
 
-- sample_data\knowledge_base\README.md documents expected behavior relevant to the incident: # Conversational RAG Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents. The system comb...
+- sample_data/knowledge_base/README.md documents expected behavior relevant to the incident: # Conversational RAG Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents. The system comb...
 
 ## Hypotheses Considered
 
@@ -52,18 +52,18 @@ The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a
 
 ## Technical Explanation
 
-The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. Code evidence from C:\Users\vishn\Documents\Learning AI\conversational_rag\src\rag\routing\llm.py:1-80 points to the LLM routing path where the returned strategy is validated. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
+The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.
 
 ## Evidence
 
-- EVID-LOG-57C35B04
-- EVID-LOG-B7FF02ED
+- EVID-LOG-3D205121
+- EVID-LOG-AD350D86
 - evidence-kb-README
 - evidence-tests/rag/routing/test_llm_router.py:71-138
-- evidence-tests/rag/routing/test_llm_router.py:1-80
-- evidence-src/rag/routing/factory.py:1-37
-- evidence-src/rag/routing/llm.py:1-80
-- evidence-tests/rag/routing/test_rule_based_router.py:1-80
+- evidence-src/rag/retrieval/factory.py:1-42
+- evidence-src/rag/routing/rule_based.py:1-80
+- evidence-eval/compare_retrieval_strategies.py:71-150
+- evidence-tests/rag/retrieval/test_retrieval_factory.py:1-60
 
 ## Confidence
 

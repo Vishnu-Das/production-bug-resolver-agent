@@ -37,8 +37,8 @@ def add_evidence(state: WorkflowState) -> None:
         EvidenceItem(
             evidence_id="ev-code-1",
             source_type=EvidenceSourceType.CODE,
-            source_name="src/rag/router.py",
-            file_path="src/rag/router.py",
+            source_name="C:\\Users\\vishn\\repo\\src\\rag\\router.py",
+            file_path="C:\\Users\\vishn\\repo\\src\\rag\\router.py",
             line_start=40,
             line_end=45,
             content="def route_query(...): return response['output']",
