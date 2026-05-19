@@ -1,0 +1,54 @@
+{
+  "report_id": "RCA-20260519-5FDBEF13",
+  "incident_id": "INC-001",
+  "title": "RCA for LLM router falls back during summary questions",
+  "incident_summary": "Incident INC-001: Users report that broad summary questions in auto retrieval mode intermittently use the fallback router instead of the LLM router, reducing retrieval quality and making answers less relevant.",
+  "impact": "Affected service: conversational_rag. Affected area: automatic retrieval routing.",
+  "symptoms": [
+    "Users report that broad summary questions in auto retrieval mode intermittently use the fallback router instead of the LLM router, reducing retrieval quality and making answers less relevant.",
+    "2026-05-19T10:45:12Z ERROR conversational_rag request_id=req-inc-001 trace_id=trace-router-001 LLM router failed. Fallback used. Error: Invalid strategy: summary. Fallback reason: summary queries should use parent_child retrieval.\nTraceback (most recent call last):\n  File \"src/rag/service.py\", line 55, in resolve_retrieval_strategy\n    router_result = router.route(query=user_input, selected_document=selected_document)\n  File \"src/rag/routing/llm.py\", line 82, in route\n    raise ValueError(f\"Invalid strategy: {result.strategy}\")\nValueError: Invalid strategy: summary",
+    "2026-05-19T10:45:12Z WARNING conversational_rag request_id=req-inc-001 trace_id=trace-router-001 router_type=llm_fallback query=\"summarize this document\" selected_document=\"transformer_notes.pdf\" resolved_strategy=parent_child"
+  ],
+  "log_findings": [
+    "Retrieved log evidence from log-001.",
+    "Retrieved log evidence from log-002."
+  ],
+  "code_findings": [
+    "Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\README.md:771-850.",
+    "Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\tests\\rag\\routing\\test_rule_based_router.py:1-80.",
+    "Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\tests\\rag\\routing\\test_llm_router.py:71-138.",
+    "Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\src\\rag\\routing\\rule_based.py:1-80.",
+    "Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\README.md:281-360."
+  ],
+  "knowledge_base_findings": [
+    "Retrieved knowledge_base evidence from sample_data\\knowledge_base\\README.md."
+  ],
+  "hypotheses_considered": [],
+  "selected_hypothesis_id": null,
+  "root_cause": "The incident is most likely caused by the implementation behavior shown in C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\README.md:771-850, matching the runtime failure observed in logs.",
+  "technical_explanation": "EVID-LOG-B2924331: Retrieved log evidence from log-001. EVID-LOG-E3B6AF26: Retrieved log evidence from log-002. evidence-kb-README: Retrieved knowledge_base evidence from sample_data\\knowledge_base\\README.md. evidence-README.md:771-850: Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\README.md:771-850. evidence-tests\\rag\\routing\\test_rule_based_router.py:1-80: Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\tests\\rag\\routing\\test_rule_based_router.py:1-80. evidence-tests\\rag\\routing\\test_llm_router.py:71-138: Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\tests\\rag\\routing\\test_llm_router.py:71-138. evidence-src\\rag\\routing\\rule_based.py:1-80: Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\src\\rag\\routing\\rule_based.py:1-80. evidence-README.md:281-360: Retrieved code evidence from C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\README.md:281-360.",
+  "evidence_ids": [
+    "EVID-LOG-B2924331",
+    "EVID-LOG-E3B6AF26",
+    "evidence-kb-README",
+    "evidence-README.md:771-850",
+    "evidence-tests\\rag\\routing\\test_rule_based_router.py:1-80",
+    "evidence-tests\\rag\\routing\\test_llm_router.py:71-138",
+    "evidence-src\\rag\\routing\\rule_based.py:1-80",
+    "evidence-README.md:281-360"
+  ],
+  "confidence_score": 1.0,
+  "confidence_reason": "Evidence is sufficient to proceed to RCA writing.",
+  "immediate_fix": "Inspect and fix the code path at C:\\Users\\vishn\\Documents\\Learning AI\\conversational_rag\\README.md:771-850.",
+  "long_term_prevention": "Add regression tests, improve structured error handling, and improve logging around the failing code path.",
+  "tests_to_add": [
+    "Add a regression test for incident INC-001.",
+    "Add a test covering the implicated implementation path."
+  ],
+  "open_questions": [],
+  "low_confidence_warning": null,
+  "metadata": {
+    "evidence_count": "8",
+    "dynamic_workflow": "true"
+  }
+}

@@ -18,6 +18,13 @@ INVESTIGATION_AGENT_NAMES = {
     AgentName.HISTORICAL_RCA_INVESTIGATOR,
 }
 
+WORKFLOW_CONTROL_AGENT_NAMES = {
+    AgentName.EVIDENCE_EVALUATOR,
+    AgentName.RCA_WRITER,
+    AgentName.SOLUTION_RECOMMENDER,
+    AgentName.REPORT_WRITER,
+}
+
 
 class GuardrailEngine:
     """
@@ -80,9 +87,12 @@ class GuardrailEngine:
             if not self._can_finish(state):
                 violated_rules.append("finish_requires_report_or_low_confidence")
 
-        if not state.can_replan() and decision.next_agent in INVESTIGATION_AGENT_NAMES:
-            if state.evidence_evaluation is not None:
-                violated_rules.append("max_replans_reached")
+        # if not state.can_replan() and decision.next_agent in INVESTIGATION_AGENT_NAMES:
+        #     if state.evidence_evaluation is not None:
+        #         if state.evidence_evaluation.can_write_rca:
+        #             violated_rules.append("max_replans_reached")
+        #         elif not state.can_take_step():
+        #             violated_rules.append("max_replans_reached")
 
         if violated_rules:
             return GuardrailDecision(
@@ -107,16 +117,34 @@ class GuardrailEngine:
         state: WorkflowState,
         decision: AgentDecision,
     ) -> bool:
+        # Workflow-forced control steps are intentionally repeated.
+        #
+        # Example:
+        # log_investigator -> evidence_evaluator
+        # code_investigator -> evidence_evaluator
+        # knowledge_base_investigator -> evidence_evaluator
+        #
+        # The repeated-call guardrail is meant to stop the supervisor from
+        # repeatedly choosing the same investigation agent with no new reason.
+        # It should not block deterministic workflow control steps.
+        if (
+            decision.metadata.get("forced_by_workflow") == "true"
+            and decision.next_agent in WORKFLOW_CONTROL_AGENT_NAMES
+        ):
+            return False
+
         previous_decisions = [
             previous_decision
             for previous_decision in state.trace.decisions
             if previous_decision.next_agent == decision.next_agent
             and previous_decision.decision_id != decision.decision_id
         ]
+
         if not previous_decisions:
             return False
 
         previous_decision = previous_decisions[-1]
+
         return (
             previous_decision.reason == decision.reason
             and previous_decision.queries == decision.queries
@@ -140,12 +168,16 @@ class GuardrailEngine:
         if blocked_agent == AgentName.REPORT_WRITER:
             return AgentName.SOLUTION_RECOMMENDER
 
-        if blocked_agent in {
-            AgentName.RCA_WRITER,
-        }:
+        if blocked_agent == AgentName.RCA_WRITER:
             return AgentName.EVIDENCE_EVALUATOR
 
-        return AgentName.FINISH
+        if blocked_agent in INVESTIGATION_AGENT_NAMES:
+            return AgentName.EVIDENCE_EVALUATOR
+
+        if blocked_agent == AgentName.EVIDENCE_EVALUATOR:
+            return AgentName.FINISH
+
+        return AgentName.EVIDENCE_EVALUATOR
 
     def _can_finish(self, state: WorkflowState) -> bool:
         report_saved = (

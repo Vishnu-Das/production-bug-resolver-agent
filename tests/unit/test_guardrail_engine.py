@@ -103,6 +103,7 @@ def test_guardrail_engine_rejects_repeated_agent_call_without_new_reason() -> No
     state = make_state()
     decision = make_decision(AgentName.LOG_INVESTIGATOR)
     state.record_decision(decision)
+
     repeated_decision = make_decision(AgentName.LOG_INVESTIGATOR)
     repeated_decision.decision_id = "decision-2"
 
@@ -116,6 +117,7 @@ def test_guardrail_engine_allows_repeated_agent_call_with_new_reason() -> None:
     engine = GuardrailEngine()
     state = make_state()
     state.record_decision(make_decision(AgentName.LOG_INVESTIGATOR))
+
     decision = AgentDecision(
         decision_id="decision-2",
         next_agent=AgentName.LOG_INVESTIGATOR,
@@ -127,6 +129,44 @@ def test_guardrail_engine_allows_repeated_agent_call_with_new_reason() -> None:
     result = engine.validate_decision(state=state, decision=decision)
 
     assert result.allowed is True
+
+
+def test_guardrail_engine_allows_forced_repeated_control_agent_call() -> None:
+    engine = GuardrailEngine()
+    state = make_state()
+
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-log-1",
+            source_type=EvidenceSourceType.LOG,
+            source_name="app.log",
+            content="TypeError in router",
+        )
+    )
+
+    first_decision = AgentDecision(
+        decision_id="decision-1",
+        next_agent=AgentName.EVIDENCE_EVALUATOR,
+        reason="Evaluate evidence after latest investigation step.",
+        queries=[],
+        expected_evidence=[],
+        metadata={"forced_by_workflow": "true"},
+    )
+    state.record_decision(first_decision)
+
+    repeated_decision = AgentDecision(
+        decision_id="decision-2",
+        next_agent=AgentName.EVIDENCE_EVALUATOR,
+        reason="Evaluate evidence after latest investigation step.",
+        queries=[],
+        expected_evidence=[],
+        metadata={"forced_by_workflow": "true"},
+    )
+
+    result = engine.validate_decision(state=state, decision=repeated_decision)
+
+    assert result.allowed is True
+    assert "repeated_agent_call_without_new_reason" not in result.violated_rules
 
 
 def test_guardrail_engine_blocks_rca_without_minimum_evidence() -> None:
@@ -271,7 +311,7 @@ def test_guardrail_engine_allows_finish_for_low_confidence_state() -> None:
     assert result.allowed is True
 
 
-def test_guardrail_engine_blocks_investigation_replan_when_max_replans_reached() -> None:
+def test_guardrail_engine_allows_investigation_when_max_replans_reached_but_steps_available() -> None:
     engine = GuardrailEngine()
     state = make_state(max_replans=0)
     state.evidence_evaluation = EvidenceEvaluationResult(
@@ -286,8 +326,8 @@ def test_guardrail_engine_blocks_investigation_replan_when_max_replans_reached()
 
     result = engine.validate_decision(state=state, decision=decision)
 
-    assert result.allowed is False
-    assert "max_replans_reached" in result.violated_rules
+    assert result.allowed is True
+    assert "max_replans_reached" not in result.violated_rules
 
 
 def test_guardrail_engine_has_no_llm_dependency() -> None:

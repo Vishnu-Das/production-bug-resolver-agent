@@ -141,13 +141,8 @@ class DynamicBugResolutionWorkflow:
 
                 if state.investigation_status == InvestigationStatus.COMPLETED:
                     return state
-
-                if (
-                    state.evidence_evaluation
-                    and state.evidence_evaluation.can_write_rca
-                    and state.rca_report is None
-                ):
-                    state.investigation_status = InvestigationStatus.READY_FOR_RCA
+                if await self._finalize_if_ready(state):
+                    return state
 
             state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
             state.mark_low_confidence()
@@ -170,20 +165,33 @@ class DynamicBugResolutionWorkflow:
                 )
             )
             self._record_successful_evidence_run(state, decision, evidence_items)
+            await self._run_evidence_evaluator(state)
             return
 
         if decision.next_agent == AgentName.CODE_INVESTIGATOR:
             evidence_items = await self._code_investigator_agent.run(
-                CodeInvestigatorInput(decision=decision)
+                CodeInvestigatorInput(
+                    decision=decision,
+                    limit=5,
+                )
             )
             self._record_successful_evidence_run(state, decision, evidence_items)
+
+            # New: immediately re-check whether evidence is enough
+            await self._run_evidence_evaluator(state)
             return
 
         if decision.next_agent == AgentName.KNOWLEDGE_BASE_INVESTIGATOR:
             evidence_items = await self._knowledge_base_investigator_agent.run(
-                KnowledgeBaseInvestigatorInput(decision=decision)
+                KnowledgeBaseInvestigatorInput(
+                    decision=decision,
+                    limit=5,
+                )
             )
             self._record_successful_evidence_run(state, decision, evidence_items)
+
+            # New: immediately re-check whether evidence is enough
+            await self._run_evidence_evaluator(state)
             return
 
         if decision.next_agent == AgentName.EVIDENCE_EVALUATOR:
@@ -311,3 +319,91 @@ class DynamicBugResolutionWorkflow:
                 notes=["Agent execution is not wired in this workflow slice."],
             )
         )
+    
+    async def _run_evidence_evaluator(self, state: WorkflowState) -> None:
+        decision = AgentDecision(
+            decision_id=new_agent_decision_id(),
+            next_agent=AgentName.EVIDENCE_EVALUATOR,
+            reason="Evaluate evidence after latest investigation step.",
+            queries=[],
+            expected_evidence=[],
+            should_continue=True,
+            metadata={"forced_by_workflow": "true"},
+        )
+
+        state.record_decision(decision)
+
+        guardrail_decision = self._guardrail_engine.validate_decision(
+            state=state,
+            decision=decision,
+        )
+        state.record_guardrail_decision(guardrail_decision)
+
+        if not guardrail_decision.allowed:
+            state.add_investigation_step(
+                InvestigationStep(
+                    step_number=state.trace.next_step_number(),
+                    agent_name=decision.next_agent,
+                    run_status=AgentRunStatus.BLOCKED,
+                    decision_id=decision.decision_id,
+                    guardrail_id=guardrail_decision.guardrail_id,
+                    notes=[guardrail_decision.reason],
+                )
+            )
+            return
+
+        await self._execute_decision(state=state, decision=decision)
+
+    async def _finalize_if_ready(self, state: WorkflowState) -> bool:
+        """Run deterministic finalization path once evidence is sufficient.
+
+        The supervisor controls evidence gathering. Once the evaluator says RCA can
+        be written, the workflow should complete RCA -> solution -> report without
+        asking the supervisor to choose more investigation agents.
+        """
+        if state.evidence_evaluation is None:
+            return False
+
+        if not state.evidence_evaluation.can_write_rca:
+            return False
+
+        if state.rca_report is None:
+            rca_decision = AgentDecision(
+                decision_id=new_agent_decision_id(),
+                next_agent=AgentName.RCA_WRITER,
+                reason="Evidence evaluation says RCA can be written.",
+                queries=[],
+                expected_evidence=[],
+                should_continue=True,
+                metadata={"forced_by_workflow": "true"},
+            )
+            state.record_decision(rca_decision)
+            await self._execute_decision(state=state, decision=rca_decision)
+
+        if state.solution_recommendation is None:
+            solution_decision = AgentDecision(
+                decision_id=new_agent_decision_id(),
+                next_agent=AgentName.SOLUTION_RECOMMENDER,
+                reason="RCA report is ready; generate solution recommendation.",
+                queries=[],
+                expected_evidence=[],
+                should_continue=True,
+                metadata={"forced_by_workflow": "true"},
+            )
+            state.record_decision(solution_decision)
+            await self._execute_decision(state=state, decision=solution_decision)
+
+        if state.final_report_path is None:
+            report_decision = AgentDecision(
+                decision_id=new_agent_decision_id(),
+                next_agent=AgentName.REPORT_WRITER,
+                reason="RCA and solution are ready; save final report.",
+                queries=[],
+                expected_evidence=[],
+                should_continue=False,
+                metadata={"forced_by_workflow": "true"},
+            )
+            state.record_decision(report_decision)
+            await self._execute_decision(state=state, decision=report_decision)
+
+        return state.investigation_status == InvestigationStatus.COMPLETED
