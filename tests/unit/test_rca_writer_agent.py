@@ -131,7 +131,14 @@ async def test_rca_writer_agent_generates_report_from_dynamic_evidence() -> None
             "The router returns a structured response."
         )
     ]
-    assert result.metadata == {"evidence_count": "3", "dynamic_workflow": "true"}
+    assert result.metadata == {
+        "evidence_count": "3",
+        "dynamic_workflow": "true",
+        "rca_writer": "deterministic_fallback",
+        "llm_output_validated": "false",
+        "fallback_used": "true",
+        "fallback_reason": "llm_client_not_configured",
+    }
 
 
 @pytest.mark.asyncio
@@ -174,6 +181,9 @@ async def test_rca_writer_agent_can_generate_llm_backed_report() -> None:
     assert result.evidence_ids == ["ev-log-1", "ev-code-1"]
     assert result.root_cause == "Router output contract mismatch caused the failure."
     assert result.metadata["rca_writer"] == "llm"
+    assert result.metadata["llm_output_validated"] == "true"
+    assert result.metadata["fallback_used"] == "false"
+    assert "fallback_reason" not in result.metadata
     assert llm.prompt is not None
     assert "Allowed evidence IDs: ev-log-1, ev-code-1, ev-kb-1" in llm.prompt
 
@@ -210,7 +220,8 @@ async def test_rca_writer_agent_falls_back_when_llm_confidence_exceeds_baseline(
     result = await RCAWriterAgent(llm_client=llm).run(state)
 
     assert result.title == "RCA for Summary route fails"
-    assert "rca_writer" not in result.metadata
+    assert result.metadata["rca_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "llm_call_failed"
 
 
 @pytest.mark.asyncio
@@ -245,7 +256,8 @@ async def test_rca_writer_agent_falls_back_when_llm_claims_fix_was_done() -> Non
     result = await RCAWriterAgent(llm_client=llm).run(state)
 
     assert result.title == "RCA for Summary route fails"
-    assert "rca_writer" not in result.metadata
+    assert result.metadata["rca_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "forbidden_completion_claim"
 
 
 @pytest.mark.asyncio
@@ -282,7 +294,8 @@ async def test_rca_writer_agent_falls_back_when_llm_leaks_internal_evidence_path
     result = await RCAWriterAgent(llm_client=llm).run(state)
 
     assert result.title == "RCA for Summary route fails"
-    assert "rca_writer" not in result.metadata
+    assert result.metadata["rca_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "internal_evidence_prefix_in_prose"
 
 
 @pytest.mark.asyncio
@@ -317,7 +330,8 @@ async def test_rca_writer_agent_falls_back_when_selected_hypothesis_is_missing()
     result = await RCAWriterAgent(llm_client=llm).run(state)
 
     assert result.title == "RCA for Summary route fails"
-    assert "rca_writer" not in result.metadata
+    assert result.metadata["rca_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "selected_hypothesis_id_not_found"
 
 
 @pytest.mark.asyncio
@@ -330,7 +344,10 @@ async def test_rca_writer_agent_falls_back_when_llm_fails() -> None:
     result = await RCAWriterAgent(llm_client=llm).run(state)
 
     assert result.title == "RCA for Summary route fails"
-    assert result.metadata == {"evidence_count": "3", "dynamic_workflow": "true"}
+    assert result.metadata["rca_writer"] == "deterministic_fallback"
+    assert result.metadata["llm_output_validated"] == "false"
+    assert result.metadata["fallback_used"] == "true"
+    assert result.metadata["fallback_reason"] == "llm_call_failed"
 
 
 @pytest.mark.asyncio
@@ -366,7 +383,8 @@ async def test_rca_writer_agent_falls_back_when_llm_references_unknown_evidence(
 
     assert result.title == "RCA for Summary route fails"
     assert result.evidence_ids == ["ev-log-1", "ev-code-1", "ev-kb-1"]
-    assert "rca_writer" not in result.metadata
+    assert result.metadata["rca_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "invalid_evidence_id"
 
 
 @pytest.mark.asyncio

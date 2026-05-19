@@ -52,6 +52,9 @@ async def test_file_report_store_saves_markdown_and_json(tmp_path):
         open_questions=[],
         metadata={
             "environment": "local-test",
+            "rca_writer": "llm",
+            "llm_output_validated": "true",
+            "fallback_used": "false",
         },
     )
 
@@ -84,6 +87,10 @@ async def test_file_report_store_saves_markdown_and_json(tmp_path):
     assert "The summary response expected an output key that was missing." in saved_markdown
     assert "## Technical Explanation" in saved_markdown
     assert "Application raised KeyError: output" in saved_markdown
+    assert "## Generation Details" in saved_markdown
+    assert "- writer: llm" in saved_markdown
+    assert "- llm_output_validated: true" in saved_markdown
+    assert "- fallback_used: false" in saved_markdown
     assert "- environment: local-test" in saved_markdown
     assert "# Summary Query 500 Error RCA ## Incident Summary" not in saved_markdown
 
@@ -114,6 +121,12 @@ async def test_file_report_store_saves_solution_markdown_when_solution_is_provid
         risk_notes=["Validate with production-like prompts."],
         confidence_score=0.85,
         evidence_ids=["evidence-src/rag/routing/llm.py:1-80"],
+        metadata={
+            "solution_writer": "deterministic_fallback",
+            "llm_output_validated": "false",
+            "fallback_used": "true",
+            "fallback_reason": "llm_call_failed",
+        },
     )
 
     store = FileReportStore(reports_dir=tmp_path)
@@ -143,6 +156,11 @@ async def test_file_report_store_saves_solution_markdown_when_solution_is_provid
     assert "Fix the router output contract." in saved_solution_markdown
     assert "- Normalize unsupported router strategies." in saved_solution_markdown
     assert "- src/rag/routing/llm.py:1-80" in saved_solution_markdown
+    assert "## Generation Details" in saved_solution_markdown
+    assert "- writer: deterministic_fallback" in saved_solution_markdown
+    assert "- llm_output_validated: false" in saved_solution_markdown
+    assert "- fallback_used: true" in saved_solution_markdown
+    assert "- fallback_reason: llm_call_failed" in saved_solution_markdown
     assert "- recommendation_id: SOL-001" in saved_solution_markdown
 
 

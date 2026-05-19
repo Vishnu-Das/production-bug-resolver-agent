@@ -24,6 +24,12 @@ ANALYZE_ONLY_FORBIDDEN_PHRASES = (
 )
 
 
+class RCAWriterFallback(Exception):
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class RCAWriterOutput(StrictBaseModel):
     title: str = Field(..., min_length=1)
     incident_summary: str = Field(..., min_length=1)
@@ -63,7 +69,10 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         deterministic_report = self._build_deterministic_report(input_data)
 
         if self._llm_client is None:
-            return deterministic_report
+            return self._with_fallback_metadata(
+                deterministic_report,
+                reason="llm_client_not_configured",
+            )
 
         try:
             llm_output = await self._llm_client.generate_structured(
@@ -71,13 +80,28 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
                 RCAWriterOutput,
                 system_prompt=self._build_system_prompt(),
             )
+        except Exception:
+            return self._with_fallback_metadata(
+                deterministic_report,
+                reason="llm_call_failed",
+            )
+
+        try:
             return self._build_report_from_llm_output(
                 state=input_data,
                 output=llm_output,
                 fallback_report=deterministic_report,
             )
+        except RCAWriterFallback as error:
+            return self._with_fallback_metadata(
+                deterministic_report,
+                reason=error.reason,
+            )
         except Exception:
-            return deterministic_report
+            return self._with_fallback_metadata(
+                deterministic_report,
+                reason="llm_call_failed",
+            )
 
     def _build_deterministic_report(self, input_data: WorkflowState) -> RCAReport:
         return RCAReport(
@@ -108,6 +132,19 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             },
         )
 
+    def _with_fallback_metadata(self, report: RCAReport, *, reason: str) -> RCAReport:
+        return report.model_copy(
+            update={
+                "metadata": {
+                    **report.metadata,
+                    "rca_writer": "deterministic_fallback",
+                    "llm_output_validated": "false",
+                    "fallback_used": "true",
+                    "fallback_reason": reason,
+                }
+            }
+        )
+
     def _build_report_from_llm_output(
         self,
         *,
@@ -122,34 +159,34 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             if evidence_id in allowed_evidence_ids
         ]
         if not evidence_ids:
-            raise ValueError("LLM RCA report did not reference collected evidence")
+            raise RCAWriterFallback("invalid_evidence_id")
 
         if output.confidence_score < state.confidence_threshold and not output.open_questions:
-            raise ValueError("low-confidence LLM RCA report requires open questions")
+            raise RCAWriterFallback("llm_call_failed")
 
         if output.confidence_score > fallback_report.confidence_score:
-            raise ValueError("LLM RCA confidence cannot exceed deterministic baseline")
+            raise RCAWriterFallback("llm_call_failed")
 
         if output.selected_hypothesis_id and not any(
             hypothesis.startswith(f"{output.selected_hypothesis_id}:")
             for hypothesis in output.hypotheses_considered
         ):
-            raise ValueError("selected hypothesis must be present in hypotheses")
+            raise RCAWriterFallback("selected_hypothesis_id_not_found")
 
         if not output.hypotheses_considered:
-            raise ValueError("LLM RCA report requires hypotheses")
+            raise RCAWriterFallback("missing_hypotheses")
 
         if not output.tests_to_add:
-            raise ValueError("LLM RCA report requires tests to add")
+            raise RCAWriterFallback("missing_tests_to_add")
 
         if self._contains_forbidden_analyze_only_claim(output):
-            raise ValueError("LLM RCA report claimed implementation work was completed")
+            raise RCAWriterFallback("forbidden_completion_claim")
 
         if self._contains_internal_evidence_path(output):
-            raise ValueError("LLM RCA report leaked internal evidence path prefixes")
+            raise RCAWriterFallback("internal_evidence_prefix_in_prose")
 
         if self._contains_unbalanced_inline_code(output):
-            raise ValueError("LLM RCA report contains unbalanced inline code markers")
+            raise RCAWriterFallback("unbalanced_inline_backticks")
 
         return RCAReport(
             report_id=new_rca_report_id(),
@@ -176,6 +213,8 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             metadata={
                 **fallback_report.metadata,
                 "rca_writer": "llm",
+                "llm_output_validated": "true",
+                "fallback_used": "false",
             },
         )
 

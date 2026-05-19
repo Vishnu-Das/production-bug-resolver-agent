@@ -1,40 +1,26 @@
-# RCA for Unsupported retrieval strategy breaks chat responses
+# RCA Report for Incident INC-002
 
 ## Incident Summary
 
-Incident INC-002: Chat requests fail with HTTP 500 after a deployment changed the retrieval strategy configuration to an unsupported value.
+The incident involved critical failure of chat requests resulting in HTTP 500 errors after a deployment altered the retrieval strategy configuration to an unsupported value.
 
 ## Impact
 
-Affected service: conversational_rag. Affected area: retrieval strategy selection.
+Chat functionalities were severely disrupted, leading to potential loss of user engagement and satisfaction due to the inability to retrieve document responses.
 
 ## Symptoms
 
-- Chat requests fail with HTTP 500 after a deployment changed the retrieval strategy configuration to an unsupported value.
-- 2026-05-19T11:12:43Z ERROR conversational_rag request_id=req-inc-002 trace_id=trace-retrieval-002 Chat response failed during document retrieval. strategy_name=semantic selected_document=All Documents
-
-```text
-Traceback (most recent call last):
-  File "src/rag/service.py", line 84, in retrieve_documents
-    retrieval_strategy = RetrievalStrategyFactory.get_strategy(strategy_name)
-  File "src/rag/retrieval/factory.py", line 35, in get_strategy
-    raise ValueError(f"Unsupported retrieval strategy: {strategy_name}")
-ValueError: Unsupported retrieval strategy: semantic
-```
-- 2026-05-19T11:12:43Z WARNING conversational_rag request_id=req-inc-002 trace_id=trace-retrieval-002 RETRIEVAL_STRATEGY=semantic is not one of supported strategies: hybrid,parent_child,fusion
+- HTTP 500 errors when making chat requests.
+- Chat response failures during document retrieval.
 
 ## Log Findings
 
-- log-001 shows runtime signal: 2026-05-19T11:12:43Z ERROR conversational_rag request_id=req-inc-002 trace_id=trace-retrieval-002 Chat response failed during document retrieval. strategy_name=semantic selected...
-- log-002 shows runtime signal: 2026-05-19T11:12:43Z WARNING conversational_rag request_id=req-inc-002 trace_id=trace-retrieval-002 RETRIEVAL_STRATEGY=semantic is not one of supported strategies: hybrid,parent...
+- EVID-LOG-90915FE1: ERROR indicating unsupported retrieval strategy: 'semantic'.
+- EVID-LOG-9AF7734D: WARNING that the retrieval strategy 'semantic' is not supported.
 
 ## Code Findings
 
-- src/rag/service.py:141-220 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
-- src/rag/cache.py:1-34 defines cache reset behavior for RAG retrievers and cached retrieval results.
-- main.py:1-6 contains implementation context relevant to the incident.
-- src/rag/service.py:1-80 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
-- src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- Evidence from `service.py` shows retrieval strategy is resolved from request and calls `RetrievalStrategyFactory.get_strategy`.
 
 ## Knowledge Base Findings
 
@@ -42,55 +28,63 @@ ValueError: Unsupported retrieval strategy: semantic
 
 ## Hypotheses Considered
 
-- H1: Runtime failure is caused by an implementation mismatch in the code path identified by the logs and code evidence.
-- H2: The observed behavior is caused by missing validation or insufficient normalization around the failing code path.
+- The retrieval strategy was incorrectly set in the configuration file.
+- A recent change introduced an unsupported retrieval strategy.
 
 ## Final Root Cause
 
-The configured or resolved retrieval strategy was `semantic`, but `semantic` is not one of the supported retrieval strategy values. `RetrievalStrategyFactory.get_strategy` rejected the value and raised `ValueError: Unsupported retrieval strategy: semantic`.
+The configured or resolved retrieval strategy was `semantic`, which is not supported. The retrieval factory rejected the value and raised a `ValueError`.
 
 ## Technical Explanation
 
-Runtime logs show `RETRIEVAL_STRATEGY=semantic` reaching document retrieval. The retrieval factory supports `hybrid`, `parent_child`, and `fusion`; any other value is rejected with `ValueError`. This makes the incident a configuration contract failure between runtime settings and `src/rag/retrieval/factory.py`.
+Logs reveal that `RETRIEVAL_STRATEGY=semantic` was utilized during document retrieval, while the factory only supports `hybrid`, `parent_child`, and `fusion`. This indicates a configuration mismatch between expected and provided values in the deployment settings.
 
 ## Evidence
 
-- EVID-LOG-D7A53BF1
-- EVID-LOG-A00CA8AE
+- EVID-LOG-90915FE1
+- EVID-LOG-9AF7734D
 - src/rag/service.py:141-220
-- src/rag/cache.py:1-34
-- main.py:1-6
-- src/rag/service.py:1-80
+- src/rag/retrieval/hybrid/strategy.py:1-43
 - src/rag/service.py:71-150
 
 ## Confidence
 
 Score: 0.75
 
-Reason: Confidence is based on available evidence quality, source diversity, and evaluator result: Evidence is sufficient to proceed to RCA writing.
+Reason: Evidence quality is assured with diverse sources highlighting the same failure mode.
 
 ## Recommended Fix
 
-Validate `RETRIEVAL_STRATEGY` at startup and restrict it to `hybrid`, `parent_child`, or `fusion`; reject or normalize unsupported values before request handling.
+Validate `RETRIEVAL_STRATEGY` at startup; restrict to `hybrid`, `parent_child`, or `fusion`, and reject or normalize unsupported values.
 
 ## Preventive Actions
 
-Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.
+Implement a configuration validation mechanism that checks the setting of `RETRIEVAL_STRATEGY` before usage, ensuring only supported strategies are utilized.
 
 ## Tests to Add
 
-- Add a regression test for incident INC-002.
-- Add a test covering the implicated implementation path.
+- Unit tests to validate that only supported retrieval strategies can be configured successfully.
+- Integration tests to simulate chat requests with various retrieval strategies to ensure proper handling of unsupported values.
 
 ## Open Questions
 
-- None
+- What processes led to the deployment of an unsupported retrieval strategy?
+- How can we enhance oversight to prevent unsupported configurations in the future?
 
 ## Low Confidence Warning
 
 None
 
+## Generation Details
+
+- writer: llm
+- llm_output_validated: true
+- fallback_used: false
+
 ## Metadata
 
 - evidence_count: 7
 - dynamic_workflow: true
+- rca_writer: llm
+- llm_output_validated: true
+- fallback_used: false

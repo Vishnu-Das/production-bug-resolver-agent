@@ -24,6 +24,12 @@ ANALYZE_ONLY_FORBIDDEN_PHRASES = (
 )
 
 
+class SolutionRecommendationFallback(Exception):
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
 class SolutionRecommendationOutput(StrictBaseModel):
     summary: str = Field(..., min_length=1)
     immediate_steps: list[str]
@@ -39,7 +45,7 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
     """
     Coordinates analyze-only solution recommendation generation.
 
-    Current version is deterministic:
+    Current version is llm capable:
     - converts RCA fields into immediate steps
     - adds prevention steps
     - carries tests and evidence IDs forward
@@ -60,7 +66,10 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
         deterministic_recommendation = self._build_deterministic_recommendation(input_data)
 
         if self._llm_client is None:
-            return deterministic_recommendation
+            return self._with_fallback_metadata(
+                deterministic_recommendation,
+                reason="llm_client_not_configured",
+            )
 
         try:
             llm_output = await self._llm_client.generate_structured(
@@ -68,13 +77,28 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
                 SolutionRecommendationOutput,
                 system_prompt=self._build_system_prompt(),
             )
+        except Exception:
+            return self._with_fallback_metadata(
+                deterministic_recommendation,
+                reason="llm_call_failed",
+            )
+
+        try:
             return self._build_recommendation_from_llm_output(
                 rca_report=input_data,
                 output=llm_output,
                 fallback_recommendation=deterministic_recommendation,
             )
+        except SolutionRecommendationFallback as error:
+            return self._with_fallback_metadata(
+                deterministic_recommendation,
+                reason=error.reason,
+            )
         except Exception:
-            return deterministic_recommendation
+            return self._with_fallback_metadata(
+                deterministic_recommendation,
+                reason="llm_call_failed",
+            )
 
     def _build_deterministic_recommendation(
         self,
@@ -94,6 +118,24 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
             evidence_ids=input_data.evidence_ids,
         )
 
+    def _with_fallback_metadata(
+        self,
+        recommendation: SolutionRecommendation,
+        *,
+        reason: str,
+    ) -> SolutionRecommendation:
+        return recommendation.model_copy(
+            update={
+                "metadata": {
+                    **recommendation.metadata,
+                    "solution_writer": "deterministic_fallback",
+                    "llm_output_validated": "false",
+                    "fallback_used": "true",
+                    "fallback_reason": reason,
+                }
+            }
+        )
+
     def _build_recommendation_from_llm_output(
         self,
         *,
@@ -109,28 +151,22 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
         ]
 
         if allowed_evidence_ids and not evidence_ids:
-            raise ValueError(
-                "LLM solution recommendation did not reference RCA evidence"
-            )
+            raise SolutionRecommendationFallback("invalid_evidence_id")
 
         if output.confidence_score > rca_report.confidence_score:
-            raise ValueError("solution confidence cannot exceed RCA confidence")
+            raise SolutionRecommendationFallback("llm_call_failed")
 
         if not output.immediate_steps:
-            raise ValueError("LLM solution recommendation requires immediate steps")
+            raise SolutionRecommendationFallback("missing_immediate_steps")
 
         if not output.tests_to_add:
-            raise ValueError("LLM solution recommendation requires tests to add")
+            raise SolutionRecommendationFallback("missing_tests_to_add")
 
         if self._contains_forbidden_analyze_only_claim(output):
-            raise ValueError(
-                "LLM solution recommendation claimed implementation work was completed"
-            )
+            raise SolutionRecommendationFallback("forbidden_completion_claim")
 
         if self._contains_unbalanced_inline_code(output):
-            raise ValueError(
-                "LLM solution recommendation contains unbalanced inline code markers"
-            )
+            raise SolutionRecommendationFallback("unbalanced_inline_backticks")
 
         return SolutionRecommendation(
             recommendation_id=new_recommendation_id(),
@@ -144,6 +180,12 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
             risk_notes=output.risk_notes,
             confidence_score=output.confidence_score,
             evidence_ids=evidence_ids,
+            metadata={
+                **fallback_recommendation.metadata,
+                "solution_writer": "llm",
+                "llm_output_validated": "true",
+                "fallback_used": "false",
+            },
         )
 
     def _contains_forbidden_analyze_only_claim(

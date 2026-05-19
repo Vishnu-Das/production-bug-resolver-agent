@@ -2,7 +2,7 @@
 
 ## Summary
 
-This recommendation addresses the issue of revised PDF uploads being skipped by duplicate upload guards, leading to stale indexed content. It outlines immediate and long-term steps to prevent future incidents and improve overall system reliability.
+Recommended solution based on RCA RCA-20260519-CCBC63DB: Address the duplicate upload guard issue to prevent skipping revised PDF uploads, which leads to retrieval of stale content.
 
 ## Immediate Steps
 
@@ -12,39 +12,46 @@ This recommendation addresses the issue of revised PDF uploads being skipped by 
 
 ## Long-Term Steps
 
-- Add regression tests to ensure duplicate filename handling functions as intended.
-- Centralize retrieval strategy validation to streamline and enhance error handling.
-- Improve structured error handling and log raw router outputs when fallback occurs.
-- Add input and output contract checks around the implicated code path.
-- Document the expected behavior and failure mode for future incidents.
+- Add regression tests specifically targeting the conditions identified in incident INC-004.
+- Centralize retrieval strategy validation to ensure consistent handling of uploaded documents.
+- Enhance structured error handling to provide clearer failures and fallback paths.
+- Log raw router outputs when fallback conditions occur for better traceability.
 
 ## Tests to Add
 
-- Add a regression test specifically for incident INC-004.
-- Add a test that covers the implicated implementation path for duplicate uploads.
+- Add a regression test for incident INC-004.
+- Add a test covering the implicated implementation path in upload handling.
 
 ## Monitoring Improvements
 
-- Add structured logging around the implicated code path to aid in future incident analysis.
-- Log request or trace identifiers with the error when available to improve traceability.
+- Add structured logging around the implicated code path to capture behaviors tied to uploads and cache resets.
+- Log request or trace identifiers with the error when available to facilitate easier debugging.
 
 ## Risk Notes
 
-- The change in duplicate filename handling may introduce new behavior that needs monitoring to avoid unintended consequences.
-- There is a risk that existing integrations could be affected if not properly versioned or managed after the change.
+- There remains a risk of outdated or stale content being served if duplicate uploads are not properly handled in all cases.
 
 ## Evidence
 
-- EVID-LOG-69562DE2
-- EVID-LOG-48ED8F7C
-- src/rag/pipeline.py:1-58
+- EVID-LOG-D9C19A5D
+- EVID-LOG-11602D74
 - src/services/upload_service.py:1-77
-- src/rag/service.py:211-246
-- src/rag/retrieval/fusion/strategy.py:1-80
+- src/rag/pipeline.py:1-58
 - src/conversationalAI.py:141-220
+- src/helpers/deduplication.py:1-21
+- tests/rag/utils/test_service_utils.py:1-80
+
+## Generation Details
+
+- writer: llm
+- llm_output_validated: true
+- fallback_used: false
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-FDD2E779
-- rca_report_id: RCA-20260519-2811EEB9
+- recommendation_id: SOL-20260519-EAAEEAB1
+- rca_report_id: RCA-20260519-CCBC63DB
 - confidence_score: 0.75
+- solution_writer: llm
+- llm_output_validated: true
+- fallback_used: false

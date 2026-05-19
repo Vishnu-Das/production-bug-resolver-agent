@@ -21,3 +21,4 @@ class SolutionRecommendation(StrictBaseModel):
     confidence_score: ConfidenceScore
 
     evidence_ids: list[str] = Field(default_factory=list)
+    metadata: dict[str, str] = Field(default_factory=dict)

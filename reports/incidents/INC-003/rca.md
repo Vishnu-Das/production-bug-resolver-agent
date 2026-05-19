@@ -23,9 +23,9 @@ Affected service: conversational_rag. Affected area: selected document retrieval
 
 - eval/strategy_questions.json:1-24 contains evaluation context for retrieval or answer quality checks relevant to the incident.
 - eval/questions.json:1-50 contains evaluation context for retrieval or answer quality checks relevant to the incident.
-- src/vectorstore.py:71-111 contains implementation context relevant to the incident.
 - src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
-- src/ingest.py:71-85 coordinates document ingestion into standard and parent-child retrieval indexes.
+- src/rag/retrieval/parent_child/strategy.py:71-114 contains implementation context relevant to the incident.
+- src/rag/retrievers.py:71-133 contains implementation context relevant to the incident.
 
 ## Knowledge Base Findings
 
@@ -46,13 +46,13 @@ Runtime logs show `selected_document="Transformer Notes.pdf"` while available me
 
 ## Evidence
 
-- EVID-LOG-41F27B74
-- EVID-LOG-D00148C6
+- EVID-LOG-2C79EA5F
+- EVID-LOG-15B291C4
 - eval/strategy_questions.json:1-24
 - eval/questions.json:1-50
-- src/vectorstore.py:71-111
 - src/rag/service.py:71-150
-- src/ingest.py:71-85
+- src/rag/retrieval/parent_child/strategy.py:71-114
+- src/rag/retrievers.py:71-133
 
 ## Confidence
 
@@ -81,7 +81,18 @@ Add regression tests, centralize retrieval strategy validation, improve structur
 
 None
 
+## Generation Details
+
+- writer: deterministic_fallback
+- llm_output_validated: false
+- fallback_used: true
+- fallback_reason: selected_hypothesis_id_not_found
+
 ## Metadata
 
 - evidence_count: 7
 - dynamic_workflow: true
+- rca_writer: deterministic_fallback
+- llm_output_validated: false
+- fallback_used: true
+- fallback_reason: selected_hypothesis_id_not_found

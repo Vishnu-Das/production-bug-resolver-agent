@@ -2,50 +2,57 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-BC1EB683: Selected-document retrieval returned zero documents because the UI-selected filename did not match the stored vector metadata source for the same PDF after normalization.
+Recommended solution based on RCA RCA-20260519-8DBD23B6: Selected-document retrieval returned zero documents due to a mismatch between the UI-selected filename and the stored vector metadata source after normalization.
 
 ## Immediate Steps
 
-- Normalize selected-document names and stored source metadata with the same case-insensitive, separator-safe, whitespace-safe rules before applying parent-child retrieval filters.
-- Reproduce the incident locally using the same failure scenario.
+- Normalize selected-document names and stored source metadata using consistent case-insensitive, separator-safe, and whitespace-safe rules before applying parent-child retrieval filters.
+- Reproduce the incident locally using the same failure scenario outlined in the RCA.
 - Verify the fix against the log symptoms and selected RCA evidence.
 
 ## Long-Term Steps
 
-- Add regression tests to ensure selected-document retrieval functionality is reliable.
-- Centralize retrieval strategy validation to prevent discrepancies in document retrieval.
-- Improve structured error handling to provide clearer insights into retrieval failures.
-- Log raw router outputs when fallback occurs to assist in diagnosing issues quickly.
-- Add input and output contract checks around the implicated code path to safeguard against future discrepancies.
-- Document the expected behavior and failure mode for future incidents to inform developers.
+- Add regression tests to ensure document retrieval functionality works correctly under varied filename conditions.
+- Centralize retrieval strategy validation to maintain consistency across implementations and usability in future developments.
+- Improve structured error handling to provide clearer feedback and prevent similar issues from occurring unnoticed.
+- Log raw router outputs during fallback occurrences to better understand retrieval failures in the future.
 
 ## Tests to Add
 
-- Add a regression test specifically for incident INC-003 to ensure similar issues do not reoccur.
-- Add a test that covers the implicated implementation path to validate the integrity of document retrieval.
+- Add a regression test specifically for incident INC-003 to validate resolution and ensure similar issues do not arise.
+- Implement test cases covering the full implementation path related to document retrieval to identify potential failure points.
 
 ## Monitoring Improvements
 
-- Add structured logging around the implicated code path to facilitate better monitoring of retrieval processes.
-- Log request or trace identifiers with the error when available to assist in tracking down issues in the system.
+- Add structured logging around the document retrieval code path to capture detailed runtime information including filename matching processes.
+- Log request or trace identifiers with the error details for better tracking of issues when they occur.
 
 ## Risk Notes
 
-- Improper normalization of filenames may continue to cause silent failures in document retrieval if not addressed promptly.
-- Insufficient logging could lead to challenges in diagnosing issues when failures occur.
+- The risk of document mismatch may occur again if filename handling processes remain inconsistent or inadequately normalized in future code implementations.
+- Potential delays in incident identification may arise if structured logging is not adequately implemented and monitored.
 
 ## Evidence
 
-- EVID-LOG-41F27B74
-- EVID-LOG-D00148C6
+- EVID-LOG-2C79EA5F
+- EVID-LOG-15B291C4
 - eval/strategy_questions.json:1-24
 - eval/questions.json:1-50
-- src/vectorstore.py:71-111
 - src/rag/service.py:71-150
-- src/ingest.py:71-85
+- src/rag/retrieval/parent_child/strategy.py:71-114
+- src/rag/retrievers.py:71-133
+
+## Generation Details
+
+- writer: llm
+- llm_output_validated: true
+- fallback_used: false
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-0518E4B5
-- rca_report_id: RCA-20260519-BC1EB683
+- recommendation_id: SOL-20260519-EF188871
+- rca_report_id: RCA-20260519-8DBD23B6
 - confidence_score: 0.75
+- solution_writer: llm
+- llm_output_validated: true
+- fallback_used: false

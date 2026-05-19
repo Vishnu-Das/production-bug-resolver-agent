@@ -1,5 +1,5 @@
 {
-  "report_id": "RCA-20260519-BC1EB683",
+  "report_id": "RCA-20260519-8DBD23B6",
   "incident_id": "INC-003",
   "title": "RCA for Selected document summary returns no answer",
   "incident_summary": "Incident INC-003: Users selecting a specific PDF and asking for a summary receive an empty or irrelevant answer even though the document exists in the vector store.",
@@ -16,9 +16,9 @@
   "code_findings": [
     "eval/strategy_questions.json:1-24 contains evaluation context for retrieval or answer quality checks relevant to the incident.",
     "eval/questions.json:1-50 contains evaluation context for retrieval or answer quality checks relevant to the incident.",
-    "src/vectorstore.py:71-111 contains implementation context relevant to the incident.",
     "src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.",
-    "src/ingest.py:71-85 coordinates document ingestion into standard and parent-child retrieval indexes."
+    "src/rag/retrieval/parent_child/strategy.py:71-114 contains implementation context relevant to the incident.",
+    "src/rag/retrievers.py:71-133 contains implementation context relevant to the incident."
   ],
   "knowledge_base_findings": [],
   "hypotheses_considered": [
@@ -29,13 +29,13 @@
   "root_cause": "Selected-document retrieval returned zero documents because the UI-selected filename did not match the stored vector metadata source for the same PDF after normalization.",
   "technical_explanation": "Runtime logs show `selected_document=\"Transformer Notes.pdf\"` while available metadata contains `transformer_notes.pdf`, followed by `retrieved_docs_count=0`. The parent-child retrieval path filters sources by normalized filename, so filename casing, spacing, or underscore mismatches can exclude the intended document.",
   "evidence_ids": [
-    "EVID-LOG-41F27B74",
-    "EVID-LOG-D00148C6",
+    "EVID-LOG-2C79EA5F",
+    "EVID-LOG-15B291C4",
     "evidence-eval/strategy_questions.json:1-24",
     "evidence-eval/questions.json:1-50",
-    "evidence-src/vectorstore.py:71-111",
     "evidence-src/rag/service.py:71-150",
-    "evidence-src/ingest.py:71-85"
+    "evidence-src/rag/retrieval/parent_child/strategy.py:71-114",
+    "evidence-src/rag/retrievers.py:71-133"
   ],
   "confidence_score": 0.75,
   "confidence_reason": "Confidence is based on available evidence quality, source diversity, and evaluator result: Evidence is sufficient to proceed to RCA writing.",
@@ -49,6 +49,10 @@
   "low_confidence_warning": null,
   "metadata": {
     "evidence_count": "7",
-    "dynamic_workflow": "true"
+    "dynamic_workflow": "true",
+    "rca_writer": "deterministic_fallback",
+    "llm_output_validated": "false",
+    "fallback_used": "true",
+    "fallback_reason": "selected_hypothesis_id_not_found"
   }
 }

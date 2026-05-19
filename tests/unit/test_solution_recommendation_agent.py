@@ -104,6 +104,12 @@ async def test_solution_recommendation_agent_builds_recommendation_from_rca() ->
     assert result.risk_notes == []
     assert result.confidence_score == 0.90
     assert result.evidence_ids == ["evidence-log-001", "evidence-code-001"]
+    assert result.metadata == {
+        "solution_writer": "deterministic_fallback",
+        "llm_output_validated": "false",
+        "fallback_used": "true",
+        "fallback_reason": "llm_client_not_configured",
+    }
 
 
 @pytest.mark.asyncio
@@ -135,6 +141,11 @@ async def test_solution_recommendation_agent_can_generate_llm_backed_recommendat
     assert result.summary == "LLM recommendation: guard router response access."
     assert result.confidence_score == 0.85
     assert result.evidence_ids == ["evidence-log-001", "evidence-code-001"]
+    assert result.metadata == {
+        "solution_writer": "llm",
+        "llm_output_validated": "true",
+        "fallback_used": "false",
+    }
     assert llm.prompt is not None
     assert "Allowed evidence IDs: evidence-log-001, evidence-code-001" in llm.prompt
 
@@ -151,6 +162,8 @@ async def test_solution_recommendation_agent_falls_back_when_llm_fails() -> None
         "KeyError occurred because 'output' was missing."
     )
     assert result.confidence_score == 0.90
+    assert result.metadata["solution_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "llm_call_failed"
 
 
 @pytest.mark.asyncio
@@ -173,6 +186,8 @@ async def test_solution_recommendation_agent_falls_back_for_unknown_evidence() -
 
     assert result.summary.startswith("Recommended solution based on RCA RCA-001")
     assert result.evidence_ids == ["evidence-log-001", "evidence-code-001"]
+    assert result.metadata["solution_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "invalid_evidence_id"
 
 
 @pytest.mark.asyncio
@@ -195,6 +210,8 @@ async def test_solution_recommendation_agent_falls_back_when_confidence_exceeds_
 
     assert result.summary.startswith("Recommended solution based on RCA RCA-001")
     assert result.confidence_score == 0.90
+    assert result.metadata["solution_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "llm_call_failed"
 
 
 @pytest.mark.asyncio
@@ -217,6 +234,8 @@ async def test_solution_recommendation_agent_falls_back_when_llm_claims_fix_was_
 
     assert result.summary.startswith("Recommended solution based on RCA RCA-001")
     assert result.confidence_score == 0.90
+    assert result.metadata["solution_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "forbidden_completion_claim"
 
 
 @pytest.mark.asyncio
@@ -239,6 +258,8 @@ async def test_solution_recommendation_agent_falls_back_for_unbalanced_inline_co
 
     assert result.summary.startswith("Recommended solution based on RCA RCA-001")
     assert result.confidence_score == 0.90
+    assert result.metadata["solution_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "unbalanced_inline_backticks"
 
 
 @pytest.mark.asyncio
@@ -261,6 +282,8 @@ async def test_solution_recommendation_agent_falls_back_without_tests() -> None:
 
     assert result.summary.startswith("Recommended solution based on RCA RCA-001")
     assert result.tests_to_add == ["Add regression test for missing output key."]
+    assert result.metadata["solution_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "missing_tests_to_add"
 
 
 @pytest.mark.asyncio

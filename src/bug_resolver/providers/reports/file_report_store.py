@@ -155,6 +155,14 @@ class FileReportStore(ReportStore):
         )
         self._add_section(
             lines,
+            "## Generation Details",
+            self._render_generation_details_lines(
+                metadata=report.metadata,
+                writer_key="rca_writer",
+            ),
+        )
+        self._add_section(
+            lines,
             "## Metadata",
             self._render_metadata_lines(report.metadata),
         )
@@ -201,11 +209,20 @@ class FileReportStore(ReportStore):
         )
         self._add_section(
             lines,
+            "## Generation Details",
+            self._render_generation_details_lines(
+                metadata=solution.metadata,
+                writer_key="solution_writer",
+            ),
+        )
+        self._add_section(
+            lines,
             "## Metadata",
             [
                 f"- recommendation_id: {solution.recommendation_id}",
                 f"- rca_report_id: {solution.rca_report_id}",
                 f"- confidence_score: {solution.confidence_score}",
+                *self._render_metadata_lines(solution.metadata),
             ],
         )
 
@@ -244,6 +261,22 @@ class FileReportStore(ReportStore):
             return ["- None"]
 
         return [f"- {key}: {value}" for key, value in metadata.items()]
+
+    def _render_generation_details_lines(
+        self,
+        *,
+        metadata: dict[str, str],
+        writer_key: str,
+    ) -> list[str]:
+        lines = [
+            f"- writer: {metadata.get(writer_key, 'unknown')}",
+            f"- llm_output_validated: {metadata.get('llm_output_validated', 'unknown')}",
+            f"- fallback_used: {metadata.get('fallback_used', 'unknown')}",
+        ]
+        fallback_reason = metadata.get("fallback_reason")
+        if fallback_reason:
+            lines.append(f"- fallback_reason: {fallback_reason}")
+        return lines
 
     def _add_section(
         self,

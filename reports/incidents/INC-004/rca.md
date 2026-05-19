@@ -21,11 +21,11 @@ Affected service: conversational_rag. Affected area: document upload and ingesti
 
 ## Code Findings
 
-- src/rag/pipeline.py:1-58 contains implementation context relevant to the incident.
 - src/services/upload_service.py:1-77 handles PDF uploads, duplicate filename checks, document ingestion, cache reset, and Streamlit upload state.
-- src/rag/service.py:211-246 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
-- src/rag/retrieval/fusion/strategy.py:1-80 contains implementation context relevant to the incident.
+- src/rag/pipeline.py:1-58 contains implementation context relevant to the incident.
 - src/conversationalAI.py:141-220 contains implementation context relevant to the incident.
+- src/helpers/deduplication.py:1-21 contains implementation context relevant to the incident.
+- tests/rag/utils/test_service_utils.py:1-80 contains implementation context relevant to the incident.
 
 ## Knowledge Base Findings
 
@@ -46,13 +46,13 @@ Runtime logs show a duplicate upload for `policy_handbook.pdf` was ignored befor
 
 ## Evidence
 
-- EVID-LOG-69562DE2
-- EVID-LOG-48ED8F7C
-- src/rag/pipeline.py:1-58
+- EVID-LOG-D9C19A5D
+- EVID-LOG-11602D74
 - src/services/upload_service.py:1-77
-- src/rag/service.py:211-246
-- src/rag/retrieval/fusion/strategy.py:1-80
+- src/rag/pipeline.py:1-58
 - src/conversationalAI.py:141-220
+- src/helpers/deduplication.py:1-21
+- tests/rag/utils/test_service_utils.py:1-80
 
 ## Confidence
 
@@ -81,7 +81,18 @@ Add regression tests, centralize retrieval strategy validation, improve structur
 
 None
 
+## Generation Details
+
+- writer: deterministic_fallback
+- llm_output_validated: false
+- fallback_used: true
+- fallback_reason: selected_hypothesis_id_not_found
+
 ## Metadata
 
 - evidence_count: 7
 - dynamic_workflow: true
+- rca_writer: deterministic_fallback
+- llm_output_validated: false
+- fallback_used: true
+- fallback_reason: selected_hypothesis_id_not_found

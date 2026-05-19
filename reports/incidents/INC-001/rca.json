@@ -1,5 +1,5 @@
 {
-  "report_id": "RCA-20260519-E5CD5032",
+  "report_id": "RCA-20260519-211C0A71",
   "incident_id": "INC-001",
   "title": "RCA for LLM router falls back during summary questions",
   "incident_summary": "Incident INC-001: Users report that broad summary questions in auto retrieval mode intermittently use the fallback router instead of the LLM router, reducing retrieval quality and making answers less relevant.",
@@ -15,10 +15,10 @@
   ],
   "code_findings": [
     "src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.",
-    "src/rag/retrieval/hybrid/__init__.py:1-40 contains implementation context relevant to the incident.",
-    "src/rag/retrieval/hybrid/strategy.py:1-43 contains implementation context relevant to the incident.",
-    "src/rag/routing/rule_based.py:71-150 maps document-level summary queries to the supported `parent_child` retrieval strategy.",
-    "tests/rag/routing/test_llm_router.py:71-138 covers LLM router behavior and unsupported strategy validation for routing decisions."
+    "src/rag/service.py:141-220 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.",
+    "src/rag/retrieval/parent_child/strategy.py:71-114 contains implementation context relevant to the incident.",
+    "tests/rag/routing/test_rule_based_router.py:1-80 maps summary-style selected-document queries to the supported `parent_child` retrieval strategy.",
+    "src/rag/routing/rule_based.py:1-80 maps document-level summary queries to the supported `parent_child` retrieval strategy."
   ],
   "knowledge_base_findings": [],
   "hypotheses_considered": [
@@ -30,13 +30,13 @@
   "root_cause": "The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, causing the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.",
   "technical_explanation": "The runtime logs show that the LLM router failed with `ValueError: Invalid strategy: summary` during retrieval strategy resolution. This indicates that the LLM router returned a strategy value that failed the router validation step. The fallback log and supporting evidence show that the same summary-style query resolves to `parent_child`, which is the supported retrieval strategy for broad document-summary intent. Therefore, the issue is a contract mismatch between the LLM router output vocabulary and the supported retrieval strategy values used by the application.",
   "evidence_ids": [
-    "EVID-LOG-0219CDEC",
-    "EVID-LOG-6D339B49",
+    "EVID-LOG-D00A28C9",
+    "EVID-LOG-F795570E",
     "evidence-src/rag/service.py:71-150",
-    "evidence-src/rag/retrieval/hybrid/__init__.py:1-40",
-    "evidence-src/rag/retrieval/hybrid/strategy.py:1-43",
-    "evidence-src/rag/routing/rule_based.py:71-150",
-    "evidence-tests/rag/routing/test_llm_router.py:71-138"
+    "evidence-src/rag/service.py:141-220",
+    "evidence-src/rag/retrieval/parent_child/strategy.py:71-114",
+    "evidence-tests/rag/routing/test_rule_based_router.py:1-80",
+    "evidence-src/rag/routing/rule_based.py:1-80"
   ],
   "confidence_score": 0.8,
   "confidence_reason": "Confidence is moderately high because logs show the exact exception `Invalid strategy: summary`, and code/test evidence points to the LLM routing validation path. Confidence is not 1.0 because knowledge-base evidence and the exact raw LLM router output payload were not captured.",
@@ -54,6 +54,10 @@
   "low_confidence_warning": null,
   "metadata": {
     "evidence_count": "7",
-    "dynamic_workflow": "true"
+    "dynamic_workflow": "true",
+    "rca_writer": "deterministic_fallback",
+    "llm_output_validated": "false",
+    "fallback_used": "true",
+    "fallback_reason": "selected_hypothesis_id_not_found"
   }
 }

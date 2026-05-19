@@ -31,10 +31,10 @@ ValueError: Invalid strategy: summary
 ## Code Findings
 
 - src/rag/service.py:71-150 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
-- src/rag/retrieval/hybrid/__init__.py:1-40 contains implementation context relevant to the incident.
-- src/rag/retrieval/hybrid/strategy.py:1-43 contains implementation context relevant to the incident.
-- src/rag/routing/rule_based.py:71-150 maps document-level summary queries to the supported `parent_child` retrieval strategy.
-- tests/rag/routing/test_llm_router.py:71-138 covers LLM router behavior and unsupported strategy validation for routing decisions.
+- src/rag/service.py:141-220 resolves the retrieval strategy, retrieves documents, reranks results, and builds the final RAG response path.
+- src/rag/retrieval/parent_child/strategy.py:71-114 contains implementation context relevant to the incident.
+- tests/rag/routing/test_rule_based_router.py:1-80 maps summary-style selected-document queries to the supported `parent_child` retrieval strategy.
+- src/rag/routing/rule_based.py:1-80 maps document-level summary queries to the supported `parent_child` retrieval strategy.
 
 ## Knowledge Base Findings
 
@@ -56,13 +56,13 @@ The runtime logs show that the LLM router failed with `ValueError: Invalid strat
 
 ## Evidence
 
-- EVID-LOG-0219CDEC
-- EVID-LOG-6D339B49
+- EVID-LOG-D00A28C9
+- EVID-LOG-F795570E
 - src/rag/service.py:71-150
-- src/rag/retrieval/hybrid/__init__.py:1-40
-- src/rag/retrieval/hybrid/strategy.py:1-43
-- src/rag/routing/rule_based.py:71-150
-- tests/rag/routing/test_llm_router.py:71-138
+- src/rag/service.py:141-220
+- src/rag/retrieval/parent_child/strategy.py:71-114
+- tests/rag/routing/test_rule_based_router.py:1-80
+- src/rag/routing/rule_based.py:1-80
 
 ## Confidence
 
@@ -93,7 +93,18 @@ Add regression tests, centralize retrieval strategy validation, improve structur
 
 None
 
+## Generation Details
+
+- writer: deterministic_fallback
+- llm_output_validated: false
+- fallback_used: true
+- fallback_reason: selected_hypothesis_id_not_found
+
 ## Metadata
 
 - evidence_count: 7
 - dynamic_workflow: true
+- rca_writer: deterministic_fallback
+- llm_output_validated: false
+- fallback_used: true
+- fallback_reason: selected_hypothesis_id_not_found
