@@ -9,6 +9,9 @@ guardrails validate every route, and bounded replanning prevents runaway investi
 RCA and solution writers are LLM-first with deterministic fallbacks, and generated reports
 record which path was used.
 
+<img width="759" height="461" alt="Screenshot 2026-05-20 104201" src="https://github.com/user-attachments/assets/ff7236a4-77be-4260-8b14-8653fee77a13" />
+
+
 ## Architecture
 
 - `bug_resolver.cli`: Typer CLI entrypoint.
