@@ -19,7 +19,9 @@ from bug_resolver.rules import GuardrailEngine
 from bug_resolver.schemas import (
     AgentDecision,
     AgentName,
+    AgentRunStatus,
     CodeContext,
+    EvidenceEvaluationResult,
     Incident,
     InvestigationStatus,
     KnowledgeContext,
@@ -139,6 +141,21 @@ class FakeReportStore:
         return None
 
 
+class RetryRequiredEvaluator:
+    """Force a retry-required evaluation even when replans are exhausted."""
+
+    async def run(self, state: WorkflowState) -> EvidenceEvaluationResult:
+        return EvidenceEvaluationResult(
+            evaluation_id="eval-retry",
+            incident_id=state.incident.incident_id,
+            can_write_rca=False,
+            confidence_score=0.2,
+            reason="Evidence is incomplete and retry is required.",
+            retry_required=True,
+            missing_evidence=["Implementation code evidence is missing."],
+        )
+
+
 def decision(decision_id: str, agent_name: AgentName, queries: list[str]) -> AgentDecision:
     """Build a fake supervisor decision for the requested agent."""
     return AgentDecision(
@@ -153,6 +170,10 @@ def decision(decision_id: str, agent_name: AgentName, queries: list[str]) -> Age
 
 def make_graph_workflow(
     supervisor: FakeSupervisorAgent,
+    *,
+    evidence_evaluator_agent=None,
+    max_steps: int = 12,
+    max_replans: int = 2,
 ) -> DynamicBugResolutionGraphWorkflow:
     """Create the graph workflow with deterministic local test doubles."""
     return DynamicBugResolutionGraphWorkflow(
@@ -164,12 +185,12 @@ def make_graph_workflow(
         knowledge_base_investigator_agent=KnowledgeBaseInvestigatorAgent(
             EmptyKnowledgeBaseProvider()
         ),
-        evidence_evaluator_agent=EvidenceEvaluatorAgent(),
+        evidence_evaluator_agent=evidence_evaluator_agent or EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(),
         solution_recommendation_agent=SolutionRecommendationAgent(),
         report_writer_agent=ReportWriterAgent(FakeReportStore()),
-        max_steps=12,
-        max_replans=2,
+        max_steps=max_steps,
+        max_replans=max_replans,
         minimum_evidence_count_before_rca=2,
     )
 
@@ -198,3 +219,101 @@ async def test_graph_workflow_completes_rca_solution_and_report() -> None:
         AgentName.REPORT_WRITER,
     ]
     assert supervisor.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_falls_back_to_logs_when_rca_is_chosen_before_evidence() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.RCA_WRITER, ["write RCA"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+        ]
+    )
+    workflow = make_graph_workflow(supervisor)
+
+    state = await workflow.run("INC-001")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert state.trace.guardrail_decisions[0].allowed is False
+    assert state.trace.guardrail_decisions[0].fallback_next_agent == AgentName.LOG_INVESTIGATOR
+    assert "runtime_evidence_required_first" in state.trace.guardrail_decisions[0].violated_rules
+    assert state.trace.steps[0].agent_name == AgentName.RCA_WRITER
+    assert state.trace.steps[0].run_status == AgentRunStatus.BLOCKED
+    assert state.trace.steps[1].agent_name == AgentName.LOG_INVESTIGATOR
+    assert state.trace.steps[1].run_status == AgentRunStatus.SUCCEEDED
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_falls_back_to_code_when_kb_is_chosen_without_code() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.KNOWLEDGE_BASE_INVESTIGATOR, ["router docs"]),
+        ]
+    )
+    workflow = make_graph_workflow(supervisor)
+
+    state = await workflow.run("INC-001")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert any(
+        "missing_code_evidence_should_route_to_code" in guardrail_decision.violated_rules
+        and guardrail_decision.fallback_next_agent == AgentName.CODE_INVESTIGATOR
+        for guardrail_decision in state.trace.guardrail_decisions
+    )
+    assert any(
+        step.agent_name == AgentName.CODE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_finishes_low_confidence_when_retry_exhausts_replans() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        evidence_evaluator_agent=RetryRequiredEvaluator(),
+        max_replans=0,
+    )
+
+    state = await workflow.run("INC-001")
+
+    assert state.low_confidence is True
+    assert state.investigation_status == InvestigationStatus.MAX_STEPS_REACHED
+    assert state.replan_count == 0
+    assert state.evidence_evaluation is not None
+    assert state.evidence_evaluation.retry_required is True
+    assert state.rca_report is None
+    assert state.solution_recommendation is None
+    assert state.final_report_path is None
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_routes_to_final_writers_when_evaluation_can_write_rca() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+        ]
+    )
+    workflow = make_graph_workflow(supervisor)
+
+    state = await workflow.run("INC-001")
+
+    step_agents = [step.agent_name for step in state.trace.steps]
+
+    assert state.evidence_evaluation is not None
+    assert state.evidence_evaluation.can_write_rca is True
+    assert state.rca_report is not None
+    assert state.solution_recommendation is not None
+    assert state.final_report_path == Path("reports/incidents/INC-001/rca.md")
+    assert step_agents[-3:] == [
+        AgentName.RCA_WRITER,
+        AgentName.SOLUTION_RECOMMENDER,
+        AgentName.REPORT_WRITER,
+    ]
