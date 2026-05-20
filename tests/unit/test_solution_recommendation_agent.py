@@ -152,6 +152,53 @@ async def test_solution_recommendation_agent_can_generate_llm_backed_recommendat
 
 
 @pytest.mark.asyncio
+async def test_solution_recommendation_agent_keeps_all_rca_evidence_ids() -> None:
+    rca_report = build_rca_report().model_copy(
+        update={"evidence_ids": ["evidence-log-001", "evidence-code-001", "kb-README"]}
+    )
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="LLM recommendation: guard router response access.",
+            immediate_steps=["Validate the router response shape."],
+            long_term_steps=["Use structured response contracts."],
+            tests_to_add=["Add missing output key regression test."],
+            monitoring_improvements=["Log invalid router response shape."],
+            risk_notes=[],
+            confidence_score=0.85,
+            evidence_ids=["evidence-log-001"],
+        )
+    )
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.metadata["solution_writer"] == "llm"
+    assert result.evidence_ids == ["evidence-log-001", "evidence-code-001", "kb-README"]
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_falls_back_for_evidence_id_in_prose() -> None:
+    rca_report = build_rca_report()
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="Use EVIDENCE-README to guide the fix.",
+            immediate_steps=["Validate the router response shape."],
+            long_term_steps=["Use structured response contracts."],
+            tests_to_add=["Add missing output key regression test."],
+            monitoring_improvements=["Log invalid router response shape."],
+            risk_notes=[],
+            confidence_score=0.85,
+            evidence_ids=["evidence-log-001"],
+        )
+    )
+
+    result = await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert result.summary.startswith("Recommended solution based on RCA RCA-001")
+    assert result.metadata["solution_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "invalid_evidence_id"
+
+
+@pytest.mark.asyncio
 async def test_solution_recommendation_agent_falls_back_when_llm_fails() -> None:
     rca_report = build_rca_report()
     llm = FakeSolutionLLM(should_fail=True)

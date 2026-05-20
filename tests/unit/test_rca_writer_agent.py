@@ -292,6 +292,78 @@ async def test_rca_writer_agent_falls_back_when_llm_leaks_internal_evidence_path
 
 
 @pytest.mark.asyncio
+async def test_rca_writer_agent_falls_back_when_llm_puts_evidence_id_in_prose() -> None:
+    state = make_state()
+    add_evidence(state)
+    state.evidence_evaluation = await EvidenceEvaluatorAgent().run(state)
+    llm = FakeRCAWriterLLM(
+        RCAWriterOutput(
+            title="Bad RCA",
+            incident_summary="Summary.",
+            impact=None,
+            symptoms=["Symptom"],
+            log_findings=["Log finding"],
+            code_findings=["Code finding"],
+            knowledge_base_findings=["EVIDENCE-README describes expected routing behavior."],
+            hypotheses_considered=["H1: Contract mismatch."],
+            selected_hypothesis_id="H1",
+            root_cause="Contract mismatch.",
+            technical_explanation="Evidence suggests a contract mismatch.",
+            evidence_ids=["ev-log-1", "ev-code-1"],
+            confidence_score=0.75,
+            confidence_reason="Evidence is enough.",
+            immediate_fix="Validate response shape.",
+            long_term_prevention="Add contracts.",
+            tests_to_add=["Add regression test."],
+            open_questions=[],
+            low_confidence_warning=None,
+        )
+    )
+
+    result = await RCAWriterAgent(llm_client=llm).run(state)
+
+    assert result.title == "RCA for Summary route fails"
+    assert result.metadata["rca_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "invalid_evidence_id"
+
+
+@pytest.mark.asyncio
+async def test_rca_writer_agent_falls_back_when_log_finding_is_in_code_findings() -> None:
+    state = make_state()
+    add_evidence(state)
+    state.evidence_evaluation = await EvidenceEvaluatorAgent().run(state)
+    llm = FakeRCAWriterLLM(
+        RCAWriterOutput(
+            title="Bad RCA",
+            incident_summary="Summary.",
+            impact=None,
+            symptoms=["Symptom"],
+            log_findings=["Log finding"],
+            code_findings=["Log evidence shows request_id=req-1 returned warning output."],
+            knowledge_base_findings=[],
+            hypotheses_considered=["H1: Contract mismatch."],
+            selected_hypothesis_id="H1",
+            root_cause="Contract mismatch.",
+            technical_explanation="Evidence suggests a contract mismatch.",
+            evidence_ids=["ev-log-1", "ev-code-1"],
+            confidence_score=0.75,
+            confidence_reason="Evidence is enough.",
+            immediate_fix="Validate response shape.",
+            long_term_prevention="Add contracts.",
+            tests_to_add=["Add regression test."],
+            open_questions=[],
+            low_confidence_warning=None,
+        )
+    )
+
+    result = await RCAWriterAgent(llm_client=llm).run(state)
+
+    assert result.title == "RCA for Summary route fails"
+    assert result.metadata["rca_writer"] == "deterministic_fallback"
+    assert result.metadata["fallback_reason"] == "llm_call_failed"
+
+
+@pytest.mark.asyncio
 async def test_rca_writer_agent_falls_back_when_selected_hypothesis_is_missing() -> None:
     state = make_state()
     add_evidence(state)

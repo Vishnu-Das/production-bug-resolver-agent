@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from pydantic import Field
 
 from bug_resolver.agents.base import BaseAgent
@@ -12,10 +14,13 @@ from bug_resolver.schemas import RCAReport, WorkflowState
 from bug_resolver.utils.ids import new_rca_report_id
 from bug_resolver.utils.paths import to_repo_relative_display_path
 
-import re
-
 
 HYPOTHESIS_PREFIX_PATTERN = re.compile(r"^H\d+\s*:?\s*", re.IGNORECASE)
+EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
+    r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"
+    r"evidence-[A-Za-z0-9_./\\:-]+)\b",
+    re.IGNORECASE,
+)
 
 ANALYZE_ONLY_FORBIDDEN_PHRASES = (
     "i fixed",
@@ -203,6 +208,12 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         if self._contains_internal_evidence_path(output):
             raise RCAWriterFallback("internal_evidence_prefix_in_prose")
 
+        if self._contains_evidence_id_in_prose(output):
+            raise RCAWriterFallback("invalid_evidence_id")
+
+        if self._has_misclassified_findings(output):
+            raise RCAWriterFallback("llm_call_failed")
+
         if self._contains_unbalanced_inline_code(output):
             raise RCAWriterFallback("unbalanced_inline_backticks")
 
@@ -271,6 +282,29 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             "evidence-docs\\",
         )
         return any(prefix in combined_text for prefix in internal_prefixes)
+
+    def _contains_evidence_id_in_prose(self, output: RCAWriterOutput) -> bool:
+        return any(
+            EVIDENCE_ID_IN_PROSE_PATTERN.search(value)
+            for value in self._output_text_values(output)
+        )
+
+    def _has_misclassified_findings(self, output: RCAWriterOutput) -> bool:
+        return any(self._looks_like_log_finding(finding) for finding in output.code_findings)
+
+    def _looks_like_log_finding(self, value: str) -> bool:
+        normalized = value.lower()
+        log_markers = (
+            "log evidence",
+            "logged",
+            "request_id=",
+            "trace_id=",
+            "user feedback",
+            "warning ",
+            " error ",
+            " info ",
+        )
+        return any(marker in normalized for marker in log_markers)
 
     def _contains_unbalanced_inline_code(self, output: RCAWriterOutput) -> bool:
         return any(value.count("`") % 2 == 1 for value in self._output_text_values(output))

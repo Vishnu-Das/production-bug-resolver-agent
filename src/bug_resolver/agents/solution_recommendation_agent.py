@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from pydantic import Field
 
 from bug_resolver.agents.base import BaseAgent
@@ -23,6 +25,12 @@ ANALYZE_ONLY_FORBIDDEN_PHRASES = (
     "merged the fix",
     "opened a pull request",
     "created a pull request",
+)
+
+EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
+    r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"
+    r"evidence-[A-Za-z0-9_./\\:-]+)\b",
+    re.IGNORECASE,
 )
 
 
@@ -147,13 +155,13 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
         fallback_recommendation: SolutionRecommendation,
     ) -> SolutionRecommendation:
         allowed_evidence_ids = set(fallback_recommendation.evidence_ids)
-        evidence_ids = [
+        invalid_evidence_ids = [
             evidence_id
             for evidence_id in output.evidence_ids
-            if evidence_id in allowed_evidence_ids
+            if evidence_id not in allowed_evidence_ids
         ]
 
-        if allowed_evidence_ids and not evidence_ids:
+        if invalid_evidence_ids:
             raise SolutionRecommendationFallback("invalid_evidence_id")
 
         if output.confidence_score > rca_report.confidence_score:
@@ -167,6 +175,9 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
 
         if self._contains_forbidden_analyze_only_claim(output):
             raise SolutionRecommendationFallback("forbidden_completion_claim")
+
+        if self._contains_evidence_id_in_prose(output):
+            raise SolutionRecommendationFallback("invalid_evidence_id")
 
         if self._contains_unbalanced_inline_code(output):
             raise SolutionRecommendationFallback("unbalanced_inline_backticks")
@@ -182,7 +193,10 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
             monitoring_improvements=output.monitoring_improvements,
             risk_notes=output.risk_notes,
             confidence_score=output.confidence_score,
-            evidence_ids=evidence_ids,
+            evidence_ids=self._merge_evidence_ids(
+                output.evidence_ids,
+                fallback_recommendation.evidence_ids,
+            ),
             metadata={
                 **fallback_recommendation.metadata,
                 "solution_writer": "llm",
@@ -205,6 +219,26 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
         ]
         combined_text = "\n".join(values).lower()
         return any(phrase in combined_text for phrase in ANALYZE_ONLY_FORBIDDEN_PHRASES)
+
+    def _contains_evidence_id_in_prose(
+        self,
+        output: SolutionRecommendationOutput,
+    ) -> bool:
+        return any(
+            EVIDENCE_ID_IN_PROSE_PATTERN.search(value)
+            for value in self._output_text_values(output)
+        )
+
+    def _merge_evidence_ids(
+        self,
+        preferred_ids: list[str],
+        required_ids: list[str],
+    ) -> list[str]:
+        merged_ids: list[str] = []
+        for evidence_id in [*preferred_ids, *required_ids]:
+            if evidence_id not in merged_ids:
+                merged_ids.append(evidence_id)
+        return merged_ids
 
     def _contains_unbalanced_inline_code(
         self,
