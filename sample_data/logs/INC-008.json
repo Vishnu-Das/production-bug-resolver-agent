@@ -1,0 +1,42 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "info",
+    "message": "Deployment started without reranker model configuration.",
+    "service_name": "conversational_rag.config",
+    "environment": "local-sample",
+    "request_id": "deploy_91f",
+    "trace_id": "trace-rerank-008",
+    "raw": "2026-05-20T09:02:10Z INFO conversational_rag.config request_id=deploy_91f RERANKING_MODEL_NAME=\"\" deployment_profile=\"demo\""
+  },
+  {
+    "log_id": "log-002",
+    "level": "info",
+    "message": "Hybrid retrieval returned candidates for a factual query.",
+    "service_name": "conversational_rag.retrieval",
+    "environment": "local-sample",
+    "request_id": "req_913f",
+    "trace_id": "trace-rerank-008",
+    "raw": "2026-05-20T09:07:42Z INFO conversational_rag.retrieval request_id=req_913f strategy=\"hybrid\" retrieved_docs=10 query=\"what is the reimbursement deadline\""
+  },
+  {
+    "log_id": "log-003",
+    "level": "warning",
+    "message": "Reranking returned neutral scores and preserved original retrieval order.",
+    "service_name": "conversational_rag.reranker",
+    "environment": "local-sample",
+    "request_id": "req_913f",
+    "trace_id": "trace-rerank-008",
+    "raw": "2026-05-20T09:07:42Z WARNING conversational_rag.reranker request_id=req_913f reranker_model=null ranked_docs=4 scores=\"0.0,0.0,0.0,0.0\" order_changed=false"
+  },
+  {
+    "log_id": "log-004",
+    "level": "warning",
+    "message": "User feedback reported that the answer cited a less relevant section.",
+    "service_name": "conversational_rag.response",
+    "environment": "local-sample",
+    "request_id": "req_913f",
+    "trace_id": "trace-rerank-008",
+    "raw": "2026-05-20T09:08:05Z WARNING conversational_rag.response request_id=req_913f user_feedback=\"answer cited onboarding policy instead of reimbursement policy\""
+  }
+]

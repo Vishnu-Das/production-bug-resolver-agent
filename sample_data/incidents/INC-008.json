@@ -1,0 +1,15 @@
+{
+  "incident_id": "INC-008",
+  "title": "Answers cite unrelated sources after deployment",
+  "description": "Users report that answers recently started citing sources that look unrelated to their questions. The service still returns responses and there are no 500 errors, but answer quality appears worse after deployment.",
+  "severity": "high",
+  "status": "new",
+  "affected_service": "conversational_rag",
+  "affected_area": "retrieval ranking quality",
+  "reporter": "sample-production-monitor",
+  "metadata": {
+    "environment": "local-sample",
+    "workflow": "retrieval and answer generation",
+    "symptom": "lower source relevance"
+  }
+}
