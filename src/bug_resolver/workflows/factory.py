@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from bug_resolver.agents import (
     CodeInvestigatorAgent,
     EvidenceEvaluatorAgent,
@@ -26,14 +24,11 @@ from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
 )
 from bug_resolver.providers.logs.file_log_provider import FileLogProvider
 from bug_resolver.providers.reports.file_report_store import FileReportStore
-from bug_resolver.retrieval.code_chunker import SimpleCodeChunker
-from bug_resolver.retrieval.code_file_loader import CodeFileLoader
-from bug_resolver.retrieval.code_indexer import CodeIndexer
-from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore
 from bug_resolver.rules import GuardrailEngine
 from bug_resolver.workflows.dynamic_bug_resolution_workflow import (
     DynamicBugResolutionWorkflow,
 )
+from bug_resolver.workflows.workflow_dependencies import load_or_build_code_index
 
 
 async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionWorkflow:
@@ -49,7 +44,7 @@ async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionW
         api_key=settings.openai_api_key,
         model=settings.embedding_model,
     )
-    vector_store = await _load_or_build_code_index(
+    vector_store = await load_or_build_code_index(
         settings=settings,
         embedding_client=embedding_client,
     )
@@ -77,32 +72,3 @@ async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionW
     )
 
 
-async def _load_or_build_code_index(
-    *,
-    settings: AppSettings,
-    embedding_client: OpenAIEmbeddingClient,
-) -> FAISSVectorStore:
-    index_path = settings.faiss_index_dir / "code.index"
-    metadata_path = settings.faiss_index_dir / "code_metadata.json"
-
-    if index_path.exists() and metadata_path.exists():
-        return FAISSVectorStore.load(
-            index_path=index_path,
-            metadata_path=metadata_path,
-        )
-
-    _ensure_path_exists(settings.target_repo_path, "target repository")
-
-    indexer = CodeIndexer(
-        file_loader=CodeFileLoader(settings.target_repo_path),
-        chunker=SimpleCodeChunker(),
-        embedding_client=embedding_client,
-    )
-    vector_store = await indexer.build_index()
-    vector_store.save(index_path=index_path, metadata_path=metadata_path)
-    return vector_store
-
-
-def _ensure_path_exists(path: Path, label: str) -> None:
-    if not path.exists():
-        raise FileNotFoundError(f"Configured {label} path does not exist: {path}")

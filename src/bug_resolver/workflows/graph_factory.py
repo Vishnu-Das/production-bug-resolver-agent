@@ -28,7 +28,7 @@ from bug_resolver.rules import GuardrailEngine
 from bug_resolver.workflows.dynamic_bug_resolution_graph import (
     DynamicBugResolutionGraphWorkflow,
 )
-from bug_resolver.workflows.factory import _load_or_build_code_index
+from bug_resolver.workflows.workflow_dependencies import load_or_build_code_index
 
 
 async def build_dynamic_graph_workflow(
@@ -46,7 +46,7 @@ async def build_dynamic_graph_workflow(
         api_key=settings.openai_api_key,
         model=settings.embedding_model,
     )
-    vector_store = await _load_or_build_code_index(
+    vector_store = await load_or_build_code_index(
         settings=settings,
         embedding_client=embedding_client,
     )

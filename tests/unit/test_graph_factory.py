@@ -25,7 +25,7 @@ async def test_build_dynamic_graph_workflow_wires_graph_workflow(monkeypatch, tm
 
     monkeypatch.setattr(
         graph_factory,
-        "_load_or_build_code_index",
+        "load_or_build_code_index",
         fake_load_or_build_code_index,
     )
 
