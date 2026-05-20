@@ -1,0 +1,539 @@
+"""LangGraph skeleton for the supervisor-led dynamic investigation workflow."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from langgraph.graph import END, START, StateGraph
+from pydantic import Field
+
+from bug_resolver.agents import (
+    CodeInvestigatorAgent,
+    CodeInvestigatorInput,
+    EvidenceEvaluatorAgent,
+    KnowledgeBaseInvestigatorAgent,
+    KnowledgeBaseInvestigatorInput,
+    LogInvestigatorAgent,
+    LogInvestigatorInput,
+    RCAWriterAgent,
+    ReportWriterAgent,
+    ReportWriterInput,
+    SolutionRecommendationAgent,
+    SupervisorAgent,
+)
+from bug_resolver.providers.incident import IncidentProvider
+from bug_resolver.rules import GuardrailEngine
+from bug_resolver.schemas import (
+    AgentDecision,
+    AgentExecutionRecord,
+    AgentName,
+    AgentRunStatus,
+    EvidenceItem,
+    GuardrailDecision,
+    InvestigationStatus,
+    InvestigationStep,
+    WorkflowState,
+)
+from bug_resolver.schemas.common import StrictBaseModel
+from bug_resolver.utils.ids import new_agent_decision_id, new_agent_execution_id
+
+
+GraphRoute = Literal[
+    "supervisor",
+    "guardrail",
+    "log_investigator",
+    "code_investigator",
+    "knowledge_base_investigator",
+    "evidence_evaluator",
+    "rca_writer",
+    "solution_recommender",
+    "report_writer",
+    "finish",
+]
+
+
+class DynamicGraphState(StrictBaseModel):
+    """Internal LangGraph state envelope around the existing WorkflowState."""
+
+    incident_id: str = Field(..., min_length=1)
+    workflow_state: WorkflowState | None = None
+    next_route: GraphRoute = "supervisor"
+
+
+class DynamicBugResolutionGraphWorkflow:
+    """
+    LangGraph implementation of the dynamic bug-resolution workflow.
+
+    This class intentionally mirrors DynamicBugResolutionWorkflow without
+    replacing it. The CLI can continue using the manual workflow while this
+    graph implementation matures behind the same agent and schema contracts.
+    """
+
+    def __init__(
+        self,
+        *,
+        incident_provider: IncidentProvider,
+        supervisor_agent: SupervisorAgent,
+        guardrail_engine: GuardrailEngine,
+        log_investigator_agent: LogInvestigatorAgent,
+        code_investigator_agent: CodeInvestigatorAgent,
+        knowledge_base_investigator_agent: KnowledgeBaseInvestigatorAgent,
+        evidence_evaluator_agent: EvidenceEvaluatorAgent,
+        rca_writer_agent: RCAWriterAgent,
+        solution_recommendation_agent: SolutionRecommendationAgent,
+        report_writer_agent: ReportWriterAgent,
+        max_steps: int = 12,
+        max_replans: int = 2,
+        max_agent_invocations_per_agent: int = 3,
+        confidence_threshold: float = 0.75,
+        minimum_evidence_count_before_rca: int = 2,
+    ) -> None:
+        self._incident_provider = incident_provider
+        self._supervisor_agent = supervisor_agent
+        self._guardrail_engine = guardrail_engine
+        self._log_investigator_agent = log_investigator_agent
+        self._code_investigator_agent = code_investigator_agent
+        self._knowledge_base_investigator_agent = knowledge_base_investigator_agent
+        self._evidence_evaluator_agent = evidence_evaluator_agent
+        self._rca_writer_agent = rca_writer_agent
+        self._solution_recommendation_agent = solution_recommendation_agent
+        self._report_writer_agent = report_writer_agent
+        self._max_steps = max_steps
+        self._max_replans = max_replans
+        self._max_agent_invocations_per_agent = max_agent_invocations_per_agent
+        self._confidence_threshold = confidence_threshold
+        self._minimum_evidence_count_before_rca = minimum_evidence_count_before_rca
+        self._graph = self._build_graph().compile()
+
+    async def run(self, incident_id: str) -> WorkflowState:
+        """Run a LangGraph-backed investigation and return the final WorkflowState."""
+        graph_input = DynamicGraphState(incident_id=incident_id)
+        graph_output = await self._graph.ainvoke(graph_input)
+        final_graph_state = DynamicGraphState.model_validate(graph_output)
+
+        if final_graph_state.workflow_state is None:
+            raise ValueError("LangGraph workflow finished without a WorkflowState")
+
+        return final_graph_state.workflow_state
+
+    def _build_graph(self) -> StateGraph:
+        graph = StateGraph(DynamicGraphState)
+
+        graph.add_node("initialize_state", self._initialize_state)
+        graph.add_node("supervisor", self._supervisor)
+        graph.add_node("guardrail", self._guardrail)
+        graph.add_node("log_investigator", self._log_investigator)
+        graph.add_node("code_investigator", self._code_investigator)
+        graph.add_node("knowledge_base_investigator", self._knowledge_base_investigator)
+        graph.add_node("evidence_evaluator", self._evidence_evaluator)
+        graph.add_node("rca_writer", self._rca_writer)
+        graph.add_node("solution_recommender", self._solution_recommender)
+        graph.add_node("report_writer", self._report_writer)
+        graph.add_node("finish", self._finish)
+
+        graph.add_edge(START, "initialize_state")
+        graph.add_edge("initialize_state", "supervisor")
+        graph.add_edge("supervisor", "guardrail")
+        graph.add_conditional_edges(
+            "guardrail",
+            self._route_after_guardrail,
+            {
+                "log_investigator": "log_investigator",
+                "code_investigator": "code_investigator",
+                "knowledge_base_investigator": "knowledge_base_investigator",
+                "evidence_evaluator": "evidence_evaluator",
+                "rca_writer": "rca_writer",
+                "solution_recommender": "solution_recommender",
+                "report_writer": "report_writer",
+                "finish": "finish",
+            },
+        )
+        graph.add_edge("log_investigator", "evidence_evaluator")
+        graph.add_edge("code_investigator", "evidence_evaluator")
+        graph.add_edge("knowledge_base_investigator", "evidence_evaluator")
+        graph.add_conditional_edges(
+            "evidence_evaluator",
+            self._route_after_evidence_evaluation,
+            {
+                "supervisor": "supervisor",
+                "rca_writer": "rca_writer",
+                "finish": "finish",
+            },
+        )
+        graph.add_edge("rca_writer", "solution_recommender")
+        graph.add_edge("solution_recommender", "report_writer")
+        graph.add_edge("report_writer", "finish")
+        graph.add_edge("finish", END)
+
+        return graph
+
+    async def _initialize_state(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        incident = await self._incident_provider.get_incident(graph_state.incident_id)
+        graph_state.workflow_state = WorkflowState(
+            incident=incident,
+            investigation_status=InvestigationStatus.RUNNING,
+            max_steps=self._max_steps,
+            max_replans=self._max_replans,
+            max_agent_invocations_per_agent=self._max_agent_invocations_per_agent,
+            confidence_threshold=self._confidence_threshold,
+            minimum_evidence_count_before_rca=self._minimum_evidence_count_before_rca,
+        )
+        graph_state.next_route = "supervisor"
+        return graph_state
+
+    async def _supervisor(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        if not state.can_take_step():
+            state.mark_low_confidence()
+            state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
+            graph_state.next_route = "finish"
+            return graph_state
+
+        decision = await self._supervisor_agent.run(state)
+        state.record_decision(decision)
+        graph_state.next_route = "guardrail"
+        return graph_state
+
+    async def _guardrail(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        decision = self._current_decision(state)
+
+        guardrail_decision = self._guardrail_engine.validate_decision(
+            state=state,
+            decision=decision,
+        )
+        state.record_guardrail_decision(guardrail_decision)
+
+        if guardrail_decision.allowed:
+            graph_state.next_route = self._route_for_agent(decision.next_agent)
+            return graph_state
+
+        self._record_blocked_guardrail_step(
+            state=state,
+            decision=decision,
+            guardrail_decision=guardrail_decision,
+        )
+
+        fallback_agent = guardrail_decision.fallback_next_agent
+        if fallback_agent is None:
+            state.add_error(guardrail_decision.reason)
+            graph_state.next_route = "finish"
+            return graph_state
+
+        if fallback_agent == AgentName.FINISH:
+            state.mark_low_confidence()
+            graph_state.next_route = "finish"
+            return graph_state
+
+        fallback_decision = AgentDecision(
+            decision_id=new_agent_decision_id(),
+            next_agent=fallback_agent,
+            reason=f"Guardrail fallback after blocked decision: {guardrail_decision.reason}",
+            queries=decision.queries,
+            expected_evidence=decision.expected_evidence,
+            should_continue=True,
+            metadata={"fallback_for": decision.decision_id},
+        )
+        state.record_decision(fallback_decision)
+        graph_state.next_route = self._route_for_agent(fallback_agent)
+        return graph_state
+
+    async def _log_investigator(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        decision = self._current_decision(state)
+        evidence_items = await self._log_investigator_agent.run(
+            LogInvestigatorInput(
+                incident_id=state.incident.incident_id,
+                decision=decision,
+            )
+        )
+        self._record_successful_evidence_run(state, decision, evidence_items)
+        graph_state.next_route = "evidence_evaluator"
+        return graph_state
+
+    async def _code_investigator(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        decision = self._current_decision(state)
+        evidence_items = await self._code_investigator_agent.run(
+            CodeInvestigatorInput(
+                decision=decision,
+                limit=5,
+            )
+        )
+        self._record_successful_evidence_run(state, decision, evidence_items)
+        graph_state.next_route = "evidence_evaluator"
+        return graph_state
+
+    async def _knowledge_base_investigator(
+        self,
+        graph_state: DynamicGraphState,
+    ) -> DynamicGraphState:
+        state = self._state(graph_state)
+        decision = self._current_decision(state)
+        evidence_items = await self._knowledge_base_investigator_agent.run(
+            KnowledgeBaseInvestigatorInput(
+                decision=decision,
+                limit=5,
+            )
+        )
+        self._record_successful_evidence_run(state, decision, evidence_items)
+        graph_state.next_route = "evidence_evaluator"
+        return graph_state
+
+    async def _evidence_evaluator(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        decision = self._ensure_evidence_evaluator_decision(state)
+
+        guardrail_decision = self._guardrail_engine.validate_decision(
+            state=state,
+            decision=decision,
+        )
+        state.record_guardrail_decision(guardrail_decision)
+
+        if not guardrail_decision.allowed:
+            self._record_blocked_guardrail_step(
+                state=state,
+                decision=decision,
+                guardrail_decision=guardrail_decision,
+            )
+            graph_state.next_route = "finish"
+            return graph_state
+
+        evaluation = await self._evidence_evaluator_agent.run(state)
+        state.evidence_evaluation = evaluation
+        if evaluation.retry_required:
+            if state.can_replan():
+                state.increment_replan()
+            else:
+                state.mark_low_confidence()
+                state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
+                graph_state.next_route = "finish"
+                return graph_state
+        self._record_successful_agent_run(
+            state=state,
+            decision=decision,
+            evidence_ids=[],
+            output_summary=evaluation.reason,
+        )
+        graph_state.next_route = self._route_after_evidence_evaluation(graph_state)
+        return graph_state
+
+    async def _rca_writer(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        decision = self._ensure_forced_decision(
+            state=state,
+            agent_name=AgentName.RCA_WRITER,
+            reason="Evidence evaluation says RCA can be written.",
+        )
+        state.rca_report = await self._rca_writer_agent.run(state)
+        self._record_successful_agent_run(
+            state=state,
+            decision=decision,
+            evidence_ids=state.rca_report.evidence_ids,
+            output_summary=f"Generated RCA report {state.rca_report.report_id}.",
+        )
+        graph_state.next_route = "solution_recommender"
+        return graph_state
+
+    async def _solution_recommender(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        if state.rca_report is None:
+            raise ValueError("solution recommendation requires RCA report")
+        decision = self._ensure_forced_decision(
+            state=state,
+            agent_name=AgentName.SOLUTION_RECOMMENDER,
+            reason="RCA report is ready; generate solution recommendation.",
+        )
+        state.solution_recommendation = await self._solution_recommendation_agent.run(
+            state.rca_report
+        )
+        self._record_successful_agent_run(
+            state=state,
+            decision=decision,
+            evidence_ids=state.solution_recommendation.evidence_ids,
+            output_summary=state.solution_recommendation.summary,
+        )
+        graph_state.next_route = "report_writer"
+        return graph_state
+
+    async def _report_writer(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        if state.rca_report is None:
+            raise ValueError("report writing requires RCA report")
+        decision = self._ensure_forced_decision(
+            state=state,
+            agent_name=AgentName.REPORT_WRITER,
+            reason="RCA and solution are ready; save final report.",
+            should_continue=False,
+        )
+        written_paths = await self._report_writer_agent.run(
+            ReportWriterInput(
+                report=state.rca_report,
+                solution=state.solution_recommendation,
+            )
+        )
+        state.final_report_path = written_paths[0]
+        state.investigation_status = InvestigationStatus.COMPLETED
+        self._record_successful_agent_run(
+            state=state,
+            decision=decision,
+            evidence_ids=state.rca_report.evidence_ids,
+            output_summary=f"Saved report to {written_paths[0]}.",
+        )
+        graph_state.next_route = "finish"
+        return graph_state
+
+    async def _finish(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        return graph_state
+
+    def _route_after_guardrail(self, graph_state: DynamicGraphState) -> GraphRoute:
+        return graph_state.next_route
+
+    def _route_after_evidence_evaluation(self, graph_state: DynamicGraphState) -> GraphRoute:
+        state = self._state(graph_state)
+        evaluation = state.evidence_evaluation
+
+        if evaluation is not None and evaluation.can_write_rca:
+            return "rca_writer"
+
+        if state.can_take_step() and evaluation is not None and evaluation.retry_required:
+            return "supervisor"
+
+        state.mark_low_confidence()
+        state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
+        return "finish"
+
+    def _ensure_evidence_evaluator_decision(self, state: WorkflowState) -> AgentDecision:
+        current_decision = state.current_decision
+        if current_decision and current_decision.next_agent == AgentName.EVIDENCE_EVALUATOR:
+            return current_decision
+
+        return self._ensure_forced_decision(
+            state=state,
+            agent_name=AgentName.EVIDENCE_EVALUATOR,
+            reason="Evaluate evidence after latest investigation step.",
+        )
+
+    def _ensure_forced_decision(
+        self,
+        *,
+        state: WorkflowState,
+        agent_name: AgentName,
+        reason: str,
+        should_continue: bool = True,
+    ) -> AgentDecision:
+        current_decision = state.current_decision
+        if (
+            current_decision
+            and current_decision.next_agent == agent_name
+            and current_decision.metadata.get("forced_by_workflow") == "true"
+        ):
+            return current_decision
+
+        decision = AgentDecision(
+            decision_id=new_agent_decision_id(),
+            next_agent=agent_name,
+            reason=reason,
+            queries=[],
+            expected_evidence=[],
+            should_continue=should_continue,
+            metadata={"forced_by_workflow": "true"},
+        )
+        state.record_decision(decision)
+        return decision
+
+    def _record_successful_evidence_run(
+        self,
+        state: WorkflowState,
+        decision: AgentDecision,
+        evidence_items: list[EvidenceItem],
+    ) -> None:
+        for evidence in evidence_items:
+            state.add_evidence(evidence)
+
+        self._record_successful_agent_run(
+            state=state,
+            decision=decision,
+            evidence_ids=[evidence.evidence_id for evidence in evidence_items],
+            output_summary=f"Collected {len(evidence_items)} evidence item(s).",
+        )
+
+    def _record_successful_agent_run(
+        self,
+        *,
+        state: WorkflowState,
+        decision: AgentDecision,
+        evidence_ids: list[str],
+        output_summary: str,
+    ) -> None:
+        execution = AgentExecutionRecord(
+            execution_id=new_agent_execution_id(),
+            agent_name=decision.next_agent,
+            status=AgentRunStatus.SUCCEEDED,
+            decision_id=decision.decision_id,
+            output_summary=output_summary,
+            evidence_ids=evidence_ids,
+        )
+        state.record_agent_execution(execution)
+        state.add_investigation_step(
+            InvestigationStep(
+                step_number=state.trace.next_step_number(),
+                agent_name=decision.next_agent,
+                run_status=AgentRunStatus.SUCCEEDED,
+                decision_id=decision.decision_id,
+                execution_id=execution.execution_id,
+                evidence_ids=evidence_ids,
+            )
+        )
+
+    def _record_blocked_guardrail_step(
+        self,
+        *,
+        state: WorkflowState,
+        decision: AgentDecision,
+        guardrail_decision: GuardrailDecision,
+    ) -> None:
+        state.add_investigation_step(
+            InvestigationStep(
+                step_number=state.trace.next_step_number(),
+                agent_name=decision.next_agent,
+                run_status=AgentRunStatus.BLOCKED,
+                decision_id=decision.decision_id,
+                guardrail_id=guardrail_decision.guardrail_id,
+                notes=[guardrail_decision.reason],
+            )
+        )
+
+    def _route_for_agent(self, agent_name: AgentName) -> GraphRoute:
+        route_by_agent: dict[AgentName, GraphRoute] = {
+            AgentName.LOG_INVESTIGATOR: "log_investigator",
+            AgentName.CODE_INVESTIGATOR: "code_investigator",
+            AgentName.KNOWLEDGE_BASE_INVESTIGATOR: "knowledge_base_investigator",
+            AgentName.EVIDENCE_EVALUATOR: "evidence_evaluator",
+            AgentName.RCA_WRITER: "rca_writer",
+            AgentName.SOLUTION_RECOMMENDER: "solution_recommender",
+            AgentName.REPORT_WRITER: "report_writer",
+            AgentName.FINISH: "finish",
+        }
+        route = route_by_agent.get(agent_name)
+        if route is None:
+            return "finish"
+        return route
+
+    def _state(self, graph_state: DynamicGraphState) -> WorkflowState:
+        if graph_state.workflow_state is None:
+            raise ValueError("LangGraph node requires initialized WorkflowState")
+        return graph_state.workflow_state
+
+    def _current_decision(self, state: WorkflowState) -> AgentDecision:
+        if state.current_decision is None:
+            raise ValueError("workflow state does not have a current decision")
+        return state.current_decision
+
+    def __repr__(self) -> str:
+        return (
+            "DynamicBugResolutionGraphWorkflow("
+            f"max_steps={self._max_steps}, "
+            f"max_replans={self._max_replans}, "
+            f"confidence_threshold={self._confidence_threshold})"
+        )
