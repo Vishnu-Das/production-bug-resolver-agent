@@ -19,7 +19,7 @@ async def test_sample_incidents_and_logs_are_loadable() -> None:
     incident_provider = FileIncidentProvider(SAMPLE_DATA_DIR / "incidents")
     log_provider = FileLogProvider(SAMPLE_DATA_DIR / "logs")
 
-    for incident_id in ["INC-001", "INC-002", "INC-003", "INC-004"]:
+    for incident_id in ["INC-001", "INC-002", "INC-003", "INC-004", "INC-006"]:
         incident = await incident_provider.get_incident(incident_id)
         logs = await log_provider.get_logs(incident_id)
 
@@ -45,6 +45,10 @@ async def test_sample_knowledge_base_covers_new_incident_themes() -> None:
         ["duplicate upload processed_uploads stale document"],
         limit=3,
     )
+    summary_context = await provider.search_knowledge(
+        ["summary-style queries document-level retrieval semantic chunk search"],
+        limit=3,
+    )
 
     assert any(context.document_name == "retrieval-strategies.md" for context in retrieval_context)
     assert any(
@@ -52,3 +56,6 @@ async def test_sample_knowledge_base_covers_new_incident_themes() -> None:
         for context in selected_document_context
     )
     assert any(context.document_name == "upload-ingestion.md" for context in upload_context)
+    assert any(
+        context.document_name == "query-routing-expectations.md" for context in summary_context
+    )

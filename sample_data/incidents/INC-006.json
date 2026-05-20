@@ -1,0 +1,16 @@
+{
+  "incident_id": "INC-006",
+  "title": "Summary questions return chunk-level answers instead of full document summaries",
+  "description": "Users report that \"summarize the document\" only summarizes one small chunk. There is no exception, but product expectations say summary-style queries should use document-level retrieval rather than chunk-level semantic search.",
+  "severity": "medium",
+  "status": "new",
+  "affected_service": "conversational_rag",
+  "affected_area": "query routing and retrieval strategy selection",
+  "reporter": "sample-production-monitor",
+  "metadata": {
+    "environment": "local-sample",
+    "entrypoint": "src/rag/service.py::resolve_retrieval_strategy",
+    "suspected_component": "src/rag/routing/llm.py::LLMRouterStrategy.route",
+    "query_type": "summary"
+  }
+}

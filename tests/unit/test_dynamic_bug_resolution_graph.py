@@ -126,6 +126,26 @@ class EmptyKnowledgeBaseProvider:
         return []
 
 
+class FakeKnowledgeBaseProvider:
+    """Return one knowledge-base item that explains expected routing behavior."""
+
+    async def search_knowledge(
+        self,
+        queries: list[str],
+        *,
+        limit: int = 5,
+    ) -> list[KnowledgeContext]:
+        return [
+            KnowledgeContext(
+                context_id="kb-1",
+                document_name="query-routing-expectations.md",
+                section_title="Query Routing Expectations",
+                content="Summary-style queries should use document-level retrieval.",
+                relevance_score=0.88,
+            )
+        ]
+
+
 class FakeReportStore:
     """Pretend to persist generated reports and return a stable path."""
 
@@ -172,6 +192,7 @@ def make_graph_workflow(
     supervisor: FakeSupervisorAgent,
     *,
     evidence_evaluator_agent=None,
+    knowledge_base_provider=None,
     max_steps: int = 12,
     max_replans: int = 2,
 ) -> DynamicBugResolutionGraphWorkflow:
@@ -183,7 +204,7 @@ def make_graph_workflow(
         log_investigator_agent=LogInvestigatorAgent(FakeLogProvider()),
         code_investigator_agent=CodeInvestigatorAgent(FakeCodeContextProvider()),
         knowledge_base_investigator_agent=KnowledgeBaseInvestigatorAgent(
-            EmptyKnowledgeBaseProvider()
+            knowledge_base_provider or EmptyKnowledgeBaseProvider()
         ),
         evidence_evaluator_agent=evidence_evaluator_agent or EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(),
@@ -256,6 +277,53 @@ async def test_graph_workflow_falls_back_to_code_when_kb_is_chosen_without_code(
     state = await workflow.run("INC-001")
 
     assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert any(
+        "missing_code_evidence_should_route_to_code" in guardrail_decision.violated_rules
+        and guardrail_decision.fallback_next_agent == AgentName.CODE_INVESTIGATOR
+        for guardrail_decision in state.trace.guardrail_decisions
+    )
+    assert any(
+        step.agent_name == AgentName.CODE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_blocks_repeated_kb_and_falls_back_to_code() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision(
+                "decision-2",
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+                ["routing expectations"],
+            ),
+            decision(
+                "decision-3",
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+                ["product expectations"],
+            ),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        knowledge_base_provider=FakeKnowledgeBaseProvider(),
+    )
+
+    state = await workflow.run("INC-001")
+
+    kb_steps = [
+        step
+        for step in state.trace.steps
+        if step.agent_name == AgentName.KNOWLEDGE_BASE_INVESTIGATOR
+    ]
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert [step.run_status for step in kb_steps] == [
+        AgentRunStatus.SUCCEEDED,
+        AgentRunStatus.BLOCKED,
+    ]
     assert any(
         "missing_code_evidence_should_route_to_code" in guardrail_decision.violated_rules
         and guardrail_decision.fallback_next_agent == AgentName.CODE_INVESTIGATOR

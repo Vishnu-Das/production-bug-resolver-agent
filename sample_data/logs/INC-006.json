@@ -1,0 +1,42 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "info",
+    "message": "Received summary-style document query.",
+    "service_name": "conversational_rag.query",
+    "environment": "local-sample",
+    "request_id": "req_711a",
+    "trace_id": "trace-summary-006",
+    "raw": "2026-05-20T11:03:12Z INFO conversational_rag.query request_id=req_711a Received query=\"summarize this document\""
+  },
+  {
+    "log_id": "log-002",
+    "level": "info",
+    "message": "Router selected chunk-level semantic search for a summary query.",
+    "service_name": "conversational_rag.routing",
+    "environment": "local-sample",
+    "request_id": "req_711a",
+    "trace_id": "trace-summary-006",
+    "raw": "2026-05-20T11:03:12Z INFO conversational_rag.routing request_id=req_711a Router selected strategy=\"semantic_search\" reason=\"query asks about document content\""
+  },
+  {
+    "log_id": "log-003",
+    "level": "info",
+    "message": "Retrieved chunks using semantic search.",
+    "service_name": "conversational_rag.retrieval",
+    "environment": "local-sample",
+    "request_id": "req_711a",
+    "trace_id": "trace-summary-006",
+    "raw": "2026-05-20T11:03:13Z INFO conversational_rag.retrieval request_id=req_711a Retrieved 3 chunks using strategy=\"semantic_search\""
+  },
+  {
+    "log_id": "log-004",
+    "level": "warning",
+    "message": "User feedback indicates the generated summary covered only the first section.",
+    "service_name": "conversational_rag.response",
+    "environment": "local-sample",
+    "request_id": "req_711a",
+    "trace_id": "trace-summary-006",
+    "raw": "2026-05-20T11:03:14Z WARNING conversational_rag.response request_id=req_711a User feedback=\"summary only covered first section\""
+  }
+]

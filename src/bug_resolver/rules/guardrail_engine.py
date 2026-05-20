@@ -185,9 +185,22 @@ class GuardrailEngine:
         if EvidenceSourceType.CODE in source_types:
             return False
 
-        return any(
+        code_evidence_is_missing = any(
             "code evidence is missing" in missing_evidence.lower()
             for missing_evidence in state.evidence_evaluation.missing_evidence
+        )
+        if not code_evidence_is_missing:
+            return False
+
+        if decision.next_agent == AgentName.KNOWLEDGE_BASE_INVESTIGATOR:
+            return self._has_knowledge_base_evidence(state)
+
+        return True
+
+    def _has_knowledge_base_evidence(self, state: WorkflowState) -> bool:
+        return any(
+            evidence.source_type == EvidenceSourceType.KNOWLEDGE_BASE
+            for evidence in state.evidence_items
         )
 
     def _fallback_agent(
