@@ -2,43 +2,44 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260519-3D7B48C0: The LLM router emitted `summary` as a retrieval strategy, but `summary` is not a supported retrieval strategy value. The router validation raised `ValueError: Invalid strategy: summary`, causing the system to fall back to the rule-based router. The fallback resolved the same summary-style document query to `parent_child`, indicating that this query intent should map to the supported `parent_child` strategy rather than `summary`.
+Recommended solution based on RCA RCA-20260520-6E1211F8: The LLM router emitted `summary` as a retrieval strategy, which is not supported. The router validation raised `ValueError: Invalid strategy: summary`, causing fallback to the rule-based router that handled the query appropriately by returning `parent_child`, indicating that summary queries should align with this strategy.
 
 ## Immediate Steps
 
-- Update the LLM router prompt and/or structured output validation to ensure it emits only supported retrieval strategies.
-- For broad summary questions over a selected document, return `parent_child` directly or normalize `summary` to `parent_child` before validation.
-- Reproduce the incident locally using the same failure scenario to ensure understanding of the issue.
-- Verify the proposed fix against the log symptoms and selected RCA evidence.
+- Update the LLM router prompt and structured output validation to emit only supported retrieval strategy values.
+- Normalize `summary` to `parent_child` for relevant queries or directly return `parent_child` as needed.
+- Reproduce the incident locally using the same failure scenario for testing purposes.
+- Verify the fix against the log symptoms and selected RCA evidence.
 
 ## Long-Term Steps
 
-- Implement stricter validation on the retrieval strategy emitted from the LLM router to prevent unsupported strategies.
-- Ensure alignment between the LLM router output schema, prompt instructions, and supported retrieval strategy values to prevent contract mismatches.
-- Document the supported retrieval strategies and the expected mappings for summary-style selected-document questions, making them accessible to the development team.
+- Implement comprehensive schema validation for output emissions from the LLM router to ensure alignment with accepted retrieval strategies.
+- Enhance logging for debugging retrieval strategy logic to capture more details about the routing process.
+- Keep the LLM router output schema, prompt instructions, and retrieval strategy enum in sync to prevent emission of unsupported conceptual labels.
+- Document the supported retrieval strategies along with the expected mappings for summary-style selected-document queries.
 
 ## Tests to Add
 
-- Add unit tests to confirm the LLM router emits only supported strategies for summary queries, specifically covering cases that previously caused issues.
-- Create integration tests that validate the retrieval routing behavior for a variety of summary queries, ensuring expected outputs occur without fallback.
+- Unit test for the LLM router to verify correct handling of summary queries as `parent_child`.
+- Integration test for the overall retrieval strategy to ensure fallbacks occur only for truly unsupported cases.
 
 ## Monitoring Improvements
 
-- Log the raw LLM router strategy value, normalized strategy value, router type, fallback reason, request id, and trace id for every occurrence of router fallback.
-- Introduce a metric for tracking unsupported LLM router strategy values to provide visibility into any potential contract drifts before they affect users.
+- Log the raw LLM router strategy value, normalized strategy value, router type, fallback reason, request id, and trace id whenever router fallback occurs.
+- Add a metric for unsupported LLM router strategy values to monitor for `summary`-style contract drift before it affects users.
 
 ## Risk Notes
 
-- There is a risk that the solution may not address all possible unsupported concepts that could arise in the future unless thorough validation is continuously maintained.
-- The ongoing alignment between multiple components (prompt instructions and strategy enum) must be rigorously governed to prevent future discrepancies.
+- Need to assess the potential for other invalid strategy values that may not be handled correctly.
+- Risks associated with rapid deployment of changes without thorough testing may lead to additional fallback issues.
 
 ## Evidence
 
-- EVID-LOG-6E169B71
-- EVID-LOG-6225C4F0
-- tests/rag/routing/test_llm_router.py:71-138
+- EVID-LOG-76C20202
+- EVID-LOG-5C46D760
 - src/rag/routing/llm.py:71-110
-- src/rag/retrieval/parent_child/strategy.py:71-114
+- src/rag/routing/rule_based.py:1-80
+- src/rag/service.py:71-150
 
 ## Generation Details
 
@@ -48,8 +49,8 @@ Recommended solution based on RCA RCA-20260519-3D7B48C0: The LLM router emitted 
 
 ## Metadata
 
-- recommendation_id: SOL-20260519-55B69DCA
-- rca_report_id: RCA-20260519-3D7B48C0
+- recommendation_id: SOL-20260520-5B6D19FB
+- rca_report_id: RCA-20260520-6E1211F8
 - confidence_score: 0.8
 - solution_writer: llm
 - llm_output_validated: true

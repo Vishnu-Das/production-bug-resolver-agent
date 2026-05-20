@@ -1,12 +1,14 @@
 """Typer CLI entrypoint for running analyze-only bug investigations."""
 
 import asyncio
+from enum import StrEnum
 
 import typer
 from rich.console import Console
 
 from bug_resolver.config.settings import get_settings
 from bug_resolver.workflows import build_dynamic_workflow
+from bug_resolver.workflows.graph_factory import build_dynamic_graph_workflow
 
 app = typer.Typer(
     name="bug-resolver",
@@ -15,6 +17,13 @@ app = typer.Typer(
 )
 
 console = Console()
+
+
+class WorkflowChoice(StrEnum):
+    """CLI-selectable workflow implementations."""
+
+    MANUAL = "manual"
+    GRAPH = "graph"
 
 
 @app.callback()
@@ -33,13 +42,18 @@ def version() -> None:
 @app.command()
 def investigate(
     incident_id: str = typer.Option(..., "--incident-id", "-i", help="Incident id to investigate."),
+    workflow: WorkflowChoice = typer.Option(
+        WorkflowChoice.MANUAL,
+        "--workflow",
+        help="Workflow implementation to run.",
+    ),
 ) -> None:
     """Run a dynamic supervisor-led bug investigation for an incident."""
     console.print("[bold cyan]Starting dynamic investigation[/bold cyan]")
     console.print(f"Incident ID: {incident_id}")
 
     try:
-        state = asyncio.run(_run_investigation(incident_id=incident_id))
+        state = asyncio.run(_run_investigation(incident_id=incident_id, workflow=workflow))
     except Exception as exc:
         console.print(f"[bold red]Investigation failed:[/bold red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -113,7 +127,11 @@ def _compact_evidence_id(evidence_id: str) -> str:
     return value.split("/")[-1]
 
 
-async def _run_investigation(incident_id: str):
+async def _run_investigation(incident_id: str, workflow: WorkflowChoice = WorkflowChoice.MANUAL):
     settings = get_settings()
-    workflow = await build_dynamic_workflow(settings)
-    return await workflow.run(incident_id)
+    workflow_runner = (
+        await build_dynamic_graph_workflow(settings)
+        if workflow == WorkflowChoice.GRAPH
+        else await build_dynamic_workflow(settings)
+    )
+    return await workflow_runner.run(incident_id)
