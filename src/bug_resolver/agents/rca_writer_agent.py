@@ -396,13 +396,27 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             "if they violate the Display path rules.\n"
             f"Root cause: {deterministic_report.root_cause}\n"
             f"Technical explanation: {deterministic_report.technical_explanation}\n"
+            f"Focused baseline evidence IDs: {', '.join(deterministic_report.evidence_ids)}\n"
+            "Focused code findings baseline:\n"
+            f"{self._format_baseline_list(deterministic_report.code_findings)}\n"
+            "Focused knowledge-base findings baseline:\n"
+            f"{self._format_baseline_list(deterministic_report.knowledge_base_findings)}\n"
             f"Immediate fix: {deterministic_report.immediate_fix or 'not specified'}\n"
             f"Confidence: {deterministic_report.confidence_score} because "
             f"{deterministic_report.confidence_reason}\n\n"
+            "Keep Code Findings and Knowledge Base Findings focused on the strongest "
+            "baseline items. Prefer the focused baseline evidence IDs and do not list "
+            "unrelated retrieved context.\n"
             "Return an RCA report with clear findings, hypotheses, root cause, "
             "technical explanation, evidence IDs, confidence, recommended fix, "
             "prevention, tests, and open questions."
         )
+
+    def _format_baseline_list(self, values: list[str]) -> str:
+        if not values:
+            return "- None"
+
+        return "\n".join(f"- {value}" for value in values)
 
     def _validate_input(self, input_data: WorkflowState) -> None:
         super()._validate_input(input_data)
