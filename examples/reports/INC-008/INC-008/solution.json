@@ -1,0 +1,53 @@
+{
+  "recommendation_id": "SOL-20260521-9635EC34",
+  "incident_id": "INC-008",
+  "rca_report_id": "RCA-20260521-451927FB",
+  "summary": "The root cause of the incident was identified as the absence of a reranker model configuration, which led to silent fallback behavior that resulted in unrelated sources being cited. Immediate and long-term actions are recommended to address this issue and prevent recurrence.",
+  "immediate_steps": [
+    "Require `RERANKING_MODEL_NAME` or an explicit reranking-disabled mode at startup, and replace silent neutral-score fallback with a clear warning or fail-fast configuration error.",
+    "Reproduce the incident locally using the same failure scenario.",
+    "Verify the fix against the log symptoms and selected RCA evidence."
+  ],
+  "long_term_steps": [
+    "Add regression tests for reranking functionality.",
+    "Centralize retrieval strategy validation processes to ensure consistent evaluation.",
+    "Improve structured error handling in the reranking code path.",
+    "Log raw router outputs when fallback scenarios occur.",
+    "Add input and output contract checks around the implicated code path.",
+    "Document the expected behavior and failure mode for future incidents."
+  ],
+  "tests_to_add": [
+    "Add a startup/configuration test that fails or warns clearly when `RERANKING_MODEL_NAME` is missing.",
+    "Add a retrieval pipeline test proving reranking changes candidate ordering or reports an explicit disabled state."
+  ],
+  "monitoring_improvements": [
+    "Add structured logging around the implicated code path for better traceability.",
+    "Log request or trace identifiers with the error when available."
+  ],
+  "risk_notes": [
+    "Risk of further incidents if the reranker configuration issue is not resolved promptly.",
+    "Potential impacts on retrieval accuracy if neutral scores are returned without appropriate warnings."
+  ],
+  "confidence_score": 0.85,
+  "evidence_ids": [
+    "EVID-LOG-0FC354B1",
+    "EVID-LOG-74DFCA4E",
+    "EVID-LOG-71C42F59",
+    "EVID-LOG-1F93EE1C",
+    "evidence-kb-README",
+    "evidence-kb-query-routing-expectations",
+    "evidence-kb-selected-document-routing",
+    "evidence-kb-retrieval-strategies",
+    "evidence-kb-upload-ingestion",
+    "evidence-src/rag/routing/rule_based.py:71-150",
+    "evidence-src/rag/service.py:71-150",
+    "evidence-src/rag/retrieval/hybrid/strategy.py:1-43",
+    "evidence-eval/compare_retrieval_strategies.py:71-150",
+    "evidence-src/rag/retrieval/parent_child/strategy.py:71-114"
+  ],
+  "metadata": {
+    "solution_writer": "llm",
+    "llm_output_validated": "true",
+    "fallback_used": "false"
+  }
+}

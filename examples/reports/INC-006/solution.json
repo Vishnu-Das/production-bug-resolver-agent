@@ -1,0 +1,50 @@
+{
+  "recommendation_id": "SOL-20260521-2FA1E48B",
+  "incident_id": "INC-006",
+  "rca_report_id": "RCA-20260521-D2AB89EB",
+  "summary": "The incident is most likely caused by a mismatch between the runtime failure observed in logs and the implementation behavior shown in src/rag/service.py:71-150.",
+  "immediate_steps": [
+    "Inspect and fix the code path at src/rag/service.py:71-150.",
+    "Reproduce the incident locally using the same failure scenario.",
+    "Verify the fix against the log symptoms and selected RCA evidence."
+  ],
+  "long_term_steps": [
+    "Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.",
+    "Add input and output contract checks around the implicated code path.",
+    "Document the expected behavior and failure mode for future incidents."
+  ],
+  "tests_to_add": [
+    "Add a regression test for incident INC-006.",
+    "Add a test covering the implicated implementation path."
+  ],
+  "monitoring_improvements": [
+    "Add structured logging around the implicated code path.",
+    "Log request or trace identifiers with the error when available."
+  ],
+  "risk_notes": [
+    "Potential for similar incidents to occur if retrieval strategy validation remains decentralized.",
+    "Without proper logging, future diagnosis of similar issues may be hampered."
+  ],
+  "confidence_score": 0.8,
+  "evidence_ids": [
+    "EVID-LOG-C1DAD463",
+    "EVID-LOG-73A81F15",
+    "EVID-LOG-D77749F3",
+    "EVID-LOG-8750B6F1",
+    "evidence-kb-README",
+    "evidence-kb-query-routing-expectations",
+    "evidence-kb-selected-document-routing",
+    "evidence-kb-retrieval-strategies",
+    "evidence-kb-upload-ingestion",
+    "evidence-src/rag/service.py:71-150",
+    "evidence-src/rag/retrieval/parent_child/strategy.py:71-114",
+    "evidence-src/rag/retrieval/hybrid/strategy.py:1-43",
+    "evidence-src/rag/routing/rule_based.py:71-150",
+    "evidence-src/rag/retrievers.py:71-133"
+  ],
+  "metadata": {
+    "solution_writer": "llm",
+    "llm_output_validated": "true",
+    "fallback_used": "false"
+  }
+}

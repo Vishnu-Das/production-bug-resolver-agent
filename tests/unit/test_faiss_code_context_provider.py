@@ -87,6 +87,33 @@ def build_vector_store_with_deprecated_match() -> FAISSVectorStore:
     return store
 
 
+def build_vector_store_with_noisy_test_match() -> FAISSVectorStore:
+    store = FAISSVectorStore(dimension=3)
+    store.add(
+        vectors=[
+            [0.0, 1.0, 0.0],
+            [0.0, 0.96, 0.28],
+        ],
+        metadata=[
+            {
+                "item_id": "tests/rag/test_service.py:1-40",
+                "file_path": "/repo/tests/rag/test_service.py",
+                "snippet": "def test_retrieval_service(): pass",
+                "line_start": 1,
+                "line_end": 40,
+            },
+            {
+                "item_id": "src/rag/service.py:1-40",
+                "file_path": "/repo/src/rag/service.py",
+                "snippet": "def retrieve_documents(): pass",
+                "line_start": 1,
+                "line_end": 40,
+            },
+        ],
+    )
+    return store
+
+
 @pytest.mark.asyncio
 async def test_faiss_code_context_provider_returns_matching_context():
     provider = FAISSCodeContextProvider(
@@ -180,3 +207,15 @@ async def test_faiss_code_context_provider_filters_deprecated_paths():
     results = await provider.search_code(["search"], limit=2)
 
     assert [result.context_id for result in results] == ["src/rag/service.py:1-20"]
+
+
+@pytest.mark.asyncio
+async def test_faiss_code_context_provider_returns_ranked_top_k_results():
+    provider = FAISSCodeContextProvider(
+        vector_store=build_vector_store_with_noisy_test_match(),
+        embedding_client=FakeEmbeddingClient(),
+    )
+
+    results = await provider.search_code(["search retrieval service"], limit=1)
+
+    assert [result.context_id for result in results] == ["src/rag/service.py:1-40"]
