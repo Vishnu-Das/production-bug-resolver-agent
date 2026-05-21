@@ -5,6 +5,12 @@ assistant for production incidents. It uses LangGraph-style dynamic routing,
 guardrails, logs, Code RAG, Knowledge Base RAG, and evidence-backed RCA/report
 generation.
 
+---
+
+<img width="917" height="525" alt="image" src="https://github.com/user-attachments/assets/b3059d44-54e8-45f2-989d-506aa0e6c7ba" />
+
+---
+
 The project is analyze-only today. It investigates incidents and writes RCA plus
 solution reports, but it does not patch code, open pull requests, or modify the
 target repository.
