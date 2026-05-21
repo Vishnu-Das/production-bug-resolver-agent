@@ -1,0 +1,15 @@
+{
+  "incident_id": "INC-007",
+  "title": "Users see duplicate documents after upload",
+  "description": "Users report seeing duplicate document records and repeated citations after uploading similar PDF files. The issue appears after normal upload flows and does not show a visible application error.",
+  "severity": "medium",
+  "status": "new",
+  "affected_service": "conversational_rag",
+  "affected_area": "document upload and ingestion",
+  "reporter": "sample-production-monitor",
+  "metadata": {
+    "environment": "local-sample",
+    "workflow": "document upload",
+    "symptom": "duplicate citations"
+  }
+}

@@ -68,6 +68,30 @@ class RCARules:
                 ),
             ]
 
+        if self._has_duplicate_content_upload(state.evidence_items):
+            return [
+                (
+                    "H1: Duplicate document records are caused by upload deduplication "
+                    "using filename state instead of content identity."
+                ),
+                (
+                    "H2: The ingestion path accepts same-content uploads under different "
+                    "filenames and indexes both copies."
+                ),
+            ]
+
+        if self._has_silent_reranker_bypass(state.evidence_items):
+            return [
+                (
+                    "H1: Retrieval quality degraded because reranking was silently "
+                    "bypassed when the reranker model configuration was missing."
+                ),
+                (
+                    "H2: Hybrid retrieval returned candidate chunks, but answer quality "
+                    "fell because no cross-encoder scores reordered those candidates."
+                ),
+            ]
+
         if self._has_log_and_code_evidence(state.evidence_items):
             return [
                 (
@@ -128,6 +152,21 @@ class RCARules:
                 "A revised PDF upload with the same filename was skipped by duplicate "
                 "upload guards, so ingestion and cache reset did not run and retrieval "
                 "continued serving stale indexed content."
+            )
+
+        if self._has_duplicate_content_upload(state.evidence_items):
+            return (
+                "The upload flow records duplicate state by filename rather than content "
+                "identity. Logs show the same content hash was accepted under a different "
+                "filename and ingested again, creating duplicate document records and "
+                "repeated retrieval citations."
+            )
+
+        if self._has_silent_reranker_bypass(state.evidence_items):
+            return (
+                "The reranker model configuration was absent, and the reranker path "
+                "silently returned the original retrieval order with neutral scores "
+                "instead of warning or failing through an explicit fallback policy."
             )
 
         code_evidence = self._evidence_for_source(state, EvidenceSourceType.CODE)
@@ -217,6 +256,25 @@ class RCARules:
                 "same-name document revisions."
             )
 
+        if self._has_duplicate_content_upload(state.evidence_items):
+            return (
+                "Runtime logs show two upload requests with the same content hash but "
+                "different filenames. The second request reports `processed_uploads_match=false` "
+                "and `dedupe_key=\"filename\"`, then retrieval later reports duplicate "
+                "sources for that same content hash. Code evidence from the upload path "
+                "shows the content hash is available, but the duplicate guard is still "
+                "based on uploaded filename state."
+            )
+
+        if self._has_silent_reranker_bypass(state.evidence_items):
+            return (
+                "Runtime logs show hybrid retrieval returned candidates, then reranking "
+                "reported a null model with neutral scores and unchanged ordering. Code "
+                "evidence from the reranker path shows missing model configuration can "
+                "return unreranked documents instead of surfacing a clear warning or "
+                "startup/configuration failure."
+            )
+
         parts: list[str] = []
         for evidence in state.evidence_items:
             parts.append(f"{evidence.evidence_id}: {self._finding_text(evidence)}")
@@ -243,6 +301,17 @@ class RCARules:
                 return 0.8
             if has_logs and has_kb:
                 return 0.65
+            return 0.55
+
+        if self._has_duplicate_content_upload(
+            state.evidence_items
+        ) or self._has_silent_reranker_bypass(state.evidence_items):
+            if has_logs and has_code and has_kb:
+                return 0.85
+            if has_logs and has_code:
+                return 0.8
+            if has_logs and has_kb:
+                return 0.7
             return 0.55
 
         if has_logs and has_code and has_kb:
@@ -285,6 +354,21 @@ class RCARules:
                 "`Invalid strategy: summary`, and code/test evidence points to the LLM "
                 "routing validation path. Confidence is not 1.0 because knowledge-base "
                 "evidence and the exact raw LLM router output payload were not captured."
+            )
+
+        if self._has_duplicate_content_upload(state.evidence_items):
+            return (
+                "Confidence is high because logs show the same content hash being "
+                "ingested under multiple filenames, code evidence points to upload "
+                "deduplication state, and knowledge-base evidence documents expected "
+                "content-hash deduplication behavior."
+            )
+
+        if self._has_silent_reranker_bypass(state.evidence_items):
+            return (
+                "Confidence is high because logs show missing reranker configuration, "
+                "neutral rerank scores, and unchanged ordering; code and knowledge-base "
+                "evidence explain that silent reranker bypass degrades retrieval quality."
             )
 
         if state.evidence_evaluation is None:
@@ -359,6 +443,20 @@ class RCARules:
                 "silently skipped."
             )
 
+        if self._has_duplicate_content_upload(state.evidence_items):
+            return (
+                "Use the computed content hash as the duplicate identity for uploads. "
+                "Reject, version, or link same-content uploads before ingestion so a "
+                "different filename cannot create duplicate document records."
+            )
+
+        if self._has_silent_reranker_bypass(state.evidence_items):
+            return (
+                "Require `RERANKING_MODEL_NAME` or an explicit reranking-disabled mode "
+                "at startup, and replace silent neutral-score fallback with a clear "
+                "warning or fail-fast configuration error."
+            )
+
         code_evidence = self._evidence_for_source(state, EvidenceSourceType.CODE)
         if code_evidence:
             return f"Inspect and fix the code path at {self._location(code_evidence[0])}."
@@ -386,6 +484,30 @@ class RCARules:
                 (
                     "Add a contract test ensuring the LLM router can emit only supported "
                     "retrieval strategy enum values."
+                ),
+            ]
+
+        if self._has_duplicate_content_upload(state.evidence_items):
+            return [
+                (
+                    "Add an upload test where two different filenames have identical "
+                    "content and assert only one document record or citation source is created."
+                ),
+                (
+                    "Add a regression test that verifies the upload path uses content "
+                    "hash identity before ingestion."
+                ),
+            ]
+
+        if self._has_silent_reranker_bypass(state.evidence_items):
+            return [
+                (
+                    "Add a startup/configuration test that fails or warns clearly when "
+                    "`RERANKING_MODEL_NAME` is missing."
+                ),
+                (
+                    "Add a retrieval pipeline test proving reranking changes candidate "
+                    "ordering or reports an explicit disabled state."
                 ),
             ]
 
@@ -502,8 +624,18 @@ class RCARules:
             )
         if normalized_path == "src/services/upload_service.py":
             return (
-                f"{location} handles PDF uploads, duplicate filename checks, document "
-                "ingestion, cache reset, and Streamlit upload state."
+                f"{location} computes upload content state but still gates duplicate "
+                "handling through filename-based Streamlit session state before ingestion."
+            )
+        if normalized_path == "src/reranker.py":
+            return (
+                f"{location} loads the cross-encoder reranker and defines fallback "
+                "behavior for scoring and ordering retrieved documents."
+            )
+        if normalized_path == "src/rag/pipeline.py":
+            return (
+                f"{location} deduplicates retrieved documents and sends them through "
+                "reranking before answer context is built."
             )
         if normalized_path == "src/ingest.py":
             return (
@@ -605,6 +737,28 @@ class RCARules:
     ) -> bool:
         combined_text = self._combined_text(evidence_items).lower()
         return "duplicate upload" in combined_text and "stale document content" in combined_text
+
+    def _has_duplicate_content_upload(
+        self,
+        evidence_items: list[EvidenceItem],
+    ) -> bool:
+        combined_text = self._combined_text(evidence_items).lower()
+        return (
+            "content_hash" in combined_text
+            and 'dedupe_key="filename"' in combined_text
+            and "duplicate_content_detected=true" in combined_text
+        )
+
+    def _has_silent_reranker_bypass(
+        self,
+        evidence_items: list[EvidenceItem],
+    ) -> bool:
+        combined_text = self._combined_text(evidence_items).lower()
+        return (
+            "reranker_model=null" in combined_text
+            and 'scores="0.0,0.0,0.0,0.0"' in combined_text
+            and "order_changed=false" in combined_text
+        )
 
     def _has_parent_child_signal(self, evidence_items: list[EvidenceItem]) -> bool:
         combined_text = self._combined_text(evidence_items).lower()

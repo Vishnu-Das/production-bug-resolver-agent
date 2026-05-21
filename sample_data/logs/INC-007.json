@@ -1,0 +1,32 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "info",
+    "message": "First benefits guide upload was ingested.",
+    "service_name": "conversational_rag.upload",
+    "environment": "local-sample",
+    "request_id": "req_812b",
+    "trace_id": "trace-upload-007",
+    "raw": "2026-05-20T12:14:01Z INFO conversational_rag.upload request_id=req_812b filename=\"benefits-guide.pdf\" content_hash=\"sha256:9dd2a8\" processed_uploads_before=0 ingestion_started=true"
+  },
+  {
+    "log_id": "log-002",
+    "level": "info",
+    "message": "Same content uploaded with a different filename.",
+    "service_name": "conversational_rag.upload",
+    "environment": "local-sample",
+    "request_id": "req_812c",
+    "trace_id": "trace-upload-007",
+    "raw": "2026-05-20T12:16:34Z INFO conversational_rag.upload request_id=req_812c filename=\"benefits-guide-copy.pdf\" content_hash=\"sha256:9dd2a8\" processed_uploads_match=false dedupe_key=\"filename\" ingestion_started=true"
+  },
+  {
+    "log_id": "log-003",
+    "level": "warning",
+    "message": "Duplicate citations appeared from two uploaded filenames with the same content hash.",
+    "service_name": "conversational_rag.retrieval",
+    "environment": "local-sample",
+    "request_id": "req_812d",
+    "trace_id": "trace-upload-007",
+    "raw": "2026-05-20T12:18:09Z WARNING conversational_rag.retrieval request_id=req_812d duplicate_content_detected=true content_hash=\"sha256:9dd2a8\" sources=\"benefits-guide.pdf,benefits-guide-copy.pdf\""
+  }
+]

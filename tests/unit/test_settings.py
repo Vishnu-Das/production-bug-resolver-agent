@@ -5,7 +5,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 import bug_resolver.cli.app as cli_app
-from bug_resolver.cli.app import app
+from bug_resolver.cli.app import WorkflowChoice, app
 from bug_resolver.schemas import (
     AgentName,
     AgentRunStatus,
@@ -49,8 +49,12 @@ def test_investigate_command_runs_dynamic_workflow(monkeypatch) -> None:
         )
     )
 
-    async def fake_run_investigation(incident_id: str) -> WorkflowState:
+    async def fake_run_investigation(
+        incident_id: str,
+        workflow: WorkflowChoice = WorkflowChoice.MANUAL,
+    ) -> WorkflowState:
         assert incident_id == "INC-001"
+        assert workflow == WorkflowChoice.MANUAL
         return state
 
     monkeypatch.setattr(cli_app, "_run_investigation", fake_run_investigation)
@@ -68,7 +72,11 @@ def test_investigate_command_runs_dynamic_workflow(monkeypatch) -> None:
 
 
 def test_investigate_command_returns_nonzero_on_failure(monkeypatch) -> None:
-    async def fake_run_investigation(incident_id: str) -> WorkflowState:
+    async def fake_run_investigation(
+        incident_id: str,
+        workflow: WorkflowChoice = WorkflowChoice.MANUAL,
+    ) -> WorkflowState:
+        assert workflow == WorkflowChoice.MANUAL
         raise ValueError("boom")
 
     monkeypatch.setattr(cli_app, "_run_investigation", fake_run_investigation)
@@ -78,3 +86,33 @@ def test_investigate_command_returns_nonzero_on_failure(monkeypatch) -> None:
     assert result.exit_code == 1
     assert "Investigation failed" in result.output
     assert "boom" in result.output
+
+
+def test_investigate_command_can_select_graph_workflow(monkeypatch) -> None:
+    state = WorkflowState(
+        incident=Incident(
+            incident_id="INC-001",
+            title="Bug",
+            description="Something failed",
+        ),
+        investigation_status=InvestigationStatus.COMPLETED,
+    )
+
+    async def fake_run_investigation(
+        incident_id: str,
+        workflow: WorkflowChoice = WorkflowChoice.MANUAL,
+    ) -> WorkflowState:
+        assert incident_id == "INC-001"
+        assert workflow == WorkflowChoice.GRAPH
+        return state
+
+    monkeypatch.setattr(cli_app, "_run_investigation", fake_run_investigation)
+
+    result = runner.invoke(
+        app,
+        ["investigate", "--incident-id", "INC-001", "--workflow", "graph"],
+    )
+
+    assert result.exit_code == 0
+    assert "Starting dynamic investigation" in result.output
+    assert "Status: completed" in result.output

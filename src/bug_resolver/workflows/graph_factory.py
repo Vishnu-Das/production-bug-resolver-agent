@@ -1,4 +1,4 @@
-"""Factory for wiring CLI settings into the dynamic investigation workflow."""
+"""Factory for wiring settings into the LangGraph investigation workflow."""
 
 from __future__ import annotations
 
@@ -25,14 +25,16 @@ from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
 from bug_resolver.providers.logs.file_log_provider import FileLogProvider
 from bug_resolver.providers.reports.file_report_store import FileReportStore
 from bug_resolver.rules import GuardrailEngine
-from bug_resolver.workflows.dynamic_bug_resolution_workflow import (
-    DynamicBugResolutionWorkflow,
+from bug_resolver.workflows.dynamic_bug_resolution_graph import (
+    DynamicBugResolutionGraphWorkflow,
 )
 from bug_resolver.workflows.workflow_dependencies import load_or_build_code_index
 
 
-async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionWorkflow:
-    """Build the fully wired dynamic workflow for CLI investigations."""
+async def build_dynamic_graph_workflow(
+    settings: AppSettings,
+) -> DynamicBugResolutionGraphWorkflow:
+    """Build the fully wired LangGraph workflow for future CLI investigations."""
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is required to run investigations.")
 
@@ -49,7 +51,7 @@ async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionW
         embedding_client=embedding_client,
     )
 
-    return DynamicBugResolutionWorkflow(
+    return DynamicBugResolutionGraphWorkflow(
         incident_provider=FileIncidentProvider(settings.incidents_dir),
         supervisor_agent=SupervisorAgent(llm_client),
         guardrail_engine=GuardrailEngine(),
@@ -70,5 +72,3 @@ async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionW
         max_replans=settings.max_retries,
         confidence_threshold=settings.confidence_threshold,
     )
-
-
