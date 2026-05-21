@@ -1,0 +1,475 @@
+"""Tests for deterministic RCA evidence selection rules."""
+
+from __future__ import annotations
+
+from bug_resolver.rules.rca_rules import RCARules
+from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, Incident, WorkflowState
+
+
+def make_state(*, title: str, description: str, affected_area: str) -> WorkflowState:
+    return WorkflowState(
+        incident=Incident(
+            incident_id="INC-TEST",
+            title=title,
+            description=description,
+            affected_service="conversational_rag",
+            affected_area=affected_area,
+        )
+    )
+
+
+def add_evidence(
+    state: WorkflowState,
+    *,
+    evidence_id: str,
+    source_type: EvidenceSourceType,
+    source_name: str,
+    content: str,
+    file_path: str | None = None,
+    relevance_score: float = 0.7,
+) -> None:
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id=evidence_id,
+            source_type=source_type,
+            source_name=source_name,
+            content=content,
+            file_path=file_path,
+            relevance_score=relevance_score,
+        )
+    )
+
+
+def test_upload_code_findings_prefer_overlapping_path_and_content() -> None:
+    state = make_state(
+        title="Users see duplicate documents after upload",
+        description="Users see duplicate document records and repeated citations.",
+        affected_area="document upload and ingestion",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="upload.log",
+        content=(
+            'content_hash="abc123" dedupe_key="filename" '
+            "duplicate_content_detected=true repeated citations"
+        ),
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-upload",
+        source_type=EvidenceSourceType.CODE,
+        source_name="app/upload/handler.py",
+        file_path="app/upload/handler.py",
+        content="processed_uploads uses filename state while content_hash is available",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-dedup",
+        source_type=EvidenceSourceType.CODE,
+        source_name="lib/dedup/content_identity.py",
+        file_path="lib/dedup/content_identity.py",
+        content="deduplication helper compares content hash identity",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-retrieval",
+        source_type=EvidenceSourceType.CODE,
+        source_name="retrieval/strategy_factory.py",
+        file_path="retrieval/strategy_factory.py",
+        content="retrieval strategy factory maps strategy names",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-routing",
+        source_type=EvidenceSourceType.CODE,
+        source_name="routing/query_router.py",
+        file_path="routing/query_router.py",
+        content="router selects retrieval strategies for queries",
+    )
+
+    findings = RCARules().build_code_findings(state)
+    joined_findings = "\n".join(findings)
+
+    assert "app/upload/handler.py" in joined_findings
+    assert "lib/dedup/content_identity.py" in joined_findings
+    assert "retrieval/strategy_factory.py" not in joined_findings
+
+
+def test_reranker_code_findings_prefer_overlapping_path_and_content() -> None:
+    state = make_state(
+        title="Answers cite unrelated sources after deployment",
+        description="Answer quality is worse and cited sources look unrelated.",
+        affected_area="retrieval ranking quality",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="reranker.log",
+        content='reranker_model=null scores="0.0,0.0,0.0,0.0" order_changed=false',
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-reranker",
+        source_type=EvidenceSourceType.CODE,
+        source_name="ranking/model_config.py",
+        file_path="ranking/model_config.py",
+        content="loads cross encoder reranker and returns neutral scores when missing",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-pipeline",
+        source_type=EvidenceSourceType.CODE,
+        source_name="answering/ranking_pipeline.py",
+        file_path="answering/ranking_pipeline.py",
+        content="hybrid retrieval candidates are reranked before answer context",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-routing",
+        source_type=EvidenceSourceType.CODE,
+        source_name="routing/query_router.py",
+        file_path="routing/query_router.py",
+        content="router selects retrieval strategies for summary and lookup queries",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-upload",
+        source_type=EvidenceSourceType.CODE,
+        source_name="documents/upload_handler.py",
+        file_path="documents/upload_handler.py",
+        content="upload service stores documents",
+    )
+
+    findings = RCARules().build_code_findings(state)
+    joined_findings = "\n".join(findings)
+
+    assert "ranking/model_config.py" in joined_findings
+    assert "answering/ranking_pipeline.py" in joined_findings
+    assert "routing/query_router.py" not in joined_findings
+
+
+def test_reranker_kb_findings_prefer_overlapping_content() -> None:
+    state = make_state(
+        title="Answers cite unrelated sources after deployment",
+        description="Answer quality is worse and cited sources look unrelated.",
+        affected_area="retrieval ranking quality",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="reranker.log",
+        content='RERANKING_MODEL_NAME="" reranker_model=null order_changed=false',
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-routing",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-a.md",
+        content="Summary-style queries should use document-level retrieval.",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-reranking",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-b.md",
+        content="Missing reranker config should warn clearly instead of silent bypass.",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-upload",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-c.md",
+        content="Upload deduplication should use content hash identity.",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-readme",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="README.md",
+        content="The RAG app supports retrieval and chat over documents.",
+    )
+
+    findings = RCARules().build_knowledge_base_findings(state)
+    joined_findings = "\n".join(findings)
+
+    assert "document-b.md" in joined_findings
+    assert "document-a.md" not in joined_findings
+
+
+def test_upload_kb_findings_prefer_overlapping_content() -> None:
+    state = make_state(
+        title="Users see duplicate documents after upload",
+        description="Users see duplicate records after uploading similar PDF files.",
+        affected_area="document upload and ingestion",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="upload.log",
+        content='content_hash="abc123" dedupe_key="filename" duplicate_content_detected=true',
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-routing",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-a.md",
+        content="Summary-style queries should use document-level retrieval.",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-upload",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-b.md",
+        content="Content-level deduplication should use a stable file hash.",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-reranking",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-c.md",
+        content="Hybrid retrieval should rerank candidate chunks.",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-readme",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="README.md",
+        content="The app supports document upload and retrieval.",
+    )
+
+    findings = RCARules().build_knowledge_base_findings(state)
+    joined_findings = "\n".join(findings)
+
+    assert "document-b.md" in joined_findings
+    assert "document-a.md" not in joined_findings
+
+
+def test_upload_rca_evidence_ids_use_focused_code_and_kb_selection() -> None:
+    state = make_state(
+        title="Users see duplicate documents after upload",
+        description="Users see duplicate records after uploading similar PDF files.",
+        affected_area="document upload and ingestion",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="upload.log",
+        content='content_hash="abc123" dedupe_key="filename" duplicate_content_detected=true',
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-upload",
+        source_type=EvidenceSourceType.CODE,
+        source_name="app/upload/handler.py",
+        file_path="app/upload/handler.py",
+        content="processed_uploads uses filename state while content_hash is available",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-dedup",
+        source_type=EvidenceSourceType.CODE,
+        source_name="lib/dedup/content_identity.py",
+        file_path="lib/dedup/content_identity.py",
+        content="deduplication helper compares content hash identity",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-retrieval",
+        source_type=EvidenceSourceType.CODE,
+        source_name="retrieval/fusion_strategy.py",
+        file_path="retrieval/fusion_strategy.py",
+        content="fusion retrieval combines semantic and keyword candidates",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-upload",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-a.md",
+        content="Content-level deduplication should use a stable file hash.",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-retrieval",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-b.md",
+        content="Fusion retrieval combines vector search and keyword search.",
+    )
+
+    evidence_ids = RCARules().evidence_ids(state)
+
+    assert "ev-log" in evidence_ids
+    assert "ev-upload" in evidence_ids
+    assert "ev-dedup" in evidence_ids
+    assert "kb-upload" in evidence_ids
+    assert "ev-retrieval" not in evidence_ids
+    assert "kb-retrieval" not in evidence_ids
+
+
+def test_reranker_rca_evidence_ids_include_ranking_code_and_kb() -> None:
+    state = make_state(
+        title="Answers cite unrelated sources after deployment",
+        description="Answer quality is worse and cited sources look unrelated.",
+        affected_area="retrieval ranking quality",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="reranker.log",
+        content='reranker_model=null scores="0.0,0.0,0.0,0.0" order_changed=false',
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-reranker",
+        source_type=EvidenceSourceType.CODE,
+        source_name="ranking/model_config.py",
+        file_path="ranking/model_config.py",
+        content="loads cross encoder reranker and returns neutral scores when missing",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-routing",
+        source_type=EvidenceSourceType.CODE,
+        source_name="routing/query_router.py",
+        file_path="routing/query_router.py",
+        content="router selects retrieval strategies for summary and lookup queries",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-reranking",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-a.md",
+        content="Missing reranker model config should warn clearly instead of silent bypass.",
+    )
+    add_evidence(
+        state,
+        evidence_id="kb-routing",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="document-b.md",
+        content="Summary-style queries should use document-level retrieval.",
+    )
+
+    evidence_ids = RCARules().evidence_ids(state)
+
+    assert "ev-log" in evidence_ids
+    assert "ev-reranker" in evidence_ids
+    assert "kb-reranking" in evidence_ids
+    assert "ev-routing" not in evidence_ids
+    assert "kb-routing" not in evidence_ids
+
+
+def test_generic_findings_are_kept_when_only_one_item_exists() -> None:
+    state = make_state(
+        title="Unknown incident",
+        description="Users report an intermittent issue.",
+        affected_area="unknown",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/example.py",
+        file_path="src/example.py",
+        content="implementation context",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-kb",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="README.md",
+        content="operational context",
+    )
+
+    rules = RCARules()
+
+    assert rules.build_code_findings(state) == [
+        "src/example.py contains implementation context relevant to the incident."
+    ]
+    assert rules.build_knowledge_base_findings(state) == [
+        "README.md documents expected behavior relevant to the incident: operational context"
+    ]
+
+
+def test_generic_evidence_id_fallback_keeps_evidence_when_no_strong_signal_exists() -> None:
+    state = make_state(
+        title="Unknown incident",
+        description="Users report an intermittent issue.",
+        affected_area="unknown",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="app.log",
+        content="runtime behavior needs investigation",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code-a",
+        source_type=EvidenceSourceType.CODE,
+        source_name="alpha.py",
+        file_path="alpha.py",
+        content="alpha implementation context",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code-b",
+        source_type=EvidenceSourceType.CODE,
+        source_name="beta.py",
+        file_path="beta.py",
+        content="beta implementation context",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code-c",
+        source_type=EvidenceSourceType.CODE,
+        source_name="gamma.py",
+        file_path="gamma.py",
+        content="gamma implementation context",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code-d",
+        source_type=EvidenceSourceType.CODE,
+        source_name="delta.py",
+        file_path="delta.py",
+        content="delta implementation context",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-kb-a",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="alpha.md",
+        content="alpha operational context",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-kb-b",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="beta.md",
+        content="beta operational context",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-kb-c",
+        source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+        source_name="gamma.md",
+        content="gamma operational context",
+    )
+
+    assert RCARules().evidence_ids(state) == [
+        "ev-log",
+        "ev-code-a",
+        "ev-code-b",
+        "ev-code-c",
+        "ev-code-d",
+        "ev-kb-a",
+        "ev-kb-b",
+        "ev-kb-c",
+    ]

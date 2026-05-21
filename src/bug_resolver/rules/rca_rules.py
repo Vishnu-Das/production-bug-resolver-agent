@@ -4,11 +4,18 @@ from __future__ import annotations
 
 from pathlib import PureWindowsPath
 
+from bug_resolver.rules.evidence_selection_rules import EvidenceSelectionRules
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 
 
 class RCARules:
     """Deterministic RCA helpers for dynamic evidence-backed reports."""
+
+    def __init__(
+        self,
+        evidence_selection_rules: EvidenceSelectionRules | None = None,
+    ) -> None:
+        self.evidence_selection_rules = evidence_selection_rules or EvidenceSelectionRules()
 
     def build_title(self, state: WorkflowState) -> str:
         return f"RCA for {state.incident.title}"
@@ -45,12 +52,13 @@ class RCARules:
         return self._findings_for_source(state.evidence_items, EvidenceSourceType.LOG)
 
     def build_code_findings(self, state: WorkflowState) -> list[str]:
-        return self._findings_for_source(state.evidence_items, EvidenceSourceType.CODE)
+        return self._selected_findings_for_source(state, EvidenceSourceType.CODE, max_findings=3)
 
     def build_knowledge_base_findings(self, state: WorkflowState) -> list[str]:
-        return self._findings_for_source(
-            state.evidence_items,
+        return self._selected_findings_for_source(
+            state,
             EvidenceSourceType.KNOWLEDGE_BASE,
+            max_findings=2,
         )
 
     def build_hypotheses_considered(self, state: WorkflowState) -> list[str]:
@@ -282,6 +290,20 @@ class RCARules:
         return " ".join(parts) or "No technical evidence was available."
 
     def evidence_ids(self, state: WorkflowState) -> list[str]:
+        selected_evidence = [
+            *self._evidence_for_source(state, EvidenceSourceType.LOG),
+            *self._selected_evidence_for_source(state, EvidenceSourceType.CODE, max_items=3),
+            *self._selected_evidence_for_source(
+                state,
+                EvidenceSourceType.KNOWLEDGE_BASE,
+                max_items=2,
+            ),
+        ]
+
+        evidence_ids = self.unique([evidence.evidence_id for evidence in selected_evidence])
+        if evidence_ids:
+            return evidence_ids
+
         return [evidence.evidence_id for evidence in state.evidence_items]
 
     def confidence_score(self, state: WorkflowState) -> float:
@@ -531,6 +553,74 @@ class RCARules:
             ]
         )
 
+    def _selected_findings_for_source(
+        self,
+        state: WorkflowState,
+        source_type: EvidenceSourceType,
+        *,
+        max_findings: int,
+    ) -> list[str]:
+        selected_items = self._selected_evidence_for_source(
+            state,
+            source_type,
+            max_items=max_findings,
+        )
+
+        return self.unique([self._finding_text(evidence) for evidence in selected_items])
+
+    def _selected_evidence_for_source(
+        self,
+        state: WorkflowState,
+        source_type: EvidenceSourceType,
+        *,
+        max_items: int,
+    ) -> list[EvidenceItem]:
+        evidence_items = self._evidence_for_source(state, source_type)
+        if len(evidence_items) <= 1:
+            return evidence_items
+
+        signals = self.evidence_selection_rules.selection_signals(state)
+        if not signals:
+            return evidence_items
+
+        scored_items = [
+            (
+                self._evidence_relevance_score(evidence, signals),
+                self._evidence_signal_score(evidence, signals),
+                evidence,
+            )
+            for evidence in evidence_items
+        ]
+        strongest_signal_score = max(signal_score for _, signal_score, _ in scored_items)
+
+        if strongest_signal_score <= 0:
+            return evidence_items
+
+        signal_ratio = 0.65 if source_type == EvidenceSourceType.KNOWLEDGE_BASE else 0.5
+        minimum_signal_score = max(1.0, strongest_signal_score * signal_ratio)
+        ranked_items = sorted(
+            scored_items,
+            key=lambda item: (
+                item[0],
+                item[1],
+                item[2].relevance_score or 0.0,
+                self._display_path(item[2].file_path or item[2].source_name).lower(),
+                item[2].line_start or 0,
+                item[2].evidence_id,
+            ),
+            reverse=True,
+        )
+        selected_items = [
+            evidence
+            for score, signal_score, evidence in ranked_items
+            if score > 0 and signal_score >= minimum_signal_score
+        ][:max_items]
+
+        if not selected_items:
+            return evidence_items
+
+        return selected_items
+
     def _evidence_for_source(
         self,
         state: WorkflowState,
@@ -596,69 +686,117 @@ class RCARules:
 
     def _path_aware_code_summary(self, path: str, location: str) -> str | None:
         normalized_path = path.lower()
+        path_tokens = self.evidence_selection_rules.tokens(normalized_path)
 
-        if normalized_path == "src/rag/retrieval/factory.py":
+        if "retrieval" in path_tokens and "factory" in path_tokens:
             return (
                 f"{location} maps configured retrieval strategy names to concrete "
                 "retrieval strategy implementations and rejects unsupported values."
             )
-        if normalized_path == "src/rag/service.py":
+        if "service" in path_tokens and "rag" in path_tokens:
             return (
                 f"{location} resolves the retrieval strategy, retrieves documents, "
                 "reranks results, and builds the final RAG response path."
             )
-        if normalized_path == "src/rag/routing/llm.py":
+        if "routing" in path_tokens and "llm" in path_tokens:
             return (
                 f"{location} invokes the LLM router and validates that the returned "
                 "strategy is one of the supported retrieval strategy values."
             )
-        if normalized_path == "src/rag/routing/rule_based.py":
+        if "routing" in path_tokens and "rule" in path_tokens and "based" in path_tokens:
             return (
                 f"{location} maps document-level summary queries to the supported "
                 "`parent_child` retrieval strategy."
             )
-        if normalized_path == "src/rag/cache.py":
+        if "cache" in path_tokens:
             return (
                 f"{location} defines cache reset behavior for RAG retrievers and "
                 "cached retrieval results."
             )
-        if normalized_path == "src/services/upload_service.py":
+        if "upload" in path_tokens:
             return (
                 f"{location} computes upload content state but still gates duplicate "
                 "handling through filename-based Streamlit session state before ingestion."
             )
-        if normalized_path == "src/reranker.py":
+        if path_tokens & {"reranker", "reranking", "rerank"}:
             return (
                 f"{location} loads the cross-encoder reranker and defines fallback "
                 "behavior for scoring and ordering retrieved documents."
             )
-        if normalized_path == "src/rag/pipeline.py":
+        if "pipeline" in path_tokens:
             return (
                 f"{location} deduplicates retrieved documents and sends them through "
                 "reranking before answer context is built."
             )
-        if normalized_path == "src/ingest.py":
+        if path_tokens & {"ingest", "ingestion"}:
             return (
                 f"{location} coordinates document ingestion into standard and "
                 "parent-child retrieval indexes."
             )
-        if normalized_path == "tests/rag/routing/test_llm_router.py":
+        if "tests" in path_tokens and ("routing" in path_tokens or "retrieval" in path_tokens):
             return (
-                f"{location} covers LLM router behavior and unsupported strategy "
-                "validation for routing decisions."
+                f"{location} covers routing or retrieval behavior relevant to the incident."
             )
-        if normalized_path == "tests/rag/retrieval/test_retrieval_factory.py":
-            return (
-                f"{location} covers retrieval strategy factory behavior for supported "
-                "and unsupported strategy names."
-            )
-        if normalized_path.startswith("eval/"):
+        if "eval" in path_tokens or "evaluation" in path_tokens:
             return (
                 f"{location} contains evaluation context for retrieval or answer "
                 "quality checks relevant to the incident."
             )
 
         return None
+
+    def _evidence_relevance_score(
+        self,
+        evidence: EvidenceItem,
+        signals: set[str],
+    ) -> float:
+        score = self._evidence_signal_score(evidence, signals)
+        score += (evidence.relevance_score or 0.0) * 0.5
+
+        if evidence.source_type == EvidenceSourceType.CODE:
+            score += self._code_finding_penalty(
+                self._display_path(evidence.file_path or evidence.source_name).lower()
+            )
+
+        return score
+
+    def _evidence_signal_score(
+        self,
+        evidence: EvidenceItem,
+        signals: set[str],
+    ) -> float:
+        path = self._display_path(evidence.file_path or evidence.source_name).lower()
+        path_source_tokens = self.evidence_selection_rules.tokens(
+            f"{path} {evidence.source_name}"
+        )
+        content_tokens = self.evidence_selection_rules.tokens(
+            " ".join(
+                [
+                    evidence.content,
+                    *evidence.metadata.values(),
+                ]
+            )
+        )
+
+        path_score = len(path_source_tokens & signals) * 3.0
+        content_score = min(len(content_tokens & signals), 10) * 1.0
+
+        return path_score + content_score
+
+    def _code_finding_penalty(self, path: str) -> float:
+        penalty = 0.0
+        path_tokens = self.evidence_selection_rules.tokens(path)
+
+        if "tests" in path_tokens or "test" in path_tokens:
+            penalty -= 2.0
+        if "eval" in path_tokens or "evaluation" in path_tokens:
+            penalty -= 2.0
+        if path.endswith("__init__.py"):
+            penalty -= 2.0
+        if path.endswith((".json", ".yml", ".yaml", ".md")):
+            penalty -= 1.5
+
+        return penalty
 
     def _shorten(self, value: str, *, max_length: int = 180) -> str:
         if len(value) <= max_length:
