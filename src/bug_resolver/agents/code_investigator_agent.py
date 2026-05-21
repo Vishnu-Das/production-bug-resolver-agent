@@ -6,6 +6,7 @@ from pydantic import Field
 
 from bug_resolver.agents.base import BaseAgent
 from bug_resolver.providers.code import CodeContextProvider
+from bug_resolver.rules.code_query_rules import CodeQueryRules
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas.evidence import EvidenceItem
 from bug_resolver.schemas.orchestration import AgentDecision
@@ -15,6 +16,7 @@ class CodeInvestigatorInput(StrictBaseModel):
     """Input for a code investigation requested by the supervisor."""
 
     decision: AgentDecision
+    evidence_items: list[EvidenceItem] = Field(default_factory=list)
     limit: int = Field(default=5, ge=1)
 
 
@@ -25,11 +27,16 @@ class CodeInvestigatorAgent(BaseAgent[CodeInvestigatorInput, list[EvidenceItem]]
 
     name = "code_investigator_agent"
 
-    def __init__(self, code_context_provider: CodeContextProvider) -> None:
+    def __init__(
+        self,
+        code_context_provider: CodeContextProvider,
+        code_query_rules: CodeQueryRules | None = None,
+    ) -> None:
         self._code_context_provider = code_context_provider
+        self._code_query_rules = code_query_rules or CodeQueryRules()
 
     async def _run(self, input_data: CodeInvestigatorInput) -> list[EvidenceItem]:
-        queries = self._queries_from_decision(input_data.decision)
+        queries = self._queries_from_input(input_data)
         contexts = await self._code_context_provider.search_code(
             queries,
             limit=input_data.limit,
@@ -43,7 +50,10 @@ class CodeInvestigatorAgent(BaseAgent[CodeInvestigatorInput, list[EvidenceItem]]
         return evidence_items
 
     def _queries_from_decision(self, decision: AgentDecision) -> list[str]:
-        if decision.queries:
-            return decision.queries
+        return self._code_query_rules.enrich_queries(decision)
 
-        return [decision.reason]
+    def _queries_from_input(self, input_data: CodeInvestigatorInput) -> list[str]:
+        return self._code_query_rules.enrich_queries(
+            input_data.decision,
+            evidence_items=input_data.evidence_items,
+        )

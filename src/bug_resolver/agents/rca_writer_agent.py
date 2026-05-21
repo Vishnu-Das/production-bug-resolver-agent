@@ -10,7 +10,7 @@ from bug_resolver.agents.base import BaseAgent
 from bug_resolver.llm.base import LLMClient
 from bug_resolver.rules.rca_rules import RCARules
 from bug_resolver.schemas.common import StrictBaseModel
-from bug_resolver.schemas import RCAReport, WorkflowState
+from bug_resolver.schemas import EvidenceSourceType, RCAReport, WorkflowState
 from bug_resolver.utils.ids import new_rca_report_id
 from bug_resolver.utils.paths import to_repo_relative_display_path
 
@@ -169,6 +169,14 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         fallback_report: RCAReport,
     ) -> RCAReport:
         allowed_evidence_ids = set(fallback_report.evidence_ids)
+        invalid_evidence_ids = [
+            evidence_id
+            for evidence_id in output.evidence_ids
+            if evidence_id not in allowed_evidence_ids
+        ]
+        if invalid_evidence_ids:
+            raise RCAWriterFallback("invalid_evidence_id")
+
         evidence_ids = [
             evidence_id
             for evidence_id in output.evidence_ids
@@ -217,6 +225,13 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         if self._contains_unbalanced_inline_code(output):
             raise RCAWriterFallback("unbalanced_inline_backticks")
 
+        evidence_ids = self._ensure_code_evidence_when_code_findings_exist(
+            state=state,
+            output=output,
+            evidence_ids=evidence_ids,
+            fallback_report=fallback_report,
+        )
+
         return RCAReport(
             report_id=new_rca_report_id(),
             incident_id=state.incident.incident_id,
@@ -246,6 +261,51 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
                 "fallback_used": "false",
             },
         )
+
+    def _ensure_code_evidence_when_code_findings_exist(
+        self,
+        *,
+        state: WorkflowState,
+        output: RCAWriterOutput,
+        evidence_ids: list[str],
+        fallback_report: RCAReport,
+    ) -> list[str]:
+        if not output.code_findings:
+            return evidence_ids
+
+        code_evidence_ids = {
+            evidence.evidence_id
+            for evidence in state.evidence_items
+            if evidence.source_type == EvidenceSourceType.CODE
+        }
+        if not code_evidence_ids:
+            return evidence_ids
+
+        if any(evidence_id in code_evidence_ids for evidence_id in evidence_ids):
+            return evidence_ids
+
+        selected_code_evidence_ids = [
+            evidence_id
+            for evidence_id in fallback_report.evidence_ids
+            if evidence_id in code_evidence_ids
+        ]
+        if not selected_code_evidence_ids:
+            return evidence_ids
+
+        return self._merge_evidence_ids(evidence_ids, selected_code_evidence_ids)
+
+    def _merge_evidence_ids(self, *groups: list[str]) -> list[str]:
+        merged: list[str] = []
+        seen: set[str] = set()
+
+        for group in groups:
+            for evidence_id in group:
+                if evidence_id in seen:
+                    continue
+                seen.add(evidence_id)
+                merged.append(evidence_id)
+
+        return merged
 
     def _contains_forbidden_analyze_only_claim(self, output: RCAWriterOutput) -> bool:
         values = [
