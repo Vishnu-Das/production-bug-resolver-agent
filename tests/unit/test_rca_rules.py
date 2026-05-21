@@ -151,6 +151,59 @@ def test_reranker_code_findings_prefer_overlapping_path_and_content() -> None:
     assert "routing/query_router.py" not in joined_findings
 
 
+def test_code_findings_prefer_symbol_location_when_metadata_exists() -> None:
+    state = make_state(
+        title="Answers cite unrelated sources after deployment",
+        description="Answer quality is worse and cited sources look unrelated.",
+        affected_area="retrieval ranking quality",
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-reranker",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/reranker.py",
+            file_path="src/reranker.py",
+            line_start=63,
+            line_end=122,
+            content="reranker_model returns neutral scores when model is missing",
+            relevance_score=0.8,
+            metadata={
+                "qualified_symbol": "CrossEncoderReranker.rerank",
+                "symbol_type": "method",
+            },
+        )
+    )
+
+    findings = RCARules().build_code_findings(state)
+
+    assert "src/reranker.py:CrossEncoderReranker.rerank" in findings[0]
+    assert "src/reranker.py:63-122" not in findings[0]
+
+
+def test_code_findings_fall_back_to_line_range_without_symbol_metadata() -> None:
+    state = make_state(
+        title="Answers cite unrelated sources after deployment",
+        description="Answer quality is worse and cited sources look unrelated.",
+        affected_area="retrieval ranking quality",
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-reranker",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/reranker.py",
+            file_path="src/reranker.py",
+            line_start=63,
+            line_end=122,
+            content="reranker_model returns neutral scores when model is missing",
+            relevance_score=0.8,
+        )
+    )
+
+    findings = RCARules().build_code_findings(state)
+
+    assert "src/reranker.py:63-122" in findings[0]
+
+
 def test_reranker_kb_findings_prefer_overlapping_content() -> None:
     state = make_state(
         title="Answers cite unrelated sources after deployment",

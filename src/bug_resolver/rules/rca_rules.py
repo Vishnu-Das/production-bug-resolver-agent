@@ -805,9 +805,29 @@ class RCARules:
 
     def _location(self, evidence: EvidenceItem) -> str:
         location = self._display_path(evidence.file_path or evidence.source_name)
+        symbol = self._symbol_name(evidence)
+        if symbol:
+            return f"{location}:{symbol}"
+
         if evidence.line_start and evidence.line_end:
             return f"{location}:{evidence.line_start}-{evidence.line_end}"
         return location
+
+    def _symbol_name(self, evidence: EvidenceItem) -> str | None:
+        if evidence.source_type != EvidenceSourceType.CODE:
+            return None
+
+        qualified_symbol = evidence.metadata.get("qualified_symbol")
+        if qualified_symbol:
+            return qualified_symbol
+
+        class_name = evidence.metadata.get("class_name")
+        function_name = evidence.metadata.get("function_name")
+
+        if class_name and function_name:
+            return f"{class_name}.{function_name}"
+
+        return function_name or class_name
 
     def _display_path(self, path: str) -> str:
         normalized_path = path.replace("\\", "/")
