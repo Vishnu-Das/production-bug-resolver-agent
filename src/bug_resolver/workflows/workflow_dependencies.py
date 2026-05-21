@@ -6,10 +6,10 @@ from pathlib import Path
 
 from bug_resolver.config.settings import AppSettings
 from bug_resolver.embeddings.openai_embedding_client import OpenAIEmbeddingClient
-from bug_resolver.retrieval.code_chunker import SimpleCodeChunker
 from bug_resolver.retrieval.code_file_loader import CodeFileLoader
 from bug_resolver.retrieval.code_indexer import CodeIndexer
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore
+from bug_resolver.retrieval.python_ast_code_chunker import PythonASTCodeChunker
 
 
 async def load_or_build_code_index(
@@ -31,7 +31,7 @@ async def load_or_build_code_index(
 
     indexer = CodeIndexer(
         file_loader=CodeFileLoader(settings.target_repo_path),
-        chunker=SimpleCodeChunker(),
+        chunker=PythonASTCodeChunker(),
         embedding_client=embedding_client,
     )
     vector_store = await indexer.build_index()

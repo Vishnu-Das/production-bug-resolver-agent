@@ -2,43 +2,48 @@
 
 ## Summary
 
-Recommended solution based on RCA RCA-20260521-11F676A9: The reranker model configuration was absent, causing the reranking process to silently bypass necessary evaluations, thereby degrading the quality of the answer citations.
+Recommended solution based on RCA RCA-20260521-11088591: The reranker model configuration was absent, and the reranker path silently returned the original retrieval order with neutral scores instead of warning or failing through an explicit fallback policy.
 
 ## Immediate Steps
 
-- Implement a requirement for a valid `RERANKING_MODEL_NAME` or explicitly denote a disabled reranking mode at startup.
-- Replace any silent neutral-score fallback functionality with a clear warning or configuration error to prevent similar issues in the future.
-- Reproduce the incident locally using the same failure scenario.
-- Verify the fix against the log symptoms and selected RCA evidence.
+- Require `RERANKING_MODEL_NAME` or an explicit reranking-disabled mode at startup.
+- Replace silent neutral-score fallback with a clear warning or fail-fast configuration error.
+- Reproduce the incident locally using the same failure scenario for analysis.
+- Verify the proposed changes against the log symptoms and selected evidence.
 
 ## Long-Term Steps
 
-- Establish a robust check mechanism during deployment to ensure that all necessary configuration parameters, including `RERANKING_MODEL_NAME`, are validated beforehand.
-- Enhance logging to explicitly alert for any missing configurations that impact response quality.
-- Add input and output contract checks around the implicated code path.
-- Document the expected behavior and failure mode for future incidents.
+- Add regression tests to ensure future checks on model configuration presence.
+- Centralize retrieval strategy validation procedures across the system.
+- Improve structured error handling to avoid silent failures.
+- Log raw router outputs when fallback conditions occur to facilitate troubleshooting.
+- Add input and output contract checks around the impacted code path.
+- Document expected behavior and failure mode for reranking integration to guide future developments.
 
 ## Tests to Add
 
-- Add unit tests for reranking configuration validation to catch missing model names before service deployment.
-- Implement integration tests to evaluate the retrieval and reranking process, checking the end-to-end flow of responses for accuracy and alignment with expected document sources.
+- Add a startup/configuration test that fails or warns clearly when `RERANKING_MODEL_NAME` is missing.
+- Add a retrieval pipeline test proving reranking changes candidate ordering or reports an explicit disabled state.
 
 ## Monitoring Improvements
 
-- Add structured logging around the implicated code path.
-- Log request or trace identifiers with the error when available.
+- Add structured logging around the reranker code path to capture relevant metrics.
+- Log request or trace identifiers with error reports when available for easier tracking.
 
 ## Risk Notes
 
-- Potential risk of similar configuration-related incidents if checks are not enforced robustly.
-- Need for ongoing improvements in user feedback mechanisms to quickly identify issues.
+- Potential temporary impact on retrieval accuracy if neutral scoring is not properly handled immediately after deployment.
+- Risk of overlooked edge cases leading to silent failures if not thoroughly tested.
 
 ## Evidence
 
-- EVID-LOG-400F413C
-- EVID-LOG-3A945581
-- EVID-LOG-B050A0B8
-- kb-reranking-configuration
+- EVID-LOG-F84E91A8
+- EVID-LOG-A7EA5804
+- EVID-LOG-C29EFB7C
+- EVID-LOG-2C44CDFC
+- src/reranker.py:rerank_documents_with_scores
+- src/ui/retrieval_inspector.py:render_retrieval_inspector
+- eval/compare_retrieval_strategies.py:evaluate_strategy
 
 ## Generation Details
 
@@ -48,9 +53,9 @@ Recommended solution based on RCA RCA-20260521-11F676A9: The reranker model conf
 
 ## Metadata
 
-- recommendation_id: SOL-20260521-F106DE8C
-- rca_report_id: RCA-20260521-11F676A9
-- confidence_score: 0.85
+- recommendation_id: SOL-20260521-4DFCEC89
+- rca_report_id: RCA-20260521-11088591
+- confidence_score: 0.8
 - solution_writer: llm
 - llm_output_validated: true
 - fallback_used: false

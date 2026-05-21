@@ -2,43 +2,44 @@
 
 ## Summary
 
-The recommended solution focuses on revising the document upload handling logic to prevent duplicate records caused by filename-based checks instead of content hashes. Immediate implementation of checks based on content hash is crucial to address the identified issue. Long-term improvements aim to ensure consistent deduplication across all application parts.
+The RCA identified that the upload process relied on filenames rather than content identity, allowing duplicate documents to be ingested under different filenames. To address this, immediate steps and long-term strategies are necessary to ensure unique content handling and prevent similar incidents from recurring.
 
 ## Immediate Steps
 
-- Implement checks to use the computed content hash as the duplicate identity for uploads, rejecting or linking same-content uploads before ingestion.
-- Reproduce the incident locally using the same failure scenario that caused duplicates.
-- Verify the fix against log symptoms aligned with evidence IDs from the RCA.
+- Use the computed content hash as the duplicate identity for uploads, rejecting or linking same-content uploads before ingestion.
+- Reproduce the incident locally using the same failure scenario to understand the issue better.
+- Verify the fix against the log symptoms and selected RCA evidence.
 
 ## Long-Term Steps
 
-- Revise the upload handling logic to incorporate content hash checks for deduplication consistently across the application, ensuring accurate document management regardless of filename.
-- Add input and output contract checks around the implicated code path to validate incoming data.
-- Document the expected behavior and failure modes for future references and incident handling.
+- Implement robust checks that leverage content hashes during the upload process to prevent ingestion of duplicate files with different names.
+- Add input and output contract checks around the implicated code path to ensure data integrity.
+- Document the expected behavior for users and outline strategies for handling uploads that may contain duplicate content.
 
 ## Tests to Add
 
-- Unit tests to validate document ingestion behavior with same content but different filenames.
-- Integration tests to verify that uploading a document with an existing content hash prevents duplicate ingestion.
+- Unit tests to validate that uploads with the same content hash but different filenames are handled correctly during the upload process.
+- Automated tests to ensure that ingestion logic verifies content identity and prevents duplicates across different scenarios.
+- Integration tests to assess the overall upload and retrieval pipeline, focusing on maintaining unique document identities.
 
 ## Monitoring Improvements
 
-- Add structured logging around the implicated code path to enhance traceability and debugging capabilities.
-- Log request or trace identifiers with errors when available to facilitate better incident management.
+- Add structured logging around the implicated code path to capture relevant upload events.
+- Log request or trace identifiers with errors when available to aid in troubleshooting.
 
 ## Risk Notes
 
-- Changing the deduplication criterion may have implications for existing documents already uploaded; careful consideration is required when retrofitting these changes.
-- Ensure that all parts of the application relying on filename-based checks are reviewed and updated to prevent future incidents.
+- There may be user confusion or frustration when duplicates are rejected, necessitating clear communication about the policy.
+- Without version control for documents with the same content, users may not be able to access the latest version if filenames do not change.
 
 ## Evidence
 
-- EVID-LOG-71D7BD68
-- EVID-LOG-1DF98EAE
-- EVID-LOG-6CB17050
+- EVID-LOG-6B0568A5
+- EVID-LOG-C81BE5BF
+- EVID-LOG-D6EF5B24
+- src/services/upload_service.py:handle_file_upload
 - kb-upload-ingestion
-- src/services/upload_service.py:1-80
-- src/helpers/deduplication.py:1-21
+- kb-README
 
 ## Generation Details
 
@@ -48,8 +49,8 @@ The recommended solution focuses on revising the document upload handling logic 
 
 ## Metadata
 
-- recommendation_id: SOL-20260521-2A266465
-- rca_report_id: RCA-20260521-7114EB92
+- recommendation_id: SOL-20260521-D75E8485
+- rca_report_id: RCA-20260521-985DF8C1
 - confidence_score: 0.85
 - solution_writer: llm
 - llm_output_validated: true

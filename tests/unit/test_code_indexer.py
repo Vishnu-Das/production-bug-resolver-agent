@@ -5,6 +5,7 @@ import pytest
 from bug_resolver.retrieval.code_chunker import SimpleCodeChunker
 from bug_resolver.retrieval.code_file_loader import CodeFileLoader
 from bug_resolver.retrieval.code_indexer import CodeIndexer
+from bug_resolver.retrieval.python_ast_code_chunker import PythonASTCodeChunker
 
 
 class FakeEmbeddingClient:
@@ -63,6 +64,42 @@ async def test_code_indexer_builds_faiss_index_from_code_files(tmp_path):
     assert len(results) == 1
     assert results[0].metadata["relative_path"] == "search.py"
     assert "def search" in results[0].metadata["snippet"]
+
+
+@pytest.mark.asyncio
+async def test_code_indexer_builds_faiss_index_from_python_ast_chunks(tmp_path):
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+
+    app_file = repo_dir / "reranker.py"
+    app_file.write_text(
+        "\n".join(
+            [
+                "class CrossEncoderReranker:",
+                "    def rerank(self):",
+                "        return 'search result'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    indexer = CodeIndexer(
+        file_loader=CodeFileLoader(repo_path=repo_dir),
+        chunker=PythonASTCodeChunker(),
+        embedding_client=FakeEmbeddingClient(),
+    )
+
+    vector_store = await indexer.build_index()
+
+    assert vector_store.size == 2
+
+    results = vector_store.search([0.0, 1.0, 0.0], limit=2)
+    metadata_by_id = {result.metadata["item_id"]: result.metadata for result in results}
+    method_metadata = metadata_by_id["reranker.py:CrossEncoderReranker.rerank"]
+
+    assert method_metadata["class_name"] == "CrossEncoderReranker"
+    assert method_metadata["function_name"] == "rerank"
+    assert method_metadata["metadata"]["symbol_type"] == "method"
 
 
 @pytest.mark.asyncio

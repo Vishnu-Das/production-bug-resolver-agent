@@ -1,17 +1,17 @@
-# RCA Report for Incident INC-007: Duplicate Document Records After Upload
+# RCA Report for Incident INC-007: Duplicate Documents After Upload
 
 ## Incident Summary
 
-Users reported seeing duplicate document records and repeated citations after uploading similar PDF files. The issue appears after normal upload flows and does not show a visible application error.
+Users reported seeing duplicate document records and repeated citations after uploading similar PDF files. This issue arose despite no visible application errors during the upload process.
 
 ## Impact
 
-Not specified
+Medium disruption for users interacting with uploaded documents, affecting retrieval accuracy and citation integrity.
 
 ## Symptoms
 
-- Users see duplicate document records after uploads
-- Repeated citations in search results
+- Duplicate document records visible in retrieval results
+- Repeated citations in search outcomes
 
 ## Log Findings
 
@@ -21,18 +21,17 @@ Not specified
 
 ## Code Findings
 
-- The upload function checks for existing filenames in `st.session_state.processed_uploads` but does not consider content hash for deduplication (src/services/upload_service.py:1-80).
-- The deduplication logic in `deduplicate_docs` uses both content and source but the upload flow solely relies on filename checks to prevent duplicates (src/helpers/deduplication.py:1-21).
+- src/services/upload_service.py:11-60 computes upload content state but still gates duplicate handling through filename-based Streamlit session state before ingestion.
 
 ## Knowledge Base Findings
 
-- Uploading a PDF should write the file, ingest the document, reset RAG caches, and make new chunks available to retrieval (sample_data/knowledge_base/upload-ingestion.md).
-- Content-level deduplication should use a stable file hash, not just the upload filename (sample_data/knowledge_base/upload-ingestion.md).
+- sample_data/knowledge_base/upload-ingestion.md documents expected behavior relevant to the incident: Uploading a PDF should write the file, ingest the document, reset RAG caches, and make the new chunks available to retrieval. Duplicate filenames require explicit handling.
+- sample_data/knowledge_base/README.md documents expected behavior relevant to the incident: Conversational RAG is an intelligent document assistant for grounded question answering and conversational interaction across PDF documents.
 
 ## Hypotheses Considered
 
-- H1: The deduplication mechanism is failing to recognize documents with the same content hash if they have different filenames.
-- H2: Upload flow logic does not properly account for existing document versions, allowing duplicates to be created.
+- H1: The deduplication process relies solely on filenames, causing duplicate entries when content is the same but filenames differ.
+- H2: The upload flow properly identifies duplicates but fails to prevent ingestion of duplicate content.
 
 ## Final Root Cause
 
@@ -44,12 +43,12 @@ Runtime logs show two upload requests with the same content hash but different f
 
 ## Evidence
 
-- EVID-LOG-71D7BD68
-- EVID-LOG-1DF98EAE
-- EVID-LOG-6CB17050
+- EVID-LOG-6B0568A5
+- EVID-LOG-C81BE5BF
+- EVID-LOG-D6EF5B24
+- src/services/upload_service.py:handle_file_upload
 - kb-upload-ingestion
-- src/services/upload_service.py:1-80
-- src/helpers/deduplication.py:1-21
+- kb-README
 
 ## Confidence
 
@@ -59,21 +58,22 @@ Reason: Confidence is high because logs show the same content hash being ingeste
 
 ## Recommended Fix
 
-Implement checks to use the computed content hash as the duplicate identity for uploads. Reject, version, or link same-content uploads before ingestion so that a different filename cannot create duplicate document records.
+Use the computed content hash as the duplicate identity for uploads. Reject, version, or link same-content uploads before ingestion so a different filename cannot create duplicate document records.
 
 ## Preventive Actions
 
-Revise the upload handling logic to incorporate content hash checks for deduplication consistently across the application, ensuring accurate document management regardless of filename.
+Implement robust checks that leverage content hashes during the upload process to prevent ingestion of duplicate files with different names.
 
 ## Tests to Add
 
-- Unit tests to validate document ingestion behavior with same content but different filenames.
-- Integration tests to verify that uploading a document with an existing content hash prevents duplicate ingestion.
+- Unit tests to validate that uploads with the same content hash but different filenames are handled correctly during the upload process.
+- Automated tests to ensure that ingestion logic verifies content identity and prevents duplicates.
+- Integration tests to assess the overall upload and retrieval pipeline, focusing on maintaining unique document identities.
 
 ## Open Questions
 
-- Are there any other parts of the application where filename-based duplicate checks are utilized?
-- What impact will changing the deduplication criterion have on existing documents already uploaded?
+- What strategies can be implemented to inform users when they attempt to upload a document with the same content?
+- How will the system handle versioning of documents that are updated frequently without changing filenames?
 
 ## Low Confidence Warning
 

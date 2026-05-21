@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 from bug_resolver.embeddings.base import EmbeddingClient
-from bug_resolver.retrieval.code_chunker import CodeChunk, SimpleCodeChunker
-from bug_resolver.retrieval.code_file_loader import CodeFileLoader
+from bug_resolver.retrieval.code_chunker import CodeChunk
+from bug_resolver.retrieval.code_file_loader import CodeFile, CodeFileLoader
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore
+
+
+class CodeChunker(Protocol):
+    """Chunker interface required by the code indexer."""
+
+    def chunk_files(self, code_files: list[CodeFile]) -> list[CodeChunk]:
+        ...
 
 
 class CodeIndexer:
@@ -16,7 +23,7 @@ class CodeIndexer:
     def __init__(
         self,
         file_loader: CodeFileLoader,
-        chunker: SimpleCodeChunker,
+        chunker: CodeChunker,
         embedding_client: EmbeddingClient,
     ) -> None:
         self.file_loader = file_loader
@@ -47,7 +54,7 @@ class CodeIndexer:
         return vector_store
 
     def _chunk_to_metadata(self, chunk: CodeChunk) -> dict[str, Any]:
-        return {
+        metadata = {
             "item_id": chunk.chunk_id,
             "file_path": chunk.file_path,
             "relative_path": chunk.relative_path,
@@ -57,3 +64,19 @@ class CodeIndexer:
             "language": chunk.language,
             "metadata": chunk.metadata,
         }
+
+        symbol_name = chunk.metadata.get("symbol_name")
+        parent_symbol = chunk.metadata.get("parent_symbol")
+        symbol_type = chunk.metadata.get("symbol_type")
+
+        if symbol_name and symbol_type in {"class"}:
+            metadata["class_name"] = symbol_name
+
+        if symbol_name and symbol_type in {"function", "async_function"}:
+            metadata["function_name"] = symbol_name
+
+        if symbol_name and symbol_type in {"method", "async_method"}:
+            metadata["class_name"] = parent_symbol
+            metadata["function_name"] = symbol_name
+
+        return metadata

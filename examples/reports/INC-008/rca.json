@@ -1,56 +1,60 @@
 {
-  "report_id": "RCA-20260521-11F676A9",
+  "report_id": "RCA-20260521-11088591",
   "incident_id": "INC-008",
-  "title": "RCA Report for Incident INC-008",
-  "incident_summary": "Following a recent deployment, users reported that the conversational RAG service began citing sources that were unrelated to their questions. While there were no internal server errors, the quality of the answers provided significantly decreased, prompting further investigation.",
-  "impact": "User trust in the service may decline due to inaccuracies in source citation, potentially leading to decreased usage and engagement with the system.",
+  "title": "RCA for Answers cite unrelated sources after deployment",
+  "incident_summary": "Incident INC-008: Users report that answers recently started citing sources that look unrelated to their questions. The service still returns responses and there are no 500 errors, but answer quality appears worse after deployment.",
+  "impact": "Affected service: conversational_rag. Affected area: retrieval ranking quality.",
   "symptoms": [
-    "Answers citing unrelated sources.",
-    "Quality of responses has visibly degraded after deployment."
-  ],
-  "log_findings": [
+    "Users report that answers recently started citing sources that look unrelated to their questions. The service still returns responses and there are no 500 errors, but answer quality appears worse after deployment.",
     "2026-05-20T09:02:10Z INFO conversational_rag.config request_id=deploy_91f RERANKING_MODEL_NAME=\"\" deployment_profile=\"demo\"",
     "2026-05-20T09:07:42Z INFO conversational_rag.retrieval request_id=req_913f strategy=\"hybrid\" retrieved_docs=10 query=\"what is the reimbursement deadline\"",
     "2026-05-20T09:07:42Z WARNING conversational_rag.reranker request_id=req_913f reranker_model=null ranked_docs=4 scores=\"0.0,0.0,0.0,0.0\" order_changed=false",
     "2026-05-20T09:08:05Z WARNING conversational_rag.response request_id=req_913f user_feedback=\"answer cited onboarding policy instead of reimbursement policy\""
   ],
+  "log_findings": [
+    "log-001 shows runtime signal: 2026-05-20T09:02:10Z INFO conversational_rag.config request_id=deploy_91f RERANKING_MODEL_NAME=\"\" deployment_profile=\"demo\"",
+    "log-002 shows runtime signal: 2026-05-20T09:07:42Z INFO conversational_rag.retrieval request_id=req_913f strategy=\"hybrid\" retrieved_docs=10 query=\"what is the reimbursement deadline\"",
+    "log-003 shows runtime signal: 2026-05-20T09:07:42Z WARNING conversational_rag.reranker request_id=req_913f reranker_model=null ranked_docs=4 scores=\"0.0,0.0,0.0,0.0\" order_changed=false",
+    "log-004 shows runtime signal: 2026-05-20T09:08:05Z WARNING conversational_rag.response request_id=req_913f user_feedback=\"answer cited onboarding policy instead of reimbursement policy\""
+  ],
   "code_findings": [
-    "The absence of a configured reranking model leads to neutral scores in reranked documents, which could return unreranked documents without warnings or errors as indicated in the code evidence from the reranker path."
+    "src/reranker.py:63-122 loads the cross-encoder reranker and defines fallback behavior for scoring and ordering retrieved documents.",
+    "src/ui/retrieval_inspector.py:165-285 contains implementation context relevant to the incident.",
+    "eval/compare_retrieval_strategies.py:58-154 contains evaluation context for retrieval or answer quality checks relevant to the incident."
   ],
-  "knowledge_base_findings": [
-    "The knowledge base emphasizes that a valid `RERANKING_MODEL_NAME` must be present for hybrid retrieval to ensure quality control and the effectiveness of the answer generation."
-  ],
+  "knowledge_base_findings": [],
   "hypotheses_considered": [
-    "H1: The reranker model was not correctly configured during the latest deployment, resulting in improper scoring and ordering of retrieved documents.",
-    "H2: Changes in retrieval strategy may have led to an incorrect prioritization of sources, affecting the relevancy of cited materials."
+    "H1: Retrieval quality degraded because reranking was silently bypassed when the reranker model configuration was missing.",
+    "H2: Hybrid retrieval returned candidate chunks, but answer quality fell because no cross-encoder scores reordered those candidates."
   ],
   "selected_hypothesis_id": "H1",
-  "root_cause": "The reranker model configuration was absent, causing the reranking process to silently bypass necessary evaluations, thereby degrading the quality of the answer citations.",
-  "technical_explanation": "Logs indicate that although the hybrid retrieval returned candidates, the absence of the reranking model (null) resulted in unchanged document ordering with neutral scores. Analysis shows that without a properly configured model, the system should ideally fail and notify administrators, rather than return results with evaluated neutral scores.",
+  "root_cause": "The reranker model configuration was absent, and the reranker path silently returned the original retrieval order with neutral scores instead of warning or failing through an explicit fallback policy.",
+  "technical_explanation": "Runtime logs show hybrid retrieval returned candidates, then reranking reported a null model with neutral scores and unchanged ordering. Code evidence from the reranker path shows missing model configuration can return unreranked documents instead of surfacing a clear warning or startup/configuration failure.",
   "evidence_ids": [
-    "EVID-LOG-400F413C",
-    "EVID-LOG-3A945581",
-    "EVID-LOG-B050A0B8",
-    "evidence-kb-reranking-configuration"
+    "EVID-LOG-F84E91A8",
+    "EVID-LOG-A7EA5804",
+    "EVID-LOG-C29EFB7C",
+    "EVID-LOG-2C44CDFC",
+    "evidence-src/reranker.py:rerank_documents_with_scores",
+    "evidence-src/ui/retrieval_inspector.py:render_retrieval_inspector",
+    "evidence-eval/compare_retrieval_strategies.py:evaluate_strategy"
   ],
-  "confidence_score": 0.85,
-  "confidence_reason": "Log contents clearly show the missing reranker configuration alongside neutral rerank scores and unchanged document order; supported by coding logic and knowledge-base guidelines emphasizing the importance of proper reranking configurations for retrieval quality.",
-  "immediate_fix": "Implement a requirement for a valid `RERANKING_MODEL_NAME` or explicitly denote a disabled reranking mode at startup. Additionally, replace any silent neutral-score fallback functionality with a clear warning or configuration error to prevent similar issues in the future.",
-  "long_term_prevention": "Establish a robust check mechanism during deployment to ensure that all necessary configuration parameters, including `RERANKING_MODEL_NAME`, are validated beforehand. Enhance logging to explicitly alert for any missing configurations that impact response quality.",
+  "confidence_score": 0.8,
+  "confidence_reason": "Confidence is high because logs show missing reranker configuration, neutral rerank scores, and unchanged ordering; code and knowledge-base evidence explain that silent reranker bypass degrades retrieval quality.",
+  "immediate_fix": "Require `RERANKING_MODEL_NAME` or an explicit reranking-disabled mode at startup, and replace silent neutral-score fallback with a clear warning or fail-fast configuration error.",
+  "long_term_prevention": "Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.",
   "tests_to_add": [
-    "Add unit tests for reranking configuration validation to catch missing model names before service deployment.",
-    "Implement integration tests to evaluate the retrieval and reranking process, checking the end-to-end flow of responses for accuracy and alignment with expected document sources."
+    "Add a startup/configuration test that fails or warns clearly when `RERANKING_MODEL_NAME` is missing.",
+    "Add a retrieval pipeline test proving reranking changes candidate ordering or reports an explicit disabled state."
   ],
-  "open_questions": [
-    "What additional configurations might contribute to ensuring the retrieval strategy operates as intended?",
-    "How can we further improve user feedback collection to identify issues more rapidly in the future?"
-  ],
+  "open_questions": [],
   "low_confidence_warning": null,
   "metadata": {
-    "evidence_count": "14",
+    "evidence_count": "9",
     "dynamic_workflow": "true",
-    "rca_writer": "llm",
-    "llm_output_validated": "true",
-    "fallback_used": "false"
+    "rca_writer": "deterministic_fallback",
+    "llm_output_validated": "false",
+    "fallback_used": "true",
+    "fallback_reason": "internal_evidence_prefix_in_prose"
   }
 }
