@@ -1,0 +1,59 @@
+{
+  "report_id": "RCA-20260521-E9FCFAC8",
+  "incident_id": "INC-007",
+  "title": "RCA Report: Duplicate Document Ingestion Issue",
+  "incident_summary": "Users reported seeing duplicate document records and repeated citations after uploading similar PDF files in the conversational RAG application. This issue arose after the normal upload procedures without any visible application error.",
+  "impact": "Medium impact on user experience due to confusion from duplicate document records and citations, which can lead to a decrease in user trust and efficiency.",
+  "symptoms": [
+    "Duplicate document records in the system",
+    "Repeated citations displayed in user query responses"
+  ],
+  "log_findings": [
+    "2026-05-20T12:14:01Z INFO conversational_rag.upload request_id=req_812b filename=\"benefits-guide.pdf\" content_hash=\"sha256:9dd2a8\" processed_uploads_before=0 ingestion_started=true",
+    "2026-05-20T12:16:34Z INFO conversational_rag.upload request_id=req_812c filename=\"benefits-guide-copy.pdf\" content_hash=\"sha256:9dd2a8\" processed_uploads_match=false dedupe_key=\"filename\" ingestion_started=true",
+    "2026-05-20T12:18:09Z WARNING conversational_rag.retrieval request_id=req_812d duplicate_content_detected=true content_hash=\"sha256:9dd2a8\" sources=\"benefits-guide.pdf,benefits-guide-copy.pdf\""
+  ],
+  "code_findings": [
+    "The duplicate guard in the upload flow checks for existing filenames rather than content hashes in `src/services/upload_service.py`.",
+    "Content-level deduplication relies on a stable file hash in `src/helpers/deduplication.py`, but filename-based checks are currently being applied."
+  ],
+  "knowledge_base_findings": [
+    "The knowledge base indicates that duplicate filenames require explicit handling before ingestion to prevent identical content from being recorded as duplicates in `sample_data/knowledge_base/upload-ingestion.md`.",
+    "It suggests rejecting, versioning, or replacing existing documents to avoid duplication."
+  ],
+  "hypotheses_considered": [
+    "H1: The application accepts uploads based on filename state instead of content hash leading to duplicates.",
+    "H2: The upload process is not properly enforcing deduplication based on content, allowing similar documents to be processed multiple times."
+  ],
+  "selected_hypothesis_id": "H1",
+  "root_cause": "The upload flow records duplicate state by filename rather than content identity. Logs show the same content hash was accepted under a different filename, and ingested again, creating duplicate document records and repeated retrieval citations.",
+  "technical_explanation": "Runtime logs indicate two upload requests with the same content hash but distinct filenames. The second request reports `processed_uploads_match=false` and `dedupe_key=\"filename\"`. Retrieval later confirms duplicate sources for that same content hash. The code from the upload path shows that the content hash is computed, but the deduplication check is incorrectly based on uploaded filename state.",
+  "evidence_ids": [
+    "EVID-LOG-3DFA2AAD",
+    "EVID-LOG-ADC038FA",
+    "EVID-LOG-F0A8B17D",
+    "evidence-src/services/upload_service.py:1-80",
+    "evidence-src/helpers/deduplication.py:1-21",
+    "evidence-kb-upload-ingestion"
+  ],
+  "confidence_score": 0.85,
+  "confidence_reason": "Confidence is high because logs show the same content hash being ingested under multiple filenames, code evidence points to upload deduplication state, and knowledge-base evidence documents expected content-hash deduplication behavior.",
+  "immediate_fix": "Implement checks using the computed content hash as the duplicate identity for uploads, rejecting, versioning, or linking uploads with the same content hash regardless of filename before ingestion to prevent duplicate document records.",
+  "long_term_prevention": "Enhance the upload system to enforce content-based deduplication consistently across all upload scenarios to eliminate duplicate entries and improve user experience.",
+  "tests_to_add": [
+    "Add unit tests to validate the deduplication logic based on content hash in the upload process.",
+    "Implement integration tests to simulate user uploads with identical content and different filenames."
+  ],
+  "open_questions": [
+    "How can we inform users of duplicate content uploads to help understand the limitation?",
+    "Will there be a need to process historical data for duplicates created under the current scheme?"
+  ],
+  "low_confidence_warning": null,
+  "metadata": {
+    "evidence_count": "13",
+    "dynamic_workflow": "true",
+    "rca_writer": "llm",
+    "llm_output_validated": "true",
+    "fallback_used": "false"
+  }
+}
