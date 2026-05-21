@@ -11,7 +11,7 @@ record which path was used.
 
 ---
 
-<img width="759" height="461" alt="Screenshot 2026-05-20 104201" src="https://github.com/user-attachments/assets/ff7236a4-77be-4260-8b14-8653fee77a13" />
+<img width="917" height="525" alt="image" src="https://github.com/user-attachments/assets/b3059d44-54e8-45f2-989d-506aa0e6c7ba" />
 
 ---
 
