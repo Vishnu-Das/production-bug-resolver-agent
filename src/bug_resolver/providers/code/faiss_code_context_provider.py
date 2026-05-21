@@ -7,6 +7,7 @@ from typing import Any
 from bug_resolver.embeddings.base import EmbeddingClient
 from bug_resolver.providers.code.base import CodeContextProvider
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore, VectorSearchResult
+from bug_resolver.rules.code_context_ranking_rules import CodeContextRankingRules
 from bug_resolver.schemas.code_context import CodeContext
 
 
@@ -17,9 +18,11 @@ class FAISSCodeContextProvider(CodeContextProvider):
         self,
         vector_store: FAISSVectorStore,
         embedding_client: EmbeddingClient,
+        ranking_rules: CodeContextRankingRules | None = None,
     ) -> None:
         self.vector_store = vector_store
         self.embedding_client = embedding_client
+        self.ranking_rules = ranking_rules or CodeContextRankingRules()
 
     async def search_code(
         self,
@@ -37,14 +40,14 @@ class FAISSCodeContextProvider(CodeContextProvider):
 
         contexts_by_id: dict[str, CodeContext] = {}
 
-        per_query_limit = max(limit, 1)
+        per_query_limit = max(limit * 3, 10)
 
         for query in cleaned_queries:
             query_vector = await self.embedding_client.embed_text(query)
 
             search_results = self.vector_store.search(
                 query_vector=query_vector,
-                limit=per_query_limit * 3,
+                limit=per_query_limit,
             )
 
             for search_result in search_results:
@@ -68,13 +71,11 @@ class FAISSCodeContextProvider(CodeContextProvider):
                 if new_score > existing_score:
                     contexts_by_id[context.context_id] = context
 
-        contexts = sorted(
-            contexts_by_id.values(),
-            key=lambda context: context.relevance_score or 0.0,
-            reverse=True,
+        return self.ranking_rules.rank_contexts(
+            list(contexts_by_id.values()),
+            queries=cleaned_queries,
+            limit=limit,
         )
-
-        return contexts[:limit]
 
     def _is_deprecated_path(self, file_path: object) -> bool:
         if file_path is None:
