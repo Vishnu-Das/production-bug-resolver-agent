@@ -6,6 +6,7 @@ import re
 
 from pathlib import PurePosixPath
 
+from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.schemas.code_context import CodeContext
 
 
@@ -66,6 +67,9 @@ CONFIG_EXTENSIONS = {
 class CodeContextRankingRules:
     """Rank FAISS code results for RCA-oriented implementation evidence."""
 
+    def __init__(self, path_rules: CodeEvidencePathRules | None = None) -> None:
+        self.path_rules = path_rules or CodeEvidencePathRules()
+
     def rank_contexts(
         self,
         contexts: list[CodeContext],
@@ -106,14 +110,16 @@ class CodeContextRankingRules:
         score = context.relevance_score or 0.0
         path = self._normalized_path(context)
 
-        if self._is_source_file(path) and not self._is_test_file(path):
+        if self._is_source_file(path) and not self.path_rules.is_support_path(path):
             score += 0.15
 
-        if self._is_test_file(path):
-            if self._query_mentions(query_text, TEST_QUERY_TERMS):
-                score += 0.10
-            else:
-                score -= 0.25
+        query_tokens = self.path_rules.tokens(query_text)
+        score += self.path_rules.support_adjustment(
+            path,
+            query_tokens,
+            penalty=-0.35,
+            mention_bonus=0.12,
+        )
 
         if self._is_config_file(path):
             if self._query_mentions(query_text, CONFIG_QUERY_TERMS):
@@ -159,15 +165,6 @@ class CodeContextRankingRules:
 
     def _is_source_file(self, path: str) -> bool:
         return PurePosixPath(path).suffix in SOURCE_EXTENSIONS
-
-    def _is_test_file(self, path: str) -> bool:
-        file_name = PurePosixPath(path).name
-        return (
-            "/tests/" in path
-            or path.startswith("tests/")
-            or file_name.startswith("test_")
-            or file_name.endswith("_test.py")
-        )
 
     def _is_config_file(self, path: str) -> bool:
         path_obj = PurePosixPath(path)

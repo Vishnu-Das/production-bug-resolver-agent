@@ -125,3 +125,36 @@ def test_overlapping_chunks_from_same_file_are_deduplicated() -> None:
     ranked = ranker.rank_contexts(contexts, queries=["retrieval service"], limit=5)
 
     assert [context.context_id for context in ranked] == ["strong-overlap", "separate"]
+
+
+def test_support_files_are_penalized_for_backend_query() -> None:
+    ranker = CodeContextRankingRules()
+    contexts = [
+        make_context("eval", "eval/compare_retrieval_strategies.py", score=0.96),
+        make_context("ui", "src/ui/retrieval_inspector.py", score=0.95),
+        make_context("impl", "src/reranker.py", score=0.84),
+    ]
+
+    ranked = ranker.rank_contexts(
+        contexts,
+        queries=["reranker missing config answer quality"],
+        limit=3,
+    )
+
+    assert [context.context_id for context in ranked] == ["impl", "eval", "ui"]
+
+
+def test_support_files_are_allowed_when_query_mentions_support_surface() -> None:
+    ranker = CodeContextRankingRules()
+    contexts = [
+        make_context("ui", "src/ui/retrieval_inspector.py", score=0.88),
+        make_context("impl", "src/reranker.py", score=0.86),
+    ]
+
+    ranked = ranker.rank_contexts(
+        contexts,
+        queries=["ui inspector shows wrong reranker scores"],
+        limit=2,
+    )
+
+    assert [context.context_id for context in ranked] == ["ui", "impl"]
