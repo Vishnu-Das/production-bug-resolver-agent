@@ -66,5 +66,4 @@ temp/
 
 # Docs
 
-docs/*
-!docs/FUTURE_ROADMAP.md
+docs/
