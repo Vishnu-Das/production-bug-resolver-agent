@@ -144,7 +144,7 @@ async def test_code_investigator_agent_uses_supervisor_queries() -> None:
         )
     )
 
-    assert provider.queries == ["router.py route_query TypeError"]
+    assert provider.queries == ["router.py route_query TypeError", "route_query"]
     assert provider.limit == 3
     assert len(evidence) == 1
     assert evidence[0].source_type == EvidenceSourceType.CODE
@@ -163,6 +163,29 @@ async def test_code_investigator_agent_falls_back_to_decision_reason() -> None:
     await agent.run(CodeInvestigatorInput(decision=decision))
 
     assert provider.queries == ["Need more evidence."]
+
+
+@pytest.mark.asyncio
+async def test_code_investigator_agent_enriches_code_queries() -> None:
+    provider = FakeCodeContextProvider()
+    agent = CodeInvestigatorAgent(provider)
+    decision = make_decision(
+        AgentName.CODE_INVESTIGATOR,
+        queries=[
+            (
+                'RERANKING_MODEL_NAME="" reranker_model=null '
+                'scores="0.0,0.0,0.0,0.0" order_changed=false'
+            )
+        ],
+    )
+
+    await agent.run(CodeInvestigatorInput(decision=decision))
+
+    assert provider.queries is not None
+    joined_queries = "\n".join(provider.queries)
+    assert "RERANKING_MODEL_NAME" in joined_queries
+    assert "load_reranker" in joined_queries
+    assert "rerank_documents_with_scores" in joined_queries
 
 
 @pytest.mark.asyncio

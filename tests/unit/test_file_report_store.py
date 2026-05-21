@@ -166,6 +166,49 @@ async def test_file_report_store_saves_solution_markdown_when_solution_is_provid
 
 
 @pytest.mark.asyncio
+async def test_file_report_store_displays_symbol_evidence_ids(tmp_path):
+    report = RCAReport(
+        report_id="RCA-005",
+        incident_id="INC-005",
+        title="Symbol RCA",
+        incident_summary="Summary.",
+        root_cause="Root cause.",
+        technical_explanation="Technical explanation.",
+        confidence_score=0.9,
+        confidence_reason="Enough evidence exists.",
+        evidence_ids=[
+            "evidence-src/reranker.py:CrossEncoderReranker.rerank",
+            "evidence-src/services/upload_service.py:handle_file_upload",
+        ],
+    )
+    solution = SolutionRecommendation(
+        recommendation_id="SOL-005",
+        incident_id="INC-005",
+        rca_report_id="RCA-005",
+        summary="Fix symbol evidence.",
+        immediate_steps=["Inspect symbol-specific code paths."],
+        long_term_steps=["Keep evidence display symbol-aware."],
+        tests_to_add=["Assert symbol evidence display."],
+        monitoring_improvements=["Track evidence quality."],
+        risk_notes=[],
+        confidence_score=0.85,
+        evidence_ids=report.evidence_ids,
+    )
+
+    store = FileReportStore(reports_dir=tmp_path)
+
+    result = await store.save_report(report, solution=solution)
+
+    saved_rca_markdown = result[0].read_text(encoding="utf-8")
+    saved_solution_markdown = result[3].read_text(encoding="utf-8")
+
+    assert "- src/reranker.py:CrossEncoderReranker.rerank" in saved_rca_markdown
+    assert "- src/services/upload_service.py:handle_file_upload" in saved_rca_markdown
+    assert "- src/reranker.py:CrossEncoderReranker.rerank" in saved_solution_markdown
+    assert "- src/services/upload_service.py:handle_file_upload" in saved_solution_markdown
+
+
+@pytest.mark.asyncio
 async def test_file_report_store_renders_none_for_empty_sections(tmp_path):
     report = RCAReport(
         report_id="RCA-002",

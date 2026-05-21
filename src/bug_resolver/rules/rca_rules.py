@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import PureWindowsPath
 
+from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.rules.evidence_selection_rules import EvidenceSelectionRules
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 
@@ -14,8 +15,10 @@ class RCARules:
     def __init__(
         self,
         evidence_selection_rules: EvidenceSelectionRules | None = None,
+        code_path_rules: CodeEvidencePathRules | None = None,
     ) -> None:
         self.evidence_selection_rules = evidence_selection_rules or EvidenceSelectionRules()
+        self.code_path_rules = code_path_rules or CodeEvidencePathRules()
 
     def build_title(self, state: WorkflowState) -> str:
         return f"RCA for {state.incident.title}"
@@ -619,7 +622,26 @@ class RCARules:
         if not selected_items:
             return evidence_items
 
+        if source_type == EvidenceSourceType.CODE:
+            return self._prefer_primary_code_evidence(selected_items, signals)
+
         return selected_items
+
+    def _prefer_primary_code_evidence(
+        self,
+        evidence_items: list[EvidenceItem],
+        signals: set[str],
+    ) -> list[EvidenceItem]:
+        primary_items = [
+            evidence
+            for evidence in evidence_items
+            if self.code_path_rules.is_allowed_support_path(
+                self._display_path(evidence.file_path or evidence.source_name).lower(),
+                signals,
+            )
+        ]
+
+        return primary_items or evidence_items
 
     def _evidence_for_source(
         self,
@@ -755,7 +777,8 @@ class RCARules:
 
         if evidence.source_type == EvidenceSourceType.CODE:
             score += self._code_finding_penalty(
-                self._display_path(evidence.file_path or evidence.source_name).lower()
+                self._display_path(evidence.file_path or evidence.source_name).lower(),
+                signals,
             )
 
         return score
@@ -783,14 +806,16 @@ class RCARules:
 
         return path_score + content_score
 
-    def _code_finding_penalty(self, path: str) -> float:
+    def _code_finding_penalty(self, path: str, signals: set[str]) -> float:
         penalty = 0.0
-        path_tokens = self.evidence_selection_rules.tokens(path)
 
-        if "tests" in path_tokens or "test" in path_tokens:
-            penalty -= 2.0
-        if "eval" in path_tokens or "evaluation" in path_tokens:
-            penalty -= 2.0
+        penalty += self.code_path_rules.support_adjustment(
+            path,
+            signals,
+            penalty=-2.0,
+            mention_bonus=0.5,
+        )
+
         if path.endswith("__init__.py"):
             penalty -= 2.0
         if path.endswith((".json", ".yml", ".yaml", ".md")):
@@ -805,9 +830,29 @@ class RCARules:
 
     def _location(self, evidence: EvidenceItem) -> str:
         location = self._display_path(evidence.file_path or evidence.source_name)
+        symbol = self._symbol_name(evidence)
+        if symbol:
+            return f"{location}:{symbol}"
+
         if evidence.line_start and evidence.line_end:
             return f"{location}:{evidence.line_start}-{evidence.line_end}"
         return location
+
+    def _symbol_name(self, evidence: EvidenceItem) -> str | None:
+        if evidence.source_type != EvidenceSourceType.CODE:
+            return None
+
+        qualified_symbol = evidence.metadata.get("qualified_symbol")
+        if qualified_symbol:
+            return qualified_symbol
+
+        class_name = evidence.metadata.get("class_name")
+        function_name = evidence.metadata.get("function_name")
+
+        if class_name and function_name:
+            return f"{class_name}.{function_name}"
+
+        return function_name or class_name
 
     def _display_path(self, path: str) -> str:
         normalized_path = path.replace("\\", "/")

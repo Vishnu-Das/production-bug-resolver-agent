@@ -106,6 +106,29 @@ def test_code_context_can_convert_to_evidence_item() -> None:
     assert evidence.file_path == "src/search.py"
     assert evidence.line_start == 10
     assert evidence.relevance_score == 0.91
+    assert evidence.metadata["function_name"] == "search_and_summarize"
+    assert evidence.metadata["qualified_symbol"] == "search_and_summarize"
+
+
+def test_code_context_evidence_metadata_includes_class_and_qualified_symbol() -> None:
+    context = CodeContext(
+        context_id="src/reranker.py:CrossEncoderReranker.rerank",
+        file_path="src/reranker.py",
+        class_name="CrossEncoderReranker",
+        function_name="rerank",
+        line_start=10,
+        line_end=30,
+        snippet="def rerank(...): ...",
+        metadata={"symbol_type": "method"},
+    )
+
+    evidence = context.to_evidence_item()
+
+    assert evidence.evidence_id == "evidence-src/reranker.py:CrossEncoderReranker.rerank"
+    assert evidence.metadata["class_name"] == "CrossEncoderReranker"
+    assert evidence.metadata["function_name"] == "rerank"
+    assert evidence.metadata["qualified_symbol"] == "CrossEncoderReranker.rerank"
+    assert evidence.metadata["symbol_type"] == "method"
 
 
 def test_knowledge_context_can_convert_to_evidence_item() -> None:

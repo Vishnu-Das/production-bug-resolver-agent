@@ -40,6 +40,7 @@ class CodeContext(StrictBaseModel):
 
     def to_evidence_item(self) -> EvidenceItem:
         normalized_context_id = self._normalize_context_id(self.context_id)
+        metadata = self._evidence_metadata()
         return EvidenceItem(
             evidence_id=f"evidence-{normalized_context_id}",
             source_type=EvidenceSourceType.CODE,
@@ -49,11 +50,32 @@ class CodeContext(StrictBaseModel):
             line_end=self.line_end,
             content=self.snippet,
             relevance_score=self.relevance_score,
-            metadata={
-                **self.metadata,
-                "context_id": self.context_id,
-            },
+            metadata=metadata,
         )
+
+    def _evidence_metadata(self) -> dict[str, str]:
+        metadata = {
+            **self.metadata,
+            "context_id": self.context_id,
+        }
+
+        if self.class_name:
+            metadata.setdefault("class_name", self.class_name)
+
+        if self.function_name:
+            metadata.setdefault("function_name", self.function_name)
+
+        qualified_symbol = metadata.get("qualified_symbol") or self._qualified_symbol()
+        if qualified_symbol:
+            metadata.setdefault("qualified_symbol", qualified_symbol)
+
+        return metadata
+
+    def _qualified_symbol(self) -> str | None:
+        if self.class_name and self.function_name:
+            return f"{self.class_name}.{self.function_name}"
+
+        return self.function_name or self.class_name
 
     def _normalize_context_id(self, context_id: str) -> str:
         value = context_id.replace("\\", "/")

@@ -63,3 +63,7 @@ sample_data/target_repos/
 tmp/
 temp/
 .cache/
+
+# Docs
+
+docs/

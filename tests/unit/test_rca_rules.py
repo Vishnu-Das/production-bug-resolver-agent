@@ -151,6 +151,147 @@ def test_reranker_code_findings_prefer_overlapping_path_and_content() -> None:
     assert "routing/query_router.py" not in joined_findings
 
 
+def test_code_findings_penalize_support_paths_for_backend_incident() -> None:
+    state = make_state(
+        title="Answers cite unrelated sources after deployment",
+        description="Answer quality is worse and cited sources look unrelated.",
+        affected_area="retrieval ranking quality",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="reranker.log",
+        content='reranker_model=null scores="0.0,0.0,0.0,0.0" order_changed=false',
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-reranker",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/reranker.py",
+        file_path="src/reranker.py",
+        content="reranker model config returns neutral scores when missing",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-eval",
+        source_type=EvidenceSourceType.CODE,
+        source_name="eval/compare_retrieval_strategies.py",
+        file_path="eval/compare_retrieval_strategies.py",
+        content="evaluation compares reranker model config scores and answer quality",
+        relevance_score=0.95,
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-ui",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/ui/retrieval_inspector.py",
+        file_path="src/ui/retrieval_inspector.py",
+        content="ui inspector displays reranker scores and answer quality",
+        relevance_score=0.95,
+    )
+
+    findings = RCARules().build_code_findings(state)
+    evidence_ids = RCARules().evidence_ids(state)
+    joined_findings = "\n".join(findings)
+
+    assert "src/reranker.py" in joined_findings
+    assert "eval/compare_retrieval_strategies.py" not in joined_findings
+    assert "src/ui/retrieval_inspector.py" not in joined_findings
+    assert "ev-reranker" in evidence_ids
+    assert "ev-eval" not in evidence_ids
+    assert "ev-ui" not in evidence_ids
+
+
+def test_code_findings_allow_support_paths_when_incident_mentions_them() -> None:
+    state = make_state(
+        title="Retrieval inspector UI shows wrong reranker scores",
+        description="The debug inspector page shows stale reranker scores after deployment.",
+        affected_area="retrieval inspector UI",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="ui.log",
+        content="ui inspector debug panel shows stale reranker scores",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-ui",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/ui/retrieval_inspector.py",
+        file_path="src/ui/retrieval_inspector.py",
+        content="retrieval inspector ui renders reranker scores",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-reranker",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/reranker.py",
+        file_path="src/reranker.py",
+        content="reranker produces scores for retrieved documents",
+    )
+
+    findings = RCARules().build_code_findings(state)
+    joined_findings = "\n".join(findings)
+
+    assert "src/ui/retrieval_inspector.py" in joined_findings
+
+
+def test_code_findings_prefer_symbol_location_when_metadata_exists() -> None:
+    state = make_state(
+        title="Answers cite unrelated sources after deployment",
+        description="Answer quality is worse and cited sources look unrelated.",
+        affected_area="retrieval ranking quality",
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-reranker",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/reranker.py",
+            file_path="src/reranker.py",
+            line_start=63,
+            line_end=122,
+            content="reranker_model returns neutral scores when model is missing",
+            relevance_score=0.8,
+            metadata={
+                "qualified_symbol": "CrossEncoderReranker.rerank",
+                "symbol_type": "method",
+            },
+        )
+    )
+
+    findings = RCARules().build_code_findings(state)
+
+    assert "src/reranker.py:CrossEncoderReranker.rerank" in findings[0]
+    assert "src/reranker.py:63-122" not in findings[0]
+
+
+def test_code_findings_fall_back_to_line_range_without_symbol_metadata() -> None:
+    state = make_state(
+        title="Answers cite unrelated sources after deployment",
+        description="Answer quality is worse and cited sources look unrelated.",
+        affected_area="retrieval ranking quality",
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-reranker",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/reranker.py",
+            file_path="src/reranker.py",
+            line_start=63,
+            line_end=122,
+            content="reranker_model returns neutral scores when model is missing",
+            relevance_score=0.8,
+        )
+    )
+
+    findings = RCARules().build_code_findings(state)
+
+    assert "src/reranker.py:63-122" in findings[0]
+
+
 def test_reranker_kb_findings_prefer_overlapping_content() -> None:
     state = make_state(
         title="Answers cite unrelated sources after deployment",

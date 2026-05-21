@@ -257,6 +257,7 @@ class DynamicBugResolutionGraphWorkflow:
         evidence_items = await self._code_investigator_agent.run(
             CodeInvestigatorInput(
                 decision=decision,
+                evidence_items=state.evidence_items,
                 limit=5,
             )
         )
