@@ -1,5 +1,7 @@
 # Production Bug Resolver Agent
 
+[![CI](https://github.com/Vishnu-Das/production-bug-resolver-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Vishnu-Das/production-bug-resolver-agent/actions/workflows/ci.yml)
+
 Production Bug Resolver Agent is a CLI-first, supervisor-led multi-agent RCA
 assistant for production incidents. It uses LangGraph-style dynamic routing,
 guardrails, logs, Code RAG, Knowledge Base RAG, and evidence-backed RCA/report
