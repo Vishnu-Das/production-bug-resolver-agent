@@ -49,6 +49,7 @@ htmlcov/
 
 # Local generated storage
 storage/
+/reports/
 
 # FAISS / vector indexes
 *.faiss

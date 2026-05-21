@@ -136,6 +136,12 @@ Each completed investigation writes:
 
 The `reports/` directory is local generated output and should not be committed.
 
+Curated static sample reports for portfolio and demo review are available under:
+
+```text
+examples/reports/
+```
+
 ## Package Map
 
 - `bug_resolver.cli`: Typer CLI entrypoint.
