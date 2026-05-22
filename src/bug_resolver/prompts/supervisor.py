@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from bug_resolver.schemas.workflow_state import WorkflowState
+
 
 class SupervisorPromptBuilder:
     """
-    Standalone supervisor system prompt template for prompt experiments.
+    Runtime prompt builder for supervisor routing decisions.
 
-    The production SupervisorAgent uses this helper for its runtime system prompt
-    so routing guidance stays outside the agent implementation.
+    SupervisorAgent delegates prompt construction here so the agent stays thin
+    and routing guidance stays outside orchestration logic.
     """
 
     def build_system_prompt(self) -> str:
@@ -65,3 +67,80 @@ class SupervisorPromptBuilder:
             "- expected evidence the agent should return\n"
             "- whether the workflow should continue\n"
         )
+
+    def build_user_prompt(self, state: WorkflowState) -> str:
+        """Build the runtime supervisor prompt from the current workflow state."""
+        incident = state.incident
+        evidence_summary = self._format_evidence_summary(state)
+        previous_decisions = self._format_previous_decisions(state)
+        evaluation_summary = self._format_evaluation_summary(state)
+        allowed_agents = ", ".join(agent.value for agent in state.allowed_agent_names)
+
+        return (
+            "Decide the next investigation step.\n\n"
+            f"Incident ID: {incident.incident_id}\n"
+            f"Title: {incident.title}\n"
+            f"Description: {incident.description}\n"
+            f"Severity: {incident.severity.value}\n"
+            f"Affected service: {incident.affected_service or 'unknown'}\n\n"
+            f"Investigation status: {state.investigation_status.value}\n"
+            f"Evidence count: {len(state.evidence_items)}\n"
+            f"Minimum evidence before RCA: {state.minimum_evidence_count_before_rca}\n"
+            f"Replans: {state.replan_count}/{state.max_replans}\n"
+            f"Steps: {len(state.trace.steps)}/{state.max_steps}\n"
+            f"Allowed agents: {allowed_agents}\n\n"
+            f"Evidence summary:\n{evidence_summary}\n\n"
+            f"Evidence evaluation:\n{evaluation_summary}\n\n"
+            f"Previous supervisor decisions:\n{previous_decisions}\n\n"
+            "Return the best next agent, a concise reason, useful queries or "
+            "instructions for that agent, expected evidence, and whether the "
+            "workflow should continue."
+        )
+
+    def _format_evidence_summary(self, state: WorkflowState) -> str:
+        if not state.evidence_items:
+            return "- No evidence has been collected yet."
+
+        lines: list[str] = []
+        for evidence in state.evidence_items:
+            location = self._format_evidence_location(evidence)
+
+            lines.append(
+                f"- {evidence.evidence_id} [{evidence.source_type.value}] "
+                f"{location}: {evidence.content}"
+            )
+
+        return "\n".join(lines)
+
+    def _format_previous_decisions(self, state: WorkflowState) -> str:
+        if not state.trace.decisions:
+            return "- No previous supervisor decisions."
+
+        return "\n".join(
+            (f"- {decision.decision_id}: {decision.next_agent.value} because {decision.reason}")
+            for decision in state.trace.decisions
+        )
+
+    def _format_evaluation_summary(self, state: WorkflowState) -> str:
+        if state.evidence_evaluation is None:
+            return "- Evidence has not been evaluated yet."
+
+        evaluation = state.evidence_evaluation
+        missing_evidence = ", ".join(evaluation.missing_evidence) or "none"
+        return (
+            f"- confidence={evaluation.confidence_score}; "
+            f"retry_required={evaluation.retry_required}; "
+            f"missing_evidence={missing_evidence}; reason={evaluation.reason}"
+        )
+    
+    def _format_evidence_location(self, evidence) -> str:
+        location = evidence.file_path or evidence.source_name
+
+        qualified_symbol = evidence.metadata.get("qualified_symbol")
+        if qualified_symbol and evidence.file_path:
+            return f"{evidence.file_path}:{qualified_symbol}"
+
+        if evidence.line_start and evidence.line_end:
+            return f"{location}:{evidence.line_start}-{evidence.line_end}"
+
+        return location

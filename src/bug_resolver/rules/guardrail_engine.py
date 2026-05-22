@@ -1,42 +1,39 @@
 """Deterministic routing guardrails for supervisor decisions."""
 
 from __future__ import annotations
-import re
 
+from bug_resolver.rules.guardrail_evidence_rules import GuardrailEvidenceRules
+from bug_resolver.rules.guardrail_fallback_policy import GuardrailFallbackPolicy
+from bug_resolver.rules.guardrail_graph_rules import GuardrailGraphRules
+from bug_resolver.rules.guardrail_routing_rules import GuardrailRoutingRules
 from bug_resolver.schemas import (
     AgentDecision,
     AgentName,
-    EvidenceSourceType,
     GuardrailDecision,
     WorkflowState,
 )
 from bug_resolver.utils.ids import new_guardrail_id
 
 
-INVESTIGATION_AGENT_NAMES = {
-    AgentName.LOG_INVESTIGATOR,
-    AgentName.CODE_INVESTIGATOR,
-    AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
-    AgentName.WEB_SEARCH_INVESTIGATOR,
-    AgentName.GRAPH_INVESTIGATOR,
-    AgentName.HISTORICAL_RCA_INVESTIGATOR,
-}
-
-WORKFLOW_CONTROL_AGENT_NAMES = {
-    AgentName.EVIDENCE_EVALUATOR,
-    AgentName.RCA_WRITER,
-    AgentName.SOLUTION_RECOMMENDER,
-    AgentName.REPORT_WRITER,
-}
-
-
 class GuardrailEngine:
     """
     Deterministic validation for supervisor routing decisions.
 
-    This engine intentionally has no LLM dependency. It only evaluates the
-    current workflow state and the structured decision produced by the supervisor.
+    This facade intentionally has no LLM dependency. Focused collaborators own
+    routing, evidence, graph, and fallback policy details.
     """
+
+    def __init__(
+        self,
+        routing_rules: GuardrailRoutingRules | None = None,
+        evidence_rules: GuardrailEvidenceRules | None = None,
+        graph_rules: GuardrailGraphRules | None = None,
+        fallback_policy: GuardrailFallbackPolicy | None = None,
+    ) -> None:
+        self._routing_rules = routing_rules or GuardrailRoutingRules()
+        self._evidence_rules = evidence_rules or GuardrailEvidenceRules(self._routing_rules)
+        self._graph_rules = graph_rules or GuardrailGraphRules(self._evidence_rules)
+        self._fallback_policy = fallback_policy or GuardrailFallbackPolicy(self._evidence_rules)
 
     def validate_decision(
         self,
@@ -67,15 +64,16 @@ class GuardrailEngine:
         if not state.can_take_step():
             violated_rules.append("max_steps_reached")
 
-        if not self._is_workflow_forced_control_decision(decision) and not state.can_invoke_agent(
-            decision.next_agent
+        if (
+            not self._routing_rules.is_workflow_forced_control_decision(decision)
+            and not state.can_invoke_agent(decision.next_agent)
         ):
             violated_rules.append("max_agent_invocations_reached")
 
-        if self._should_route_to_missing_code_evidence(state, decision):
+        if self._evidence_rules.should_route_to_missing_code_evidence(state, decision):
             violated_rules.append("missing_code_evidence_should_route_to_code")
 
-        if self._is_repeated_agent_call_without_new_reason(state, decision):
+        if self._routing_rules.repeated_agent_call_without_new_reason(state, decision):
             violated_rules.append("repeated_agent_call_without_new_reason")
 
         if decision.next_agent == AgentName.RCA_WRITER:
@@ -93,24 +91,18 @@ class GuardrailEngine:
                 violated_rules.append("report_requires_solution")
 
         if decision.next_agent == AgentName.FINISH:
-            if not self._can_finish(state):
+            if not self._routing_rules.can_finish(state):
                 violated_rules.append("finish_requires_report_or_low_confidence")
-        if self._should_block_graph_before_code(state, decision):
+
+        if self._graph_rules.should_block_graph_before_code(state, decision):
             violated_rules.append("graph_investigator_requires_code_or_structural_signal")
-        
-        # if not state.can_replan() and decision.next_agent in INVESTIGATION_AGENT_NAMES:
-        #     if state.evidence_evaluation is not None:
-        #         if state.evidence_evaluation.can_write_rca:
-        #             violated_rules.append("max_replans_reached")
-        #         elif not state.can_take_step():
-        #             violated_rules.append("max_replans_reached")
 
         if violated_rules:
             return GuardrailDecision(
                 guardrail_id=new_guardrail_id(),
                 allowed=False,
-                reason=self._blocked_reason(violated_rules),
-                fallback_next_agent=self._fallback_agent(
+                reason=self._routing_rules.blocked_reason(violated_rules),
+                fallback_next_agent=self._fallback_policy.fallback_agent(
                     blocked_agent=decision.next_agent,
                     state=state,
                 ),
@@ -121,238 +113,4 @@ class GuardrailEngine:
             guardrail_id=new_guardrail_id(),
             allowed=True,
             reason=f"Routing to {decision.next_agent.value} is allowed.",
-        )
-
-    def _is_repeated_agent_call_without_new_reason(
-        self,
-        state: WorkflowState,
-        decision: AgentDecision,
-    ) -> bool:
-        # Workflow-forced control steps are intentionally repeated.
-        #
-        # Example:
-        # log_investigator -> evidence_evaluator
-        # code_investigator -> evidence_evaluator
-        # knowledge_base_investigator -> evidence_evaluator
-        #
-        # The repeated-call guardrail is meant to stop the supervisor from
-        # repeatedly choosing the same investigation agent with no new reason.
-        # It should not block deterministic workflow control steps.
-        if self._is_workflow_forced_control_decision(decision):
-            return False
-
-        previous_decisions = [
-            previous_decision
-            for previous_decision in state.trace.decisions
-            if previous_decision.next_agent == decision.next_agent
-            and previous_decision.decision_id != decision.decision_id
-        ]
-
-        if not previous_decisions:
-            return False
-
-        previous_decision = previous_decisions[-1]
-
-        return (
-            previous_decision.reason == decision.reason
-            and previous_decision.queries == decision.queries
-        )
-
-    def _is_workflow_forced_control_decision(self, decision: AgentDecision) -> bool:
-        return (
-            decision.metadata.get("forced_by_workflow") == "true"
-            and decision.next_agent in WORKFLOW_CONTROL_AGENT_NAMES
-        )
-
-    def _should_route_to_missing_code_evidence(
-        self,
-        state: WorkflowState,
-        decision: AgentDecision,
-    ) -> bool:
-        if self._is_workflow_forced_control_decision(decision):
-            return False
-
-        if decision.next_agent == AgentName.CODE_INVESTIGATOR:
-            return False
-
-        if not state.can_invoke_agent(AgentName.CODE_INVESTIGATOR):
-            return False
-
-        if state.evidence_evaluation is None:
-            return False
-
-        if state.evidence_evaluation.can_write_rca:
-            return False
-
-        source_types = {evidence.source_type for evidence in state.evidence_items}
-        if EvidenceSourceType.CODE in source_types:
-            return False
-
-        code_evidence_is_missing = any(
-            "code evidence is missing" in missing_evidence.lower()
-            for missing_evidence in state.evidence_evaluation.missing_evidence
-        )
-        if not code_evidence_is_missing:
-            return False
-
-        if decision.next_agent == AgentName.KNOWLEDGE_BASE_INVESTIGATOR:
-            return self._has_knowledge_base_evidence(state)
-
-        return True
-
-    def _has_knowledge_base_evidence(self, state: WorkflowState) -> bool:
-        return any(
-            evidence.source_type == EvidenceSourceType.KNOWLEDGE_BASE
-            for evidence in state.evidence_items
-        )
-
-    def _fallback_agent(
-        self,
-        *,
-        blocked_agent: AgentName,
-        state: WorkflowState,
-    ) -> AgentName:
-        if not state.evidence_items:
-            return AgentName.LOG_INVESTIGATOR
-        
-        if (
-            blocked_agent == AgentName.GRAPH_INVESTIGATOR
-            and state.can_invoke_agent(AgentName.CODE_INVESTIGATOR)
-        ):
-            return AgentName.CODE_INVESTIGATOR
-
-        if self._missing_code_evidence(state) and state.can_invoke_agent(
-            AgentName.CODE_INVESTIGATOR
-        ):
-            return AgentName.CODE_INVESTIGATOR
-
-        if blocked_agent == AgentName.FINISH:
-            return AgentName.EVIDENCE_EVALUATOR
-
-        if blocked_agent == AgentName.SOLUTION_RECOMMENDER:
-            return AgentName.RCA_WRITER
-
-        if blocked_agent == AgentName.REPORT_WRITER:
-            return AgentName.SOLUTION_RECOMMENDER
-
-        if blocked_agent == AgentName.RCA_WRITER:
-            return AgentName.EVIDENCE_EVALUATOR
-
-        if blocked_agent in INVESTIGATION_AGENT_NAMES:
-            return AgentName.EVIDENCE_EVALUATOR
-
-        if blocked_agent == AgentName.EVIDENCE_EVALUATOR:
-            return AgentName.FINISH
-
-        return AgentName.EVIDENCE_EVALUATOR
-
-    def _missing_code_evidence(self, state: WorkflowState) -> bool:
-        if state.evidence_evaluation is None:
-            return False
-
-        if state.evidence_evaluation.can_write_rca:
-            return False
-
-        source_types = {evidence.source_type for evidence in state.evidence_items}
-        if EvidenceSourceType.CODE in source_types:
-            return False
-
-        return any(
-            "code evidence is missing" in missing_evidence.lower()
-            for missing_evidence in state.evidence_evaluation.missing_evidence
-        )
-
-    def _can_finish(self, state: WorkflowState) -> bool:
-        report_saved = state.report_save_result is not None or state.final_report_path is not None
-        return report_saved or state.low_confidence
-
-    def _blocked_reason(self, violated_rules: list[str]) -> str:
-        return "Guardrail blocked routing decision: " + ", ".join(violated_rules)
-    
-    def _should_block_graph_before_code(
-        self,
-        state: WorkflowState,
-        decision: AgentDecision,
-    ) -> bool:
-        if decision.next_agent != AgentName.GRAPH_INVESTIGATOR:
-            return False
-
-        if self._has_code_evidence(state):
-            return False
-
-        if self._has_strong_graph_signal(state, decision):
-            return False
-
-        return True
-    
-    def _has_code_evidence(self, state: WorkflowState) -> bool:
-        return any(
-            evidence.source_type == EvidenceSourceType.CODE
-            for evidence in state.evidence_items
-        )
-    
-    def _has_strong_graph_signal(
-        self,
-        state: WorkflowState,
-        decision: AgentDecision,
-    ) -> bool:
-        values: list[str] = [
-            state.incident.title,
-            state.incident.description,
-            state.incident.affected_service or "",
-            state.incident.affected_area or "",
-            decision.reason,
-            *decision.queries,
-            *decision.expected_evidence,
-        ]
-
-        values.extend(
-            str(value)
-            for value in state.incident.metadata.values()
-            if value is not None
-        )
-
-        values.extend(
-            evidence.content
-            for evidence in state.evidence_items
-            if evidence.source_type == EvidenceSourceType.LOG
-        )
-
-        text = "\n".join(value for value in values if value)
-
-        return (
-            self._contains_python_file_path(text)
-            or self._contains_config_key(text)
-            or self._contains_symbol_reference(text)
-        )
-
-
-    def _contains_python_file_path(self, text: str) -> bool:
-        return bool(
-            re.search(
-                r"(?:^|[\s\"'`])[\w./\\-]+\.py(?::\d+)?",
-                text,
-            )
-        )
-
-
-    def _contains_config_key(self, text: str) -> bool:
-        return bool(
-            re.search(
-                r"\b[A-Z][A-Z0-9]+(?:_[A-Z0-9]+){1,}\b",
-                text,
-            )
-        )
-
-
-    def _contains_symbol_reference(self, text: str) -> bool:
-        return bool(
-            re.search(
-                r"\b[A-Z][A-Za-z0-9_]+\.[A-Za-z_][A-Za-z0-9_]*\b",
-                text,
-            )
-            or re.search(
-                r"\b[a-z_][a-z0-9_]{2,}\([^)]*\)",
-                text,
-            )
         )

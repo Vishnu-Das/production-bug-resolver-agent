@@ -8,6 +8,7 @@ from pydantic import Field
 
 from bug_resolver.agents.base import BaseAgent
 from bug_resolver.llm.base import LLMClient
+from bug_resolver.prompts import SolutionPromptBuilder
 from bug_resolver.rules.solution_rules import SolutionRules
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas import RCAReport, SolutionRecommendation
@@ -69,9 +70,11 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
         self,
         rules: SolutionRules | None = None,
         llm_client: LLMClient | None = None,
+        prompt_builder: SolutionPromptBuilder | None = None,
     ) -> None:
         self._rules = rules or SolutionRules()
         self._llm_client = llm_client
+        self._prompt_builder = prompt_builder or SolutionPromptBuilder()
 
     async def _run(self, input_data: RCAReport) -> SolutionRecommendation:
         deterministic_recommendation = self._build_deterministic_recommendation(input_data)
@@ -257,47 +260,14 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
         ]
 
     def _build_system_prompt(self) -> str:
-        return (
-            "You write analyze-only production fix recommendations from RCA reports. "
-            "Do not claim a fix has been applied. Do not invent evidence, files, "
-            "owners, timelines, or implementation details. Reference only evidence "
-            "IDs from the RCA."
-        )
+        return self._prompt_builder.build_system_prompt()
 
     def _build_prompt(
         self,
         rca_report: RCAReport,
         deterministic_recommendation: SolutionRecommendation,
     ) -> str:
-        return (
-            "Write a structured solution recommendation from this RCA.\n\n"
-            f"Incident ID: {rca_report.incident_id}\n"
-            f"RCA report ID: {rca_report.report_id}\n"
-            f"Title: {rca_report.title}\n"
-            f"Root cause: {rca_report.root_cause}\n"
-            f"Technical explanation: {rca_report.technical_explanation}\n"
-            "Graph findings:\n"
-            f"{self._format_list(rca_report.graph_findings)}\n"
-            f"Immediate fix baseline: {rca_report.immediate_fix or 'not specified'}\n"
-            f"Long-term prevention baseline: "
-            f"{rca_report.long_term_prevention or 'not specified'}\n"
-            f"Tests baseline: {', '.join(rca_report.tests_to_add) or 'none'}\n"
-            f"Open questions: {', '.join(rca_report.open_questions) or 'none'}\n"
-            f"RCA confidence: {rca_report.confidence_score}\n"
-            f"Allowed evidence IDs: {', '.join(rca_report.evidence_ids)}\n\n"
-            "Deterministic baseline recommendation for grounding:\n"
-            f"Summary: {deterministic_recommendation.summary}\n"
-            "Immediate steps:\n"
-            f"{chr(10).join(f'- {step}' for step in deterministic_recommendation.immediate_steps)}\n"
-            "Long-term steps:\n"
-            f"{chr(10).join(f'- {step}' for step in deterministic_recommendation.long_term_steps)}\n"
-            "Monitoring improvements:\n"
-            f"{chr(10).join(f'- {step}' for step in deterministic_recommendation.monitoring_improvements)}\n\n"
-            "Return concrete immediate steps, long-term steps, tests to add, "
-            "monitoring improvements, risk notes, confidence, and evidence IDs."
+        return self._prompt_builder.build_user_prompt(
+            rca_report,
+            deterministic_recommendation,
         )
-
-    def _format_list(self, values: list[str]) -> str:
-        if not values:
-            return "- None"
-        return "\n".join(f"- {value}" for value in values)
