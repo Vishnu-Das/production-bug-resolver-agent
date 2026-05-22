@@ -1,6 +1,7 @@
 """Export shared Pydantic schemas for investigations and reports."""
 
 from bug_resolver.schemas.code_context import CodeContext
+from bug_resolver.schemas.code_graph import CodeGraphContext
 from bug_resolver.schemas.common import (
     EvidenceSourceType,
     HypothesisStatus,
@@ -34,6 +35,7 @@ from bug_resolver.schemas.incident_intake import IncidentIntakeRequest
 
 __all__ = [
     "CodeContext",
+    "CodeGraphContext",
     "AgentDecision",
     "AgentExecutionRecord",
     "AgentName",

@@ -1,0 +1,42 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "info",
+    "message": "Deployment expected reranker model configuration to control ranking behavior.",
+    "service_name": "conversational_rag.config",
+    "environment": "local-sample",
+    "request_id": "deploy_92a",
+    "trace_id": "trace-rerank-009",
+    "raw": "2026-05-20T10:02:10Z INFO conversational_rag.config request_id=deploy_92a expected_config=\"RERANKING_MODEL_NAME\" deployment_profile=\"production-like\""
+  },
+  {
+    "log_id": "log-002",
+    "level": "info",
+    "message": "Fusion retrieval returned candidate documents for a factual query.",
+    "service_name": "conversational_rag.retrieval",
+    "environment": "local-sample",
+    "request_id": "req_991a",
+    "trace_id": "trace-rerank-009",
+    "raw": "2026-05-20T10:05:44Z INFO conversational_rag.retrieval request_id=req_991a strategy=\"fusion\" retrieved_docs=10 query=\"what is the reimbursement deadline\""
+  },
+  {
+    "log_id": "log-003",
+    "level": "warning",
+    "message": "Reranking still returned neutral scores even though reranker configuration was expected.",
+    "service_name": "conversational_rag.reranker",
+    "environment": "local-sample",
+    "request_id": "req_991a",
+    "trace_id": "trace-rerank-009",
+    "raw": "2026-05-20T10:05:44Z WARNING conversational_rag.reranker request_id=req_991a reranker_model=null ranked_docs=4 scores=\"0.0,0.0,0.0,0.0\" order_changed=false"
+  },
+  {
+    "log_id": "log-004",
+    "level": "warning",
+    "message": "Diagnostics require identifying which function reads the reranker config and which request path calls reranking.",
+    "service_name": "conversational_rag.diagnostics",
+    "environment": "local-sample",
+    "request_id": "req_991a",
+    "trace_id": "trace-rerank-009",
+    "raw": "2026-05-20T10:05:45Z WARNING conversational_rag.diagnostics request_id=req_991a structural_hint=\"identify config reader for RERANKING_MODEL_NAME and caller chain for rerank_documents_with_scores\""
+  }
+]

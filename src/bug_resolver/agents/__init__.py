@@ -5,6 +5,10 @@ from bug_resolver.agents.code_investigator_agent import (
     CodeInvestigatorAgent,
     CodeInvestigatorInput,
 )
+from bug_resolver.agents.code_graph_investigator_agent import (
+    CodeGraphInvestigatorAgent,
+    CodeGraphInvestigatorInput,
+)
 from bug_resolver.agents.incident_intake_agent import IncidentIntakeAgent
 from bug_resolver.agents.knowledge_base_investigator_agent import (
     KnowledgeBaseInvestigatorAgent,
@@ -31,6 +35,8 @@ from bug_resolver.agents.supervisor_agent import (
 
 __all__ = [
     "BaseAgent",
+    "CodeGraphInvestigatorAgent",
+    "CodeGraphInvestigatorInput",
     "CodeInvestigatorAgent",
     "CodeInvestigatorInput",
     "IncidentIntakeAgent",

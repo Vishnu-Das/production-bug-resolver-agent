@@ -53,6 +53,7 @@ class RCAWriterOutput(StrictBaseModel):
     symptoms: list[str]
     log_findings: list[str]
     code_findings: list[str]
+    graph_findings: list[str] = Field(default_factory=list)
     knowledge_base_findings: list[str]
     hypotheses_considered: list[str]
     selected_hypothesis_id: str | None = None
@@ -129,6 +130,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             symptoms=self._rules.build_symptoms(input_data),
             log_findings=self._rules.build_log_findings(input_data),
             code_findings=self._rules.build_code_findings(input_data),
+            graph_findings=self._rules.build_graph_findings(input_data),
             knowledge_base_findings=self._rules.build_knowledge_base_findings(input_data),
             hypotheses_considered=self._rules.build_hypotheses_considered(input_data),
             selected_hypothesis_id=self._rules.selected_hypothesis_id(input_data),
@@ -225,9 +227,17 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         if self._contains_unbalanced_inline_code(output):
             raise RCAWriterFallback("unbalanced_inline_backticks")
 
-        evidence_ids = self._ensure_code_evidence_when_code_findings_exist(
+        evidence_ids = self._ensure_source_evidence_when_findings_exist(
             state=state,
-            output=output,
+            findings=output.code_findings,
+            source_type=EvidenceSourceType.CODE,
+            evidence_ids=evidence_ids,
+            fallback_report=fallback_report,
+        )
+        evidence_ids = self._ensure_source_evidence_when_findings_exist(
+            state=state,
+            findings=output.graph_findings,
+            source_type=EvidenceSourceType.GRAPH,
             evidence_ids=evidence_ids,
             fallback_report=fallback_report,
         )
@@ -241,6 +251,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             symptoms=output.symptoms,
             log_findings=output.log_findings,
             code_findings=output.code_findings,
+            graph_findings=output.graph_findings,
             knowledge_base_findings=output.knowledge_base_findings,
             hypotheses_considered=hypotheses_considered,
             selected_hypothesis_id=selected_hypothesis_id,
@@ -262,37 +273,38 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             },
         )
 
-    def _ensure_code_evidence_when_code_findings_exist(
+    def _ensure_source_evidence_when_findings_exist(
         self,
         *,
         state: WorkflowState,
-        output: RCAWriterOutput,
+        findings: list[str],
+        source_type: EvidenceSourceType,
         evidence_ids: list[str],
         fallback_report: RCAReport,
     ) -> list[str]:
-        if not output.code_findings:
+        if not findings:
             return evidence_ids
 
-        code_evidence_ids = {
+        source_evidence_ids = {
             evidence.evidence_id
             for evidence in state.evidence_items
-            if evidence.source_type == EvidenceSourceType.CODE
+            if evidence.source_type == source_type
         }
-        if not code_evidence_ids:
+        if not source_evidence_ids:
             return evidence_ids
 
-        if any(evidence_id in code_evidence_ids for evidence_id in evidence_ids):
+        if any(evidence_id in source_evidence_ids for evidence_id in evidence_ids):
             return evidence_ids
 
-        selected_code_evidence_ids = [
+        selected_source_evidence_ids = [
             evidence_id
             for evidence_id in fallback_report.evidence_ids
-            if evidence_id in code_evidence_ids
+            if evidence_id in source_evidence_ids
         ]
-        if not selected_code_evidence_ids:
+        if not selected_source_evidence_ids:
             return evidence_ids
 
-        return self._merge_evidence_ids(evidence_ids, selected_code_evidence_ids)
+        return self._merge_evidence_ids(evidence_ids, selected_source_evidence_ids)
 
     def _merge_evidence_ids(self, *groups: list[str]) -> list[str]:
         merged: list[str] = []
@@ -315,6 +327,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             *output.symptoms,
             *output.log_findings,
             *output.code_findings,
+            *output.graph_findings,
             *output.knowledge_base_findings,
             *output.hypotheses_considered,
             output.root_cause,
@@ -377,6 +390,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             *output.symptoms,
             *output.log_findings,
             *output.code_findings,
+            *output.graph_findings,
             *output.knowledge_base_findings,
             *output.hypotheses_considered,
             output.root_cause,
@@ -459,14 +473,18 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             f"Focused baseline evidence IDs: {', '.join(deterministic_report.evidence_ids)}\n"
             "Focused code findings baseline:\n"
             f"{self._format_baseline_list(deterministic_report.code_findings)}\n"
+            "Focused graph findings baseline:\n"
+            f"{self._format_baseline_list(deterministic_report.graph_findings)}\n"
             "Focused knowledge-base findings baseline:\n"
             f"{self._format_baseline_list(deterministic_report.knowledge_base_findings)}\n"
             f"Immediate fix: {deterministic_report.immediate_fix or 'not specified'}\n"
             f"Confidence: {deterministic_report.confidence_score} because "
             f"{deterministic_report.confidence_reason}\n\n"
-            "Keep Code Findings and Knowledge Base Findings focused on the strongest "
-            "baseline items. Prefer the focused baseline evidence IDs and do not list "
-            "unrelated retrieved context.\n"
+            "Keep Code Findings, Graph Findings, and Knowledge Base Findings focused "
+            "on the strongest baseline items. Use Graph Findings for caller/callee, "
+            "config-reader, import, ownership, or class/function relationship evidence. "
+            "Prefer the focused baseline evidence IDs and do not list unrelated retrieved "
+            "context.\n"
             "Return an RCA report with clear findings, hypotheses, root cause, "
             "technical explanation, evidence IDs, confidence, recommended fix, "
             "prevention, tests, and open questions."

@@ -57,6 +57,13 @@ class RCARules:
     def build_code_findings(self, state: WorkflowState) -> list[str]:
         return self._selected_findings_for_source(state, EvidenceSourceType.CODE, max_findings=3)
 
+    def build_graph_findings(self, state: WorkflowState) -> list[str]:
+        return self._selected_findings_for_source(
+            state,
+            EvidenceSourceType.GRAPH,
+            max_findings=2,
+        )
+
     def build_knowledge_base_findings(self, state: WorkflowState) -> list[str]:
         return self._selected_findings_for_source(
             state,
@@ -296,6 +303,7 @@ class RCARules:
         selected_evidence = [
             *self._evidence_for_source(state, EvidenceSourceType.LOG),
             *self._selected_evidence_for_source(state, EvidenceSourceType.CODE, max_items=3),
+            *self._selected_evidence_for_source(state, EvidenceSourceType.GRAPH, max_items=2),
             *self._selected_evidence_for_source(
                 state,
                 EvidenceSourceType.KNOWLEDGE_BASE,
@@ -622,7 +630,7 @@ class RCARules:
         if not selected_items:
             return evidence_items
 
-        if source_type == EvidenceSourceType.CODE:
+        if source_type in {EvidenceSourceType.CODE, EvidenceSourceType.GRAPH}:
             return self._prefer_primary_code_evidence(selected_items, signals)
 
         return selected_items
@@ -704,7 +712,115 @@ class RCARules:
                 f"{self._shorten(content)}"
             )
 
+        if evidence.source_type == EvidenceSourceType.GRAPH:
+            graph_details = self._graph_detail_text(evidence)
+            if graph_details:
+                return f"{location} shows structural code relationship: {graph_details}"
+            return f"{location} shows structural code relationship relevant to the incident."
+
         return f"{location} supports the RCA: {self._shorten(content)}"
+
+    def _graph_detail_text(self, evidence: EvidenceItem) -> str:
+        details: list[str] = []
+
+        calls = self._focused_graph_values(
+            evidence.metadata.get("calls", ""),
+            exclude_uppercase_names=True,
+        )
+        called_by = self._focused_graph_values(
+            evidence.metadata.get("called_by", ""),
+            exclude_prefixes=("test_",),
+        )
+        config_keys = self._focused_graph_values(
+            evidence.metadata.get("config_keys", ""),
+            limit=3,
+        )
+        config_readers = self._focused_graph_values(
+            evidence.metadata.get("config_readers", ""),
+            limit=3,
+        )
+        imported_by = self._focused_graph_values(
+            evidence.metadata.get("imported_by", ""),
+            limit=3,
+            exclude_prefixes=("tests/", "eval/", "src/ui/"),
+        )
+
+        if config_readers and config_keys:
+            reader_text = ", ".join(config_readers)
+            key_text = ", ".join(config_keys)
+            details.append(f"uses config from {reader_text}, which reads {key_text}")
+            calls = [call for call in calls if call not in set(config_readers)]
+        elif config_keys:
+            details.append(f"reads config keys {', '.join(config_keys)}")
+        if calls:
+            details.append(f"calls {', '.join(calls)}")
+        if called_by:
+            details.append(f"called by {', '.join(called_by)}")
+        if imported_by:
+            details.append(f"imported by {', '.join(imported_by)}")
+
+        if details:
+            return "; ".join(details) + "."
+
+        return self._shorten(" ".join(evidence.content.split()))
+
+    def _focused_graph_values(
+        self,
+        value: str,
+        *,
+        limit: int = 5,
+        exclude_prefixes: tuple[str, ...] = (),
+        exclude_uppercase_names: bool = False,
+    ) -> list[str]:
+        noisy_values = {
+            "dict",
+            "float",
+            "int",
+            "len",
+            "list",
+            "round",
+            "set",
+            "str",
+            "time.perf_counter",
+            "traceable",
+            "zip",
+            "doc.metadata.get",
+            "logger.debug",
+            "logger.error",
+            "logger.info",
+            "logger.warning",
+            "ranked_documents.sort",
+            "reranker_model.predict",
+            "scored_docs.sort",
+            "st.error",
+            "st.warning",
+        }
+        noisy_suffixes = (
+            ".append",
+            ".extend",
+            ".get",
+            ".items",
+            ".keys",
+            ".predict",
+            ".sort",
+            ".values",
+        )
+        values: list[str] = []
+
+        for raw_item in value.split(","):
+            item = raw_item.strip()
+            normalized = item.lower()
+            if not item or normalized in noisy_values:
+                continue
+            if any(normalized.endswith(suffix) for suffix in noisy_suffixes):
+                continue
+            if exclude_uppercase_names and item[:1].isupper() and "." not in item:
+                continue
+            if any(normalized.startswith(prefix) for prefix in exclude_prefixes):
+                continue
+            values.append(item)
+
+        return self.unique(values)[:limit]
 
     def _path_aware_code_summary(self, path: str, location: str) -> str | None:
         normalized_path = path.lower()
@@ -780,6 +896,11 @@ class RCARules:
                 self._display_path(evidence.file_path or evidence.source_name).lower(),
                 signals,
             )
+        if evidence.source_type == EvidenceSourceType.GRAPH:
+            score += self._graph_finding_penalty(
+                self._display_path(evidence.file_path or evidence.source_name).lower(),
+                signals,
+            )
 
         return score
 
@@ -823,6 +944,23 @@ class RCARules:
 
         return penalty
 
+    def _graph_finding_penalty(self, path: str, signals: set[str]) -> float:
+        penalty = 0.0
+
+        penalty += self.code_path_rules.support_adjustment(
+            path,
+            signals,
+            penalty=-8.0,
+            mention_bonus=0.5,
+        )
+
+        if path.startswith("src/"):
+            penalty += 2.0
+        if path.endswith("__init__.py"):
+            penalty -= 2.0
+
+        return penalty
+
     def _shorten(self, value: str, *, max_length: int = 180) -> str:
         if len(value) <= max_length:
             return value
@@ -839,7 +977,7 @@ class RCARules:
         return location
 
     def _symbol_name(self, evidence: EvidenceItem) -> str | None:
-        if evidence.source_type != EvidenceSourceType.CODE:
+        if evidence.source_type not in {EvidenceSourceType.CODE, EvidenceSourceType.GRAPH}:
             return None
 
         qualified_symbol = evidence.metadata.get("qualified_symbol")

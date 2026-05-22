@@ -276,6 +276,8 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
             f"Title: {rca_report.title}\n"
             f"Root cause: {rca_report.root_cause}\n"
             f"Technical explanation: {rca_report.technical_explanation}\n"
+            "Graph findings:\n"
+            f"{self._format_list(rca_report.graph_findings)}\n"
             f"Immediate fix baseline: {rca_report.immediate_fix or 'not specified'}\n"
             f"Long-term prevention baseline: "
             f"{rca_report.long_term_prevention or 'not specified'}\n"
@@ -294,3 +296,8 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
             "Return concrete immediate steps, long-term steps, tests to add, "
             "monitoring improvements, risk notes, confidence, and evidence IDs."
         )
+
+    def _format_list(self, values: list[str]) -> str:
+        if not values:
+            return "- None"
+        return "\n".join(f"- {value}" for value in values)

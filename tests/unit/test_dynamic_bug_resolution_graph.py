@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from bug_resolver.agents import (
+    CodeGraphInvestigatorAgent,
     CodeInvestigatorAgent,
     EvidenceEvaluatorAgent,
     KnowledgeBaseInvestigatorAgent,
@@ -21,7 +22,9 @@ from bug_resolver.schemas import (
     AgentName,
     AgentRunStatus,
     CodeContext,
+    CodeGraphContext,
     EvidenceEvaluationResult,
+    EvidenceSourceType,
     Incident,
     InvestigationStatus,
     KnowledgeContext,
@@ -92,6 +95,24 @@ class FakeLogProvider:
         ]
 
 
+class StructuralHintLogProvider:
+    """Return log evidence that explicitly asks for structural relationships."""
+
+    async def get_logs(self, incident_id: str) -> list[LogEntry]:
+        return [
+            LogEntry(
+                log_id="log-structural",
+                level=LogLevel.WARNING,
+                message="Reranking config appears ineffective",
+                raw=(
+                    "structural_hint: which function reads RERANKING_MODEL_NAME "
+                    "and which request path calls rerank_documents_with_scores()?"
+                ),
+                service_name="conversational_rag",
+            )
+        ]
+
+
 class FakeCodeContextProvider:
     """Return one code context item that supports RCA generation."""
 
@@ -110,6 +131,36 @@ class FakeCodeContextProvider:
                 line_end=45,
                 snippet="def route_query(...): return response['output']",
                 relevance_score=0.91,
+            )
+        ]
+
+
+class FakeCodeGraphProvider:
+    """Return one structural graph context item for graph investigator tests."""
+
+    async def search_graph(
+        self,
+        queries: list[str],
+        *,
+        limit: int = 5,
+    ) -> list[CodeGraphContext]:
+        return [
+            CodeGraphContext(
+                context_id="src/rag/router.py:route_query",
+                file_path="src/rag/router.py",
+                relative_path="src/rag/router.py",
+                symbol_name="route_query",
+                symbol_type="function",
+                qualified_symbol="route_query",
+                line_start=40,
+                line_end=45,
+                calls=["parse_router_response"],
+                called_by=["answer_question"],
+                content=(
+                    "src/rag/router.py:route_query is called by answer_question "
+                    "and calls parse_router_response."
+                ),
+                relevance_score=0.9,
             )
         ]
 
@@ -192,6 +243,7 @@ def make_graph_workflow(
     supervisor: FakeSupervisorAgent,
     *,
     evidence_evaluator_agent=None,
+    log_provider=None,
     knowledge_base_provider=None,
     max_steps: int = 12,
     max_replans: int = 2,
@@ -201,8 +253,9 @@ def make_graph_workflow(
         incident_provider=FakeIncidentProvider(),
         supervisor_agent=supervisor,  # type: ignore[arg-type]
         guardrail_engine=GuardrailEngine(),
-        log_investigator_agent=LogInvestigatorAgent(FakeLogProvider()),
+        log_investigator_agent=LogInvestigatorAgent(log_provider or FakeLogProvider()),
         code_investigator_agent=CodeInvestigatorAgent(FakeCodeContextProvider()),
+        code_graph_investigator_agent=CodeGraphInvestigatorAgent(FakeCodeGraphProvider()),
         knowledge_base_investigator_agent=KnowledgeBaseInvestigatorAgent(
             knowledge_base_provider or EmptyKnowledgeBaseProvider()
         ),
@@ -262,6 +315,32 @@ async def test_graph_workflow_falls_back_to_logs_when_rca_is_chosen_before_evide
     assert state.trace.steps[0].run_status == AgentRunStatus.BLOCKED
     assert state.trace.steps[1].agent_name == AgentName.LOG_INVESTIGATOR
     assert state.trace.steps[1].run_status == AgentRunStatus.SUCCEEDED
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_routes_to_graph_investigator() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+            decision("decision-3", AgentName.GRAPH_INVESTIGATOR, ["route_query callers"]),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        log_provider=StructuralHintLogProvider(),
+    )
+
+    state = await workflow.run("INC-001")
+
+    assert supervisor.call_count == 3
+    assert any(step.agent_name == AgentName.GRAPH_INVESTIGATOR for step in state.trace.steps)
+    assert any(
+        evidence.source_type == EvidenceSourceType.GRAPH
+        and evidence.metadata["qualified_symbol"] == "route_query"
+        for evidence in state.evidence_items
+    )
+    assert state.investigation_status == InvestigationStatus.COMPLETED
 
 
 @pytest.mark.asyncio

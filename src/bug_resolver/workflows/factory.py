@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from bug_resolver.agents import (
+    CodeGraphInvestigatorAgent,
     CodeInvestigatorAgent,
     EvidenceEvaluatorAgent,
     KnowledgeBaseInvestigatorAgent,
@@ -18,6 +19,7 @@ from bug_resolver.llm.openai_llm_client import OpenAILLMClient
 from bug_resolver.providers.code.faiss_code_context_provider import (
     FAISSCodeContextProvider,
 )
+from bug_resolver.providers.graph import PythonASTCodeGraphProvider
 from bug_resolver.providers.incident.file_incident_provider import FileIncidentProvider
 from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
     LocalKnowledgeBaseProvider,
@@ -59,6 +61,9 @@ async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionW
                 vector_store=vector_store,
                 embedding_client=embedding_client,
             )
+        ),
+        code_graph_investigator_agent=CodeGraphInvestigatorAgent(
+            PythonASTCodeGraphProvider(settings.target_repo_path)
         ),
         knowledge_base_investigator_agent=KnowledgeBaseInvestigatorAgent(
             LocalKnowledgeBaseProvider(settings.knowledge_base_dir)

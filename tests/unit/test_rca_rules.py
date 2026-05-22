@@ -505,6 +505,178 @@ def test_reranker_rca_evidence_ids_include_ranking_code_and_kb() -> None:
     assert "kb-routing" not in evidence_ids
 
 
+def test_rca_evidence_ids_include_selected_graph_evidence() -> None:
+    state = make_state(
+        title="Reranker silently keeps original retrieval order",
+        description=(
+            "Answers cite unrelated sources after deployment. Logs mention reranking "
+            "model configuration and unchanged document order."
+        ),
+        affected_area="retrieval quality",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="app.log",
+        content="reranker_model=null scores=0.0 order_changed=false",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/reranker.py",
+        file_path="src/reranker.py",
+        content="def rerank_documents(...): return documents",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-graph",
+        source_type=EvidenceSourceType.GRAPH,
+        source_name="src/reranker.py",
+        file_path="src/reranker.py",
+        content=(
+            "src/reranker.py:rerank_documents calls load_reranker and reads "
+            "RERANKING_MODEL_NAME."
+        ),
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-unrelated-graph",
+        source_type=EvidenceSourceType.GRAPH,
+        source_name="src/upload.py",
+        file_path="src/upload.py",
+        content="src/upload.py:handle_upload calls save_file.",
+    )
+
+    evidence_ids = RCARules().evidence_ids(state)
+
+    assert "ev-log" in evidence_ids
+    assert "ev-code" in evidence_ids
+    assert "ev-graph" in evidence_ids
+    assert "ev-unrelated-graph" not in evidence_ids
+
+
+def test_graph_findings_describe_structural_relationships() -> None:
+    state = make_state(
+        title="Reranker config value does not affect answer ranking",
+        description=(
+            "The investigation needs to identify which function reads "
+            "RERANKING_MODEL_NAME and which request path calls reranking."
+        ),
+        affected_area="retrieval ranking configuration",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="app.log",
+        content="structural_hint caller chain RERANKING_MODEL_NAME",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/reranker.py",
+        file_path="src/reranker.py",
+        content="def rerank_documents_with_scores(...): pass",
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-graph",
+            source_type=EvidenceSourceType.GRAPH,
+            source_name="src/reranker.py",
+            file_path="src/reranker.py",
+            content="Graph evidence for rerank_documents_with_scores.",
+            metadata={
+                "qualified_symbol": "rerank_documents_with_scores",
+                "calls": (
+                    "load_reranker, doc.metadata.get, ranked_documents.sort, "
+                    "reranker_model.predict, zip"
+                ),
+                "called_by": "answer_question, test_reranker_flow",
+                "config_keys": "RERANKING_MODEL_NAME",
+                "config_readers": "load_reranker",
+            },
+        )
+    )
+
+    findings = RCARules().build_graph_findings(state)
+
+    assert findings == [
+        (
+            "src/reranker.py:rerank_documents_with_scores shows structural code "
+            "relationship: uses config from load_reranker, which reads "
+            "RERANKING_MODEL_NAME; called by answer_question."
+        )
+    ]
+    assert "doc.metadata.get" not in findings[0]
+    assert "ranked_documents.sort" not in findings[0]
+    assert "reranker_model.predict" not in findings[0]
+    assert "test_reranker_flow" not in findings[0]
+    assert "zip" not in findings[0]
+
+
+def test_graph_findings_prefer_implementation_evidence_over_tests() -> None:
+    state = make_state(
+        title="Reranker config value does not affect answer ranking",
+        description=(
+            "The investigation needs the caller chain for reranking and "
+            "RERANKING_MODEL_NAME."
+        ),
+        affected_area="retrieval ranking configuration",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="app.log",
+        content="structural_hint caller chain RERANKING_MODEL_NAME reranker_model=null",
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-graph-src",
+            source_type=EvidenceSourceType.GRAPH,
+            source_name="src/reranker.py",
+            file_path="src/reranker.py",
+            content="rerank_documents_with_scores uses reranker config.",
+            relevance_score=0.7,
+            metadata={
+                "qualified_symbol": "rerank_documents_with_scores",
+                "config_keys": "RERANKING_MODEL_NAME",
+                "config_readers": "load_reranker",
+            },
+        )
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-graph-test",
+            source_type=EvidenceSourceType.GRAPH,
+            source_name="tests/rag/test_service.py",
+            file_path="tests/rag/test_service.py",
+            content=(
+                "test reranking caller chain RERANKING_MODEL_NAME retrieval "
+                "strategy config model scores"
+            ),
+            relevance_score=0.99,
+            metadata={
+                "qualified_symbol": "test_stream_response_reranking",
+                "config_keys": "RERANKING_MODEL_NAME",
+                "calls": "patch, mock_router.assert_called_once_with",
+            },
+        )
+    )
+
+    findings = RCARules().build_graph_findings(state)
+    evidence_ids = RCARules().evidence_ids(state)
+    joined_findings = "\n".join(findings)
+
+    assert "src/reranker.py:rerank_documents_with_scores" in joined_findings
+    assert "tests/rag/test_service.py" not in joined_findings
+    assert "ev-graph-src" in evidence_ids
+    assert "ev-graph-test" not in evidence_ids
+
+
 def test_generic_findings_are_kept_when_only_one_item_exists() -> None:
     state = make_state(
         title="Unknown incident",
