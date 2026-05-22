@@ -31,6 +31,7 @@ class CodeGraphContext(StrictBaseModel):
     imports: list[str] = Field(default_factory=list)
     imported_by: list[str] = Field(default_factory=list)
     config_keys: list[str] = Field(default_factory=list)
+    config_readers: list[str] = Field(default_factory=list)
 
     content: str = Field(..., min_length=1)
     retrieval_query: str | None = None
@@ -66,6 +67,8 @@ class CodeGraphContext(StrictBaseModel):
             metadata["imported_by"] = ", ".join(self.imported_by)
         if self.config_keys:
             metadata["config_keys"] = ", ".join(self.config_keys)
+        if self.config_readers:
+            metadata["config_readers"] = ", ".join(self.config_readers)
 
         return EvidenceItem(
             evidence_id=f"graph-{self._normalize_context_id(self.context_id)}",

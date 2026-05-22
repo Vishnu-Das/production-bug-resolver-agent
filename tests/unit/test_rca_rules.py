@@ -590,9 +590,13 @@ def test_graph_findings_describe_structural_relationships() -> None:
             content="Graph evidence for rerank_documents_with_scores.",
             metadata={
                 "qualified_symbol": "rerank_documents_with_scores",
-                "calls": "load_reranker",
-                "called_by": "answer_question",
+                "calls": (
+                    "load_reranker, doc.metadata.get, ranked_documents.sort, "
+                    "reranker_model.predict, zip"
+                ),
+                "called_by": "answer_question, test_reranker_flow",
                 "config_keys": "RERANKING_MODEL_NAME",
+                "config_readers": "load_reranker",
             },
         )
     )
@@ -602,10 +606,15 @@ def test_graph_findings_describe_structural_relationships() -> None:
     assert findings == [
         (
             "src/reranker.py:rerank_documents_with_scores shows structural code "
-            "relationship: calls load_reranker; called by answer_question; reads "
-            "config keys RERANKING_MODEL_NAME."
+            "relationship: uses config from load_reranker, which reads "
+            "RERANKING_MODEL_NAME; called by answer_question."
         )
     ]
+    assert "doc.metadata.get" not in findings[0]
+    assert "ranked_documents.sort" not in findings[0]
+    assert "reranker_model.predict" not in findings[0]
+    assert "test_reranker_flow" not in findings[0]
+    assert "zip" not in findings[0]
 
 
 def test_generic_findings_are_kept_when_only_one_item_exists() -> None:

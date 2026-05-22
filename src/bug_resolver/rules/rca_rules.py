@@ -723,24 +723,39 @@ class RCARules:
     def _graph_detail_text(self, evidence: EvidenceItem) -> str:
         details: list[str] = []
 
-        calls = self._focused_graph_values(evidence.metadata.get("calls", ""))
-        called_by = self._focused_graph_values(evidence.metadata.get("called_by", ""))
+        calls = self._focused_graph_values(
+            evidence.metadata.get("calls", ""),
+            exclude_uppercase_names=True,
+        )
+        called_by = self._focused_graph_values(
+            evidence.metadata.get("called_by", ""),
+            exclude_prefixes=("test_",),
+        )
         config_keys = self._focused_graph_values(
             evidence.metadata.get("config_keys", ""),
+            limit=3,
+        )
+        config_readers = self._focused_graph_values(
+            evidence.metadata.get("config_readers", ""),
             limit=3,
         )
         imported_by = self._focused_graph_values(
             evidence.metadata.get("imported_by", ""),
             limit=3,
-            exclude_prefixes=("tests/", "eval/"),
+            exclude_prefixes=("tests/", "eval/", "src/ui/"),
         )
 
+        if config_readers and config_keys:
+            reader_text = ", ".join(config_readers)
+            key_text = ", ".join(config_keys)
+            details.append(f"uses config from {reader_text}, which reads {key_text}")
+            calls = [call for call in calls if call not in set(config_readers)]
+        elif config_keys:
+            details.append(f"reads config keys {', '.join(config_keys)}")
         if calls:
             details.append(f"calls {', '.join(calls)}")
         if called_by:
             details.append(f"called by {', '.join(called_by)}")
-        if config_keys:
-            details.append(f"reads config keys {', '.join(config_keys)}")
         if imported_by:
             details.append(f"imported by {', '.join(imported_by)}")
 
@@ -755,6 +770,7 @@ class RCARules:
         *,
         limit: int = 5,
         exclude_prefixes: tuple[str, ...] = (),
+        exclude_uppercase_names: bool = False,
     ) -> list[str]:
         noisy_values = {
             "dict",
@@ -768,13 +784,37 @@ class RCARules:
             "time.perf_counter",
             "traceable",
             "zip",
+            "doc.metadata.get",
+            "logger.debug",
+            "logger.error",
+            "logger.info",
+            "logger.warning",
+            "ranked_documents.sort",
+            "reranker_model.predict",
+            "scored_docs.sort",
+            "st.error",
+            "st.warning",
         }
+        noisy_suffixes = (
+            ".append",
+            ".extend",
+            ".get",
+            ".items",
+            ".keys",
+            ".predict",
+            ".sort",
+            ".values",
+        )
         values: list[str] = []
 
         for raw_item in value.split(","):
             item = raw_item.strip()
             normalized = item.lower()
             if not item or normalized in noisy_values:
+                continue
+            if any(normalized.endswith(suffix) for suffix in noisy_suffixes):
+                continue
+            if exclude_uppercase_names and item[:1].isupper() and "." not in item:
                 continue
             if any(normalized.startswith(prefix) for prefix in exclude_prefixes):
                 continue

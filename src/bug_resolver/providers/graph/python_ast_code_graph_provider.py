@@ -30,6 +30,8 @@ class _SymbolRecord:
     imports: set[str] = field(default_factory=set)
     imported_by: set[str] = field(default_factory=set)
     config_keys: set[str] = field(default_factory=set)
+    config_readers: set[str] = field(default_factory=set)
+    module_dependency_calls: set[str] = field(default_factory=set)
 
     @property
     def context_id(self) -> str:
@@ -111,6 +113,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                 continue
 
             imports = self._module_imports(module)
+            module_assignment_calls = self._module_assignment_calls(module)
             lines = code_file.content.splitlines()
 
             for node in module.body:
@@ -123,6 +126,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                             symbol_name=node.name,
                             symbol_type="class",
                             imports=imports,
+                            module_assignment_calls=module_assignment_calls,
                         )
                     )
                     for child in node.body:
@@ -135,6 +139,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                                     symbol_name=child.name,
                                     symbol_type="async_method",
                                     imports=imports,
+                                    module_assignment_calls=module_assignment_calls,
                                     parent_symbol=node.name,
                                 )
                             )
@@ -147,6 +152,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                                     symbol_name=child.name,
                                     symbol_type="method",
                                     imports=imports,
+                                    module_assignment_calls=module_assignment_calls,
                                     parent_symbol=node.name,
                                 )
                             )
@@ -161,6 +167,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                             symbol_name=node.name,
                             symbol_type="async_function",
                             imports=imports,
+                            module_assignment_calls=module_assignment_calls,
                         )
                     )
                     continue
@@ -174,6 +181,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                             symbol_name=node.name,
                             symbol_type="function",
                             imports=imports,
+                            module_assignment_calls=module_assignment_calls,
                         )
                     )
 
@@ -192,6 +200,47 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
 
         return imports
 
+    def _module_assignment_calls(self, module: ast.Module) -> dict[str, set[str]]:
+        assignments: dict[str, set[str]] = {}
+
+        for node in module.body:
+            targets: list[ast.expr] = []
+            value: ast.expr | None = None
+
+            if isinstance(node, ast.Assign):
+                targets = list(node.targets)
+                value = node.value
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+                value = node.value
+
+            if value is None or not isinstance(value, ast.Call):
+                continue
+
+            call_name = self._call_name(value.func)
+            if not call_name:
+                continue
+
+            for target in targets:
+                target_name = self._assignment_target_name(target)
+                if target_name:
+                    assignments.setdefault(target_name, set()).add(call_name)
+
+        return assignments
+
+    def _assignment_target_name(self, node: ast.AST) -> str | None:
+        if isinstance(node, ast.Name):
+            return node.id
+
+        if isinstance(node, (ast.Tuple, ast.List)):
+            names = [
+                self._assignment_target_name(element)
+                for element in node.elts
+            ]
+            return next((name for name in names if name), None)
+
+        return None
+
     def _symbol_from_node(
         self,
         *,
@@ -201,6 +250,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
         symbol_name: str,
         symbol_type: str,
         imports: set[str],
+        module_assignment_calls: dict[str, set[str]],
         parent_symbol: str | None = None,
     ) -> _SymbolRecord:
         line_start = self._line_start(node)
@@ -220,6 +270,10 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
             calls=self._calls(node),
             imports=imports,
             config_keys=self._config_keys(node),
+            module_dependency_calls=self._module_dependency_calls(
+                node,
+                module_assignment_calls,
+            ),
         )
 
     def _calls(self, node: ast.AST) -> set[str]:
@@ -251,7 +305,31 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                 if isinstance(value, str) and value:
                     config_keys.add(value)
 
+        config_keys.update(self._uppercase_names(node))
         return config_keys
+
+    def _uppercase_names(self, node: ast.AST) -> set[str]:
+        config_names: set[str] = set()
+
+        for child in ast.walk(node):
+            if isinstance(child, ast.Name) and child.id.isupper() and len(child.id) > 2:
+                config_names.add(child.id)
+
+        return config_names
+
+    def _module_dependency_calls(
+        self,
+        node: ast.AST,
+        module_assignment_calls: dict[str, set[str]],
+    ) -> set[str]:
+        dependency_calls: set[str] = set()
+
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Name):
+                continue
+            dependency_calls.update(module_assignment_calls.get(child.id, set()))
+
+        return dependency_calls
 
     def _call_name(self, node: ast.AST) -> str | None:
         if isinstance(node, ast.Name):
@@ -285,6 +363,19 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                         continue
                     callee.called_by.add(caller.qualified_symbol)
                     caller.config_keys.update(callee.config_keys)
+                    if callee.config_keys:
+                        caller.config_readers.add(callee.qualified_symbol)
+                    caller.config_readers.update(callee.config_readers)
+
+            for dependency_call in caller.module_dependency_calls:
+                call_leaf = dependency_call.rsplit(".", maxsplit=1)[-1]
+                for callee in by_name.get(call_leaf, []):
+                    if callee is caller:
+                        continue
+                    caller.config_keys.update(callee.config_keys)
+                    if callee.config_keys:
+                        caller.config_readers.add(callee.qualified_symbol)
+                    caller.config_readers.update(callee.config_readers)
 
             for imported_module in caller.imports:
                 for imported_symbol in by_import_name.get(imported_module, []):
@@ -309,6 +400,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                 " ".join(symbol.imports),
                 " ".join(symbol.imported_by),
                 " ".join(symbol.config_keys),
+                " ".join(symbol.config_readers),
                 symbol.snippet,
             ]
         )
@@ -354,6 +446,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
             imports=sorted(symbol.imports),
             imported_by=sorted(symbol.imported_by),
             config_keys=sorted(symbol.config_keys),
+            config_readers=sorted(symbol.config_readers),
             content=content,
             retrieval_query=query,
             relevance_score=min(relevance_score / 12, 1.0),
@@ -374,6 +467,11 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
             parts.append(f"Called by: {', '.join(sorted(symbol.called_by))}.")
         if symbol.config_keys:
             parts.append(f"Reads config keys: {', '.join(sorted(symbol.config_keys))}.")
+        if symbol.config_readers:
+            parts.append(
+                "Config readers: "
+                f"{', '.join(sorted(symbol.config_readers))}."
+            )
         if symbol.imports:
             parts.append(f"Imports: {', '.join(sorted(symbol.imports))}.")
 

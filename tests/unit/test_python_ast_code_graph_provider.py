@@ -56,6 +56,7 @@ def rerank_documents(documents):
     assert "rerank_documents" in load_context.called_by
     assert "load_reranker" in rerank_context.calls
     assert "RERANKING_MODEL_NAME" in rerank_context.config_keys
+    assert rerank_context.config_readers == ["load_reranker"]
 
 
 @pytest.mark.asyncio
@@ -116,3 +117,42 @@ def load_config():
     assert evidence.evidence_id == "graph-src/settings.py:load_config"
     assert evidence.metadata["qualified_symbol"] == "load_config"
     assert evidence.metadata["provider"] == "python_ast_code_graph"
+
+
+@pytest.mark.asyncio
+async def test_python_ast_code_graph_provider_includes_config_reader_metadata(
+    tmp_path: Path,
+) -> None:
+    write_file(
+        tmp_path / "src" / "reranker.py",
+        """
+import os
+
+
+def load_reranker():
+    return CrossEncoder(RERANKING_MODEL_NAME)
+
+
+reranker_model = load_reranker()
+
+
+def rerank_documents_with_scores(documents):
+    scores = reranker_model.predict(documents)
+    return scores
+""".strip(),
+    )
+    provider = PythonASTCodeGraphProvider(tmp_path)
+
+    contexts = await provider.search_graph(
+        ["rerank_documents_with_scores RERANKING_MODEL_NAME"],
+        limit=5,
+    )
+    context = next(
+        item
+        for item in contexts
+        if item.qualified_symbol == "rerank_documents_with_scores"
+    )
+    evidence = context.to_evidence_item()
+
+    assert context.config_readers == ["load_reranker"]
+    assert evidence.metadata["config_readers"] == "load_reranker"

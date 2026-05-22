@@ -1,17 +1,18 @@
-# RCA Report for INC-009: Reranker Config Issue
+# RCA Report for Incident INC-009: Reranker Config Value Does Not Affect Answer Ranking
 
 ## Incident Summary
 
-After deployment, it was observed that the configuration value `RERANKING_MODEL_NAME` did not affect the answer ranking in the conversational RAG service. Consequently, answer citations appeared unrelated, and the original order of answers was maintained inappropriately, which necessitated an investigation into the reranking behavior and the function responsible for reading the reranker configuration.
+After the deployment, the conversational_rag service exhibited behavior where the expected reranking based on the RERANKING_MODEL_NAME configuration did not occur. The ranked document order remained unchanged, and the scores were consistently neutral, leading the team to investigate the root cause of this issue.
 
 ## Impact
 
-The incident has a high severity as it affects the retrieval ranking configuration, leading to potential miscommunication with users and inaccurate information retrieval.
+The retrieval process's effectiveness is critically impacted, as users receive answers that do not reflect appropriate ranking, potentially degrading user experience and trust in the system.
 
 ## Symptoms
 
-- Answer citations look unrelated.
-- Reranking appears to keep the original order of documents.
+- Reranking did not change the order of documents returned
+- Neutral scores were observed in the reranking process
+- Warnings about null reranker model in logs were noted
 
 ## Log Findings
 
@@ -27,8 +28,8 @@ The incident has a high severity as it affects the retrieval ranking configurati
 
 ## Graph Findings
 
-- src/reranker.py:rerank_documents_with_scores shows structural code relationship: calls RankedDocument, doc.metadata.get, ranked_documents.sort, reranker_model.predict; called by process_documents_with_scores; imported by src/rag/pipeline.py.
-- src/reranker.py:rerank_documents shows structural code relationship: calls reranker_model.predict, scored_docs.sort; called by process_documents, stream_response; imported by src/rag/pipeline.py.
+- src/reranker.py:rerank_documents_with_scores shows structural code relationship: uses config from load_reranker, which reads RERANKING_MODEL_NAME; called by process_documents_with_scores; imported by src/rag/pipeline.py.
+- src/reranker.py:rerank_documents shows structural code relationship: uses config from load_reranker, which reads RERANKING_MODEL_NAME; called by process_documents, stream_response; imported by src/rag/pipeline.py.
 
 ## Knowledge Base Findings
 
@@ -36,23 +37,23 @@ The incident has a high severity as it affects the retrieval ranking configurati
 
 ## Hypotheses Considered
 
-- H1: The reranker model configuration is not being loaded correctly at startup.
-- H2: The reranker implementation is bypassing the configuration check leading to neutral score generation.
+- H1: The RERANKING_MODEL_NAME was not properly set during deployment, leading to no effective reranker model being loaded.
+- H2: The reranking function is not correctly calling or using the configured reranking model.
 
 ## Final Root Cause
 
-The reranker model configuration was absent, and the reranker path silently returned the original retrieval order with neutral scores instead of warning or failing through an explicit fallback policy.
+The reranker model configuration was absent, causing the reranker path to silently return the original retrieval order with neutral scores instead of warning or failing through an explicit fallback policy.
 
 ## Technical Explanation
 
-Runtime logs indicate that the hybrid retrieval returned candidates, but the reranking reported a null model with neutral scores and unchanged ordering. The code evidence shows that missing model configuration can return unreranked documents instead of surfacing a clear warning or initialization error.
+Runtime logs indicate that the hybrid retrieval returned documents, but when the reranking function was invoked, it encountered a null model, leading to neutral scores and unchanged document order. The code in the reranking path clearly indicates that without a valid model, the system defaults to return documents in the original order instead of throwing an error or warning.
 
 ## Evidence
 
-- EVID-LOG-C78F4C2A
-- EVID-LOG-64541C3D
-- EVID-LOG-128E5BB6
-- EVID-LOG-419A38F7
+- EVID-LOG-C59D775C
+- EVID-LOG-8CFB6413
+- EVID-LOG-C617C101
+- EVID-LOG-4A5B22C2
 - src/reranker.py:rerank_documents
 - src/reranker.py:rerank_documents_with_scores
 - src/reranker.py:load_reranker
@@ -63,7 +64,7 @@ Runtime logs indicate that the hybrid retrieval returned candidates, but the rer
 
 Score: 0.8
 
-Reason: Confidence is high because logs show missing reranker configuration, neutral rerank scores, and unchanged ordering; code and knowledge-base evidence explain that silent reranker bypass degrades retrieval quality.
+Reason: Confidence is high due to log entries that indicate a missing reranker configuration, combined with neutral rerank scores and unchanged ordering, corroborated by the supporting code behavior.
 
 ## Recommended Fix
 
@@ -71,17 +72,17 @@ Require `RERANKING_MODEL_NAME` or an explicit reranking-disabled mode at startup
 
 ## Preventive Actions
 
-Implement a validation step at startup to ensure required configurations are set correctly, and enhance logging to capture configuration issues more effectively.
+Implement rigorous configuration management practices and validation checks during deployment to ensure critical configurations are set. Additionally, improve logging to explicitly highlight configuration issues.
 
 ## Tests to Add
 
-- Test cases to validate that the `RERANKING_MODEL_NAME` is loaded correctly and triggers reranking behavior.
-- Unit tests to ensure that correct warnings are raised when the model configuration is missing.
+- Validate that a configured `RERANKING_MODEL_NAME` activates the reranking process properly and produces varying document scores.
+- Introduce tests to confirm that missing reranker configurations produce immediate errors instead of silently falling back to original ordering.
 
 ## Open Questions
 
-- What specific scenarios lead to the reranker model being null?
-- Are there other configurations that might not be properly validated?
+- What processes exist to verify that configuration values are correctly set before deployment?
+- How can we enhance our logging framework to catch such configuration issues early?
 
 ## Low Confidence Warning
 
