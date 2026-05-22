@@ -156,3 +156,45 @@ def rerank_documents_with_scores(documents):
 
     assert context.config_readers == ["load_reranker"]
     assert evidence.metadata["config_readers"] == "load_reranker"
+
+
+@pytest.mark.asyncio
+async def test_python_ast_code_graph_provider_prefers_source_symbols_over_tests(
+    tmp_path: Path,
+) -> None:
+    write_file(
+        tmp_path / "src" / "reranker.py",
+        """
+import os
+
+
+def load_reranker():
+    return os.getenv("RERANKING_MODEL_NAME")
+
+
+reranker_model = load_reranker()
+
+
+def rerank_documents_with_scores(documents):
+    return reranker_model.predict(documents)
+""".strip(),
+    )
+    write_file(
+        tmp_path / "tests" / "rag" / "test_service.py",
+        """
+def test_stream_response_reranking_config_path(mock_router, mock_retriever):
+    mock_router.route.assert_called_once_with("reranking")
+    mock_retriever.retrieve.assert_called_once_with("RERANKING_MODEL_NAME")
+""".strip(),
+    )
+
+    provider = PythonASTCodeGraphProvider(tmp_path)
+
+    contexts = await provider.search_graph(
+        ["caller chain reranking RERANKING_MODEL_NAME"],
+        limit=2,
+    )
+
+    assert contexts
+    assert contexts[0].relative_path == "src/reranker.py"
+    assert all(not context.relative_path.startswith("tests/") for context in contexts)

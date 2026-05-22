@@ -9,6 +9,7 @@ from pathlib import Path
 
 from bug_resolver.providers.graph.base import CodeGraphProvider
 from bug_resolver.retrieval.code_file_loader import CodeFile, CodeFileLoader
+from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.schemas import CodeGraphContext
 
 
@@ -52,6 +53,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
             repo_path,
             supported_extensions={".py"},
         )
+        self._path_rules = CodeEvidencePathRules()
         self._symbols: list[_SymbolRecord] | None = None
 
     async def search_graph(
@@ -421,6 +423,15 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
             score += 0.5
         if symbol.calls:
             score += 0.5
+        if symbol.relative_path.startswith("src/"):
+            score += 1.0
+
+        score += self._path_rules.support_adjustment(
+            symbol.relative_path,
+            query_tokens,
+            penalty=-6.0,
+            mention_bonus=1.0,
+        )
 
         return score
 

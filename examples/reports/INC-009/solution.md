@@ -2,44 +2,43 @@
 
 ## Summary
 
-The recommended solution aims to address the absence of the reranker model configuration and the silent fallback to neutral scores, enhancing error handling and configuration management in the system.
+The reranker model configuration was absent, and the reranker path silently returned the original retrieval order with neutral scores instead of warning or failing through an explicit fallback policy.
 
 ## Immediate Steps
 
-- Require `RERANKING_MODEL_NAME` or an explicit reranking-disabled mode at startup.
-- Replace silent neutral-score fallback with a clear warning or fail-fast configuration error.
+- Require `RERANKING_MODEL_NAME` or an explicit reranking-disabled mode at startup, and replace silent neutral-score fallback with a clear warning or fail-fast configuration error.
 - Reproduce the incident locally using the same failure scenario.
-- Verify the fix against log symptoms and selected RCA evidence.
+- Verify the fix against the log symptoms and selected RCA evidence.
 - Validate the caller/callee, config-reader, or ownership path identified by graph evidence before applying the fix.
 
 ## Long-Term Steps
 
-- Implement rigorous configuration management practices and validation checks during deployment to ensure critical configurations are set.
-- Improve logging to explicitly highlight configuration issues.
-- Add input and output contract checks around the implicated code path.
-- Document the expected behavior and failure mode for future incidents.
+- Add regression tests to ensure the reranking model configuration is validated on startup.
+- Centralize retrieval strategy validation to ensure consistency across components.
+- Improve structured error handling for better visibility on failures.
+- Log raw router outputs when fallback occurs for easier troubleshooting.
 
 ## Tests to Add
 
-- Validate that a configured `RERANKING_MODEL_NAME` activates the reranking process properly and produces varying document scores.
-- Introduce tests to confirm that missing reranker configurations produce immediate errors instead of silently falling back to original ordering.
+- Add a startup/configuration test that fails or warns clearly when `RERANKING_MODEL_NAME` is missing.
+- Add a retrieval pipeline test proving reranking changes candidate ordering or reports an explicit disabled state.
 
 ## Monitoring Improvements
 
-- Add structured logging around the implicated code path.
+- Add structured logging around the implicated code path to capture significant events and errors.
 - Log request or trace identifiers with the error when available.
 
 ## Risk Notes
 
-- There is a risk of similar configuration errors occurring if validation checks are not adequately enforced during deployment.
-- Existing logging may not provide sufficient detail to diagnose future incidents unless improvements are made.
+- Without immediate action, the system may continue to silently fail in reranking scenarios, leading to degraded user experience.
+- Failure to properly address the rerank configuration can cause future incidents or regressions.
 
 ## Evidence
 
-- EVID-LOG-C59D775C
-- EVID-LOG-8CFB6413
-- EVID-LOG-C617C101
-- EVID-LOG-4A5B22C2
+- EVID-LOG-0BDA6CF6
+- EVID-LOG-D9DFE519
+- EVID-LOG-151776A2
+- EVID-LOG-71A472F9
 - src/reranker.py:rerank_documents
 - src/reranker.py:rerank_documents_with_scores
 - src/reranker.py:load_reranker
@@ -54,8 +53,8 @@ The recommended solution aims to address the absence of the reranker model confi
 
 ## Metadata
 
-- recommendation_id: SOL-20260522-664EF6EC
-- rca_report_id: RCA-20260522-366DBA1A
+- recommendation_id: SOL-20260522-469EC1AD
+- rca_report_id: RCA-20260522-E8A11C24
 - confidence_score: 0.8
 - solution_writer: llm
 - llm_output_validated: true

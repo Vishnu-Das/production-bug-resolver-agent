@@ -630,7 +630,7 @@ class RCARules:
         if not selected_items:
             return evidence_items
 
-        if source_type == EvidenceSourceType.CODE:
+        if source_type in {EvidenceSourceType.CODE, EvidenceSourceType.GRAPH}:
             return self._prefer_primary_code_evidence(selected_items, signals)
 
         return selected_items
@@ -896,6 +896,11 @@ class RCARules:
                 self._display_path(evidence.file_path or evidence.source_name).lower(),
                 signals,
             )
+        if evidence.source_type == EvidenceSourceType.GRAPH:
+            score += self._graph_finding_penalty(
+                self._display_path(evidence.file_path or evidence.source_name).lower(),
+                signals,
+            )
 
         return score
 
@@ -936,6 +941,23 @@ class RCARules:
             penalty -= 2.0
         if path.endswith((".json", ".yml", ".yaml", ".md")):
             penalty -= 1.5
+
+        return penalty
+
+    def _graph_finding_penalty(self, path: str, signals: set[str]) -> float:
+        penalty = 0.0
+
+        penalty += self.code_path_rules.support_adjustment(
+            path,
+            signals,
+            penalty=-8.0,
+            mention_bonus=0.5,
+        )
+
+        if path.startswith("src/"):
+            penalty += 2.0
+        if path.endswith("__init__.py"):
+            penalty -= 2.0
 
         return penalty
 

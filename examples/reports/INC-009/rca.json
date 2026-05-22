@@ -1,18 +1,21 @@
 {
-  "report_id": "RCA-20260522-366DBA1A",
+  "report_id": "RCA-20260522-E8A11C24",
   "incident_id": "INC-009",
-  "title": "RCA Report for Incident INC-009: Reranker Config Value Does Not Affect Answer Ranking",
-  "incident_summary": "After the deployment, the conversational_rag service exhibited behavior where the expected reranking based on the RERANKING_MODEL_NAME configuration did not occur. The ranked document order remained unchanged, and the scores were consistently neutral, leading the team to investigate the root cause of this issue.",
-  "impact": "The retrieval process's effectiveness is critically impacted, as users receive answers that do not reflect appropriate ranking, potentially degrading user experience and trust in the system.",
+  "title": "RCA for Reranker config value does not affect answer ranking",
+  "incident_summary": "Incident INC-009: After deployment, the team expected RERANKING_MODEL_NAME to control reranking behavior, but answer citations still look unrelated and reranking appears to keep the original order. The investigation needs to identify which function reads the reranker config and which request path calls reranking before response generation.",
+  "impact": "Affected service: conversational_rag. Affected area: retrieval ranking configuration.",
   "symptoms": [
-    "Reranking did not change the order of documents returned",
-    "Neutral scores were observed in the reranking process",
-    "Warnings about null reranker model in logs were noted"
-  ],
-  "log_findings": [
+    "After deployment, the team expected RERANKING_MODEL_NAME to control reranking behavior, but answer citations still look unrelated and reranking appears to keep the original order. The investigation needs to identify which function reads the reranker config and which request path calls reranking before response generation.",
     "2026-05-20T10:02:10Z INFO conversational_rag.config request_id=deploy_92a expected_config=\"RERANKING_MODEL_NAME\" deployment_profile=\"production-like\"",
+    "2026-05-20T10:05:44Z INFO conversational_rag.retrieval request_id=req_991a strategy=\"fusion\" retrieved_docs=10 query=\"what is the reimbursement deadline\"",
     "2026-05-20T10:05:44Z WARNING conversational_rag.reranker request_id=req_991a reranker_model=null ranked_docs=4 scores=\"0.0,0.0,0.0,0.0\" order_changed=false",
     "2026-05-20T10:05:45Z WARNING conversational_rag.diagnostics request_id=req_991a structural_hint=\"identify config reader for RERANKING_MODEL_NAME and caller chain for rerank_documents_with_scores\""
+  ],
+  "log_findings": [
+    "log-001 shows runtime signal: 2026-05-20T10:02:10Z INFO conversational_rag.config request_id=deploy_92a expected_config=\"RERANKING_MODEL_NAME\" deployment_profile=\"production-like\"",
+    "log-002 shows runtime signal: 2026-05-20T10:05:44Z INFO conversational_rag.retrieval request_id=req_991a strategy=\"fusion\" retrieved_docs=10 query=\"what is the reimbursement deadline\"",
+    "log-003 shows runtime signal: 2026-05-20T10:05:44Z WARNING conversational_rag.reranker request_id=req_991a reranker_model=null ranked_docs=4 scores=\"0.0,0.0,0.0,0.0\" order_changed=false",
+    "log-004 shows runtime signal: 2026-05-20T10:05:45Z WARNING conversational_rag.diagnostics request_id=req_991a structural_hint=\"identify config reader for RERANKING_MODEL_NAME and caller chain for rerank_docu..."
   ],
   "code_findings": [
     "src/reranker.py:rerank_documents loads the cross-encoder reranker and defines fallback behavior for scoring and ordering retrieved documents.",
@@ -25,17 +28,17 @@
   ],
   "knowledge_base_findings": [],
   "hypotheses_considered": [
-    "H1: The RERANKING_MODEL_NAME was not properly set during deployment, leading to no effective reranker model being loaded.",
-    "H2: The reranking function is not correctly calling or using the configured reranking model."
+    "H1: Retrieval quality degraded because reranking was silently bypassed when the reranker model configuration was missing.",
+    "H2: Hybrid retrieval returned candidate chunks, but answer quality fell because no cross-encoder scores reordered those candidates."
   ],
   "selected_hypothesis_id": "H1",
-  "root_cause": "The reranker model configuration was absent, causing the reranker path to silently return the original retrieval order with neutral scores instead of warning or failing through an explicit fallback policy.",
-  "technical_explanation": "Runtime logs indicate that the hybrid retrieval returned documents, but when the reranking function was invoked, it encountered a null model, leading to neutral scores and unchanged document order. The code in the reranking path clearly indicates that without a valid model, the system defaults to return documents in the original order instead of throwing an error or warning.",
+  "root_cause": "The reranker model configuration was absent, and the reranker path silently returned the original retrieval order with neutral scores instead of warning or failing through an explicit fallback policy.",
+  "technical_explanation": "Runtime logs show hybrid retrieval returned candidates, then reranking reported a null model with neutral scores and unchanged ordering. Code evidence from the reranker path shows missing model configuration can return unreranked documents instead of surfacing a clear warning or startup/configuration failure.",
   "evidence_ids": [
-    "EVID-LOG-C59D775C",
-    "EVID-LOG-8CFB6413",
-    "EVID-LOG-C617C101",
-    "EVID-LOG-4A5B22C2",
+    "EVID-LOG-0BDA6CF6",
+    "EVID-LOG-D9DFE519",
+    "EVID-LOG-151776A2",
+    "EVID-LOG-71A472F9",
     "evidence-src/reranker.py:rerank_documents",
     "evidence-src/reranker.py:rerank_documents_with_scores",
     "evidence-src/reranker.py:load_reranker",
@@ -43,23 +46,21 @@
     "graph-src/reranker.py:rerank_documents"
   ],
   "confidence_score": 0.8,
-  "confidence_reason": "Confidence is high due to log entries that indicate a missing reranker configuration, combined with neutral rerank scores and unchanged ordering, corroborated by the supporting code behavior.",
+  "confidence_reason": "Confidence is high because logs show missing reranker configuration, neutral rerank scores, and unchanged ordering; code and knowledge-base evidence explain that silent reranker bypass degrades retrieval quality.",
   "immediate_fix": "Require `RERANKING_MODEL_NAME` or an explicit reranking-disabled mode at startup, and replace silent neutral-score fallback with a clear warning or fail-fast configuration error.",
-  "long_term_prevention": "Implement rigorous configuration management practices and validation checks during deployment to ensure critical configurations are set. Additionally, improve logging to explicitly highlight configuration issues.",
+  "long_term_prevention": "Add regression tests, centralize retrieval strategy validation, improve structured error handling, and log raw router outputs when fallback occurs.",
   "tests_to_add": [
-    "Validate that a configured `RERANKING_MODEL_NAME` activates the reranking process properly and produces varying document scores.",
-    "Introduce tests to confirm that missing reranker configurations produce immediate errors instead of silently falling back to original ordering."
+    "Add a startup/configuration test that fails or warns clearly when `RERANKING_MODEL_NAME` is missing.",
+    "Add a retrieval pipeline test proving reranking changes candidate ordering or reports an explicit disabled state."
   ],
-  "open_questions": [
-    "What processes exist to verify that configuration values are correctly set before deployment?",
-    "How can we enhance our logging framework to catch such configuration issues early?"
-  ],
+  "open_questions": [],
   "low_confidence_warning": null,
   "metadata": {
     "evidence_count": "14",
     "dynamic_workflow": "true",
-    "rca_writer": "llm",
-    "llm_output_validated": "true",
-    "fallback_used": "false"
+    "rca_writer": "deterministic_fallback",
+    "llm_output_validated": "false",
+    "fallback_used": "true",
+    "fallback_reason": "internal_evidence_prefix_in_prose"
   }
 }
