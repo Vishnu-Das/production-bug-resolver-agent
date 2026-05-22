@@ -176,6 +176,65 @@ async def test_solution_recommendation_agent_keeps_all_rca_evidence_ids() -> Non
 
 
 @pytest.mark.asyncio
+async def test_solution_recommendation_agent_uses_graph_findings_in_fallback() -> None:
+    agent = SolutionRecommendationAgent()
+    rca_report = build_rca_report().model_copy(
+        update={
+            "graph_findings": [
+                (
+                    "src/reranker.py:rerank_documents_with_scores shows structural "
+                    "code relationship: calls load_reranker; reads config keys "
+                    "RERANKING_MODEL_NAME."
+                )
+            ],
+            "evidence_ids": [
+                "evidence-log-001",
+                "evidence-code-001",
+                "graph-src/reranker.py:rerank_documents_with_scores",
+            ],
+        }
+    )
+
+    result = await agent.run(rca_report)
+
+    assert (
+        "Validate the caller/callee, config-reader, or ownership path identified "
+        "by graph evidence before applying the fix."
+    ) in result.immediate_steps
+    assert any("graph-identified caller path" in test for test in result.tests_to_add)
+    assert "graph-src/reranker.py:rerank_documents_with_scores" in result.evidence_ids
+
+
+@pytest.mark.asyncio
+async def test_solution_recommendation_agent_prompt_includes_graph_findings() -> None:
+    rca_report = build_rca_report().model_copy(
+        update={
+            "graph_findings": [
+                "src/rag/router.py:route_query shows structural code relationship."
+            ]
+        }
+    )
+    llm = FakeSolutionLLM(
+        SolutionRecommendationOutput(
+            summary="LLM recommendation: guard router response access.",
+            immediate_steps=["Validate the router response shape."],
+            long_term_steps=["Use structured response contracts."],
+            tests_to_add=["Add missing output key regression test."],
+            monitoring_improvements=["Log invalid router response shape."],
+            risk_notes=[],
+            confidence_score=0.85,
+            evidence_ids=["evidence-log-001"],
+        )
+    )
+
+    await SolutionRecommendationAgent(llm_client=llm).run(rca_report)
+
+    assert llm.prompt is not None
+    assert "Graph findings:" in llm.prompt
+    assert "src/rag/router.py:route_query shows structural code relationship." in llm.prompt
+
+
+@pytest.mark.asyncio
 async def test_solution_recommendation_agent_falls_back_for_evidence_id_in_prose() -> None:
     rca_report = build_rca_report()
     llm = FakeSolutionLLM(

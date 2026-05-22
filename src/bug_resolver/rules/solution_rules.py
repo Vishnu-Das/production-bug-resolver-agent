@@ -28,6 +28,11 @@ class SolutionRules:
 
         steps.append("Reproduce the incident locally using the same failure scenario.")
         steps.append("Verify the fix against the log symptoms and selected RCA evidence.")
+        if rca_report.graph_findings:
+            steps.append(
+                "Validate the caller/callee, config-reader, or ownership path identified "
+                "by graph evidence before applying the fix."
+            )
 
         return self.unique(steps)
 
@@ -58,6 +63,12 @@ class SolutionRules:
         if not tests:
             tests.append("Add a regression test that reproduces the incident.")
             tests.append("Add a unit test for the suspected failing code path.")
+
+        if rca_report.graph_findings:
+            tests.append(
+                "Add an integration test that exercises the graph-identified caller path "
+                "and verifies the implicated config or function relationship."
+            )
 
         return self.unique(tests)
 

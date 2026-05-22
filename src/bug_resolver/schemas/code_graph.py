@@ -60,6 +60,10 @@ class CodeGraphContext(StrictBaseModel):
             metadata["calls"] = ", ".join(self.calls)
         if self.called_by:
             metadata["called_by"] = ", ".join(self.called_by)
+        if self.imports:
+            metadata["imports"] = ", ".join(self.imports)
+        if self.imported_by:
+            metadata["imported_by"] = ", ".join(self.imported_by)
         if self.config_keys:
             metadata["config_keys"] = ", ".join(self.config_keys)
 

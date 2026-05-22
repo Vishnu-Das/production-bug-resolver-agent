@@ -557,6 +557,57 @@ def test_rca_evidence_ids_include_selected_graph_evidence() -> None:
     assert "ev-unrelated-graph" not in evidence_ids
 
 
+def test_graph_findings_describe_structural_relationships() -> None:
+    state = make_state(
+        title="Reranker config value does not affect answer ranking",
+        description=(
+            "The investigation needs to identify which function reads "
+            "RERANKING_MODEL_NAME and which request path calls reranking."
+        ),
+        affected_area="retrieval ranking configuration",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="app.log",
+        content="structural_hint caller chain RERANKING_MODEL_NAME",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/reranker.py",
+        file_path="src/reranker.py",
+        content="def rerank_documents_with_scores(...): pass",
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-graph",
+            source_type=EvidenceSourceType.GRAPH,
+            source_name="src/reranker.py",
+            file_path="src/reranker.py",
+            content="Graph evidence for rerank_documents_with_scores.",
+            metadata={
+                "qualified_symbol": "rerank_documents_with_scores",
+                "calls": "load_reranker",
+                "called_by": "answer_question",
+                "config_keys": "RERANKING_MODEL_NAME",
+            },
+        )
+    )
+
+    findings = RCARules().build_graph_findings(state)
+
+    assert findings == [
+        (
+            "src/reranker.py:rerank_documents_with_scores shows structural code "
+            "relationship: calls load_reranker; called by answer_question; reads "
+            "config keys RERANKING_MODEL_NAME."
+        )
+    ]
+
+
 def test_generic_findings_are_kept_when_only_one_item_exists() -> None:
     state = make_state(
         title="Unknown incident",

@@ -102,6 +102,11 @@ class FileReportStore(ReportStore):
         )
         self._add_section(
             lines,
+            "## Graph Findings",
+            self._render_list_lines(report.graph_findings),
+        )
+        self._add_section(
+            lines,
             "## Knowledge Base Findings",
             self._render_list_lines(report.knowledge_base_findings),
         )

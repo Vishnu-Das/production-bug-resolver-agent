@@ -27,6 +27,9 @@ async def test_file_report_store_saves_markdown_and_json(tmp_path):
         code_findings=[
             "Summary flow expects response['output']",
         ],
+        graph_findings=[
+            "src/rag/service.py:answer_question shows structural code relationship: calls route_query.",
+        ],
         knowledge_base_findings=[
             "README says summary queries are supported",
         ],
@@ -91,6 +94,8 @@ async def test_file_report_store_saves_markdown_and_json(tmp_path):
     assert "The summary response expected an output key that was missing." in saved_markdown
     assert "## Technical Explanation" in saved_markdown
     assert "Application raised KeyError: output" in saved_markdown
+    assert "## Graph Findings" in saved_markdown
+    assert "calls route_query" in saved_markdown
     assert "## Generation Details" in saved_markdown
     assert "- writer: llm" in saved_markdown
     assert "- llm_output_validated: true" in saved_markdown

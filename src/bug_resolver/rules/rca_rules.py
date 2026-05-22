@@ -57,6 +57,13 @@ class RCARules:
     def build_code_findings(self, state: WorkflowState) -> list[str]:
         return self._selected_findings_for_source(state, EvidenceSourceType.CODE, max_findings=3)
 
+    def build_graph_findings(self, state: WorkflowState) -> list[str]:
+        return self._selected_findings_for_source(
+            state,
+            EvidenceSourceType.GRAPH,
+            max_findings=2,
+        )
+
     def build_knowledge_base_findings(self, state: WorkflowState) -> list[str]:
         return self._selected_findings_for_source(
             state,
@@ -705,7 +712,75 @@ class RCARules:
                 f"{self._shorten(content)}"
             )
 
+        if evidence.source_type == EvidenceSourceType.GRAPH:
+            graph_details = self._graph_detail_text(evidence)
+            if graph_details:
+                return f"{location} shows structural code relationship: {graph_details}"
+            return f"{location} shows structural code relationship relevant to the incident."
+
         return f"{location} supports the RCA: {self._shorten(content)}"
+
+    def _graph_detail_text(self, evidence: EvidenceItem) -> str:
+        details: list[str] = []
+
+        calls = self._focused_graph_values(evidence.metadata.get("calls", ""))
+        called_by = self._focused_graph_values(evidence.metadata.get("called_by", ""))
+        config_keys = self._focused_graph_values(
+            evidence.metadata.get("config_keys", ""),
+            limit=3,
+        )
+        imported_by = self._focused_graph_values(
+            evidence.metadata.get("imported_by", ""),
+            limit=3,
+            exclude_prefixes=("tests/", "eval/"),
+        )
+
+        if calls:
+            details.append(f"calls {', '.join(calls)}")
+        if called_by:
+            details.append(f"called by {', '.join(called_by)}")
+        if config_keys:
+            details.append(f"reads config keys {', '.join(config_keys)}")
+        if imported_by:
+            details.append(f"imported by {', '.join(imported_by)}")
+
+        if details:
+            return "; ".join(details) + "."
+
+        return self._shorten(" ".join(evidence.content.split()))
+
+    def _focused_graph_values(
+        self,
+        value: str,
+        *,
+        limit: int = 5,
+        exclude_prefixes: tuple[str, ...] = (),
+    ) -> list[str]:
+        noisy_values = {
+            "dict",
+            "float",
+            "int",
+            "len",
+            "list",
+            "round",
+            "set",
+            "str",
+            "time.perf_counter",
+            "traceable",
+            "zip",
+        }
+        values: list[str] = []
+
+        for raw_item in value.split(","):
+            item = raw_item.strip()
+            normalized = item.lower()
+            if not item or normalized in noisy_values:
+                continue
+            if any(normalized.startswith(prefix) for prefix in exclude_prefixes):
+                continue
+            values.append(item)
+
+        return self.unique(values)[:limit]
 
     def _path_aware_code_summary(self, path: str, location: str) -> str | None:
         normalized_path = path.lower()
@@ -840,7 +915,7 @@ class RCARules:
         return location
 
     def _symbol_name(self, evidence: EvidenceItem) -> str | None:
-        if evidence.source_type != EvidenceSourceType.CODE:
+        if evidence.source_type not in {EvidenceSourceType.CODE, EvidenceSourceType.GRAPH}:
             return None
 
         qualified_symbol = evidence.metadata.get("qualified_symbol")
