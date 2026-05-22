@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import PureWindowsPath
-
 from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
+from bug_resolver.rules.evidence_formatting_rules import EvidenceFormattingRules
+from bug_resolver.rules.rca_evidence_selection_rules import RCAEvidenceSelectionRules
+from bug_resolver.rules.rca_finding_rules import RCAFindingRules
 from bug_resolver.rules.evidence_selection_rules import EvidenceSelectionRules
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 
@@ -16,9 +17,22 @@ class RCARules:
         self,
         evidence_selection_rules: EvidenceSelectionRules | None = None,
         code_path_rules: CodeEvidencePathRules | None = None,
+        formatter: EvidenceFormattingRules | None = None,
+        finding_rules: RCAFindingRules | None = None,
+        evidence_selection: RCAEvidenceSelectionRules | None = None,
     ) -> None:
         self.evidence_selection_rules = evidence_selection_rules or EvidenceSelectionRules()
         self.code_path_rules = code_path_rules or CodeEvidencePathRules()
+        self.formatter = formatter or EvidenceFormattingRules()
+        self.finding_rules = finding_rules or RCAFindingRules(
+            formatter=self.formatter,
+            evidence_selection_rules=self.evidence_selection_rules,
+        )
+        self.evidence_selection = evidence_selection or RCAEvidenceSelectionRules(
+            evidence_selection_rules=self.evidence_selection_rules,
+            code_path_rules=self.code_path_rules,
+            formatter=self.formatter,
+        )
 
     def build_title(self, state: WorkflowState) -> str:
         return f"RCA for {state.incident.title}"
@@ -52,7 +66,10 @@ class RCARules:
         return self.unique(symptoms)
 
     def build_log_findings(self, state: WorkflowState) -> list[str]:
-        return self._findings_for_source(state.evidence_items, EvidenceSourceType.LOG)
+        return self.finding_rules.findings_for_source(
+            state.evidence_items,
+            EvidenceSourceType.LOG,
+        )
 
     def build_code_findings(self, state: WorkflowState) -> list[str]:
         return self._selected_findings_for_source(state, EvidenceSourceType.CODE, max_findings=3)
@@ -300,22 +317,7 @@ class RCARules:
         return " ".join(parts) or "No technical evidence was available."
 
     def evidence_ids(self, state: WorkflowState) -> list[str]:
-        selected_evidence = [
-            *self._evidence_for_source(state, EvidenceSourceType.LOG),
-            *self._selected_evidence_for_source(state, EvidenceSourceType.CODE, max_items=3),
-            *self._selected_evidence_for_source(state, EvidenceSourceType.GRAPH, max_items=2),
-            *self._selected_evidence_for_source(
-                state,
-                EvidenceSourceType.KNOWLEDGE_BASE,
-                max_items=2,
-            ),
-        ]
-
-        evidence_ids = self.unique([evidence.evidence_id for evidence in selected_evidence])
-        if evidence_ids:
-            return evidence_ids
-
-        return [evidence.evidence_id for evidence in state.evidence_items]
+        return self.evidence_selection.evidence_ids(state)
 
     def confidence_score(self, state: WorkflowState) -> float:
         if not state.evidence_items:
@@ -556,13 +558,7 @@ class RCARules:
         evidence_items: list[EvidenceItem],
         source_type: EvidenceSourceType,
     ) -> list[str]:
-        return self.unique(
-            [
-                self._finding_text(evidence)
-                for evidence in evidence_items
-                if evidence.source_type == source_type
-            ]
-        )
+        return self.finding_rules.findings_for_source(evidence_items, source_type)
 
     def _selected_findings_for_source(
         self,
@@ -577,7 +573,9 @@ class RCARules:
             max_items=max_findings,
         )
 
-        return self.unique([self._finding_text(evidence) for evidence in selected_items])
+        return self.unique(
+            [self.finding_rules.finding_text(evidence) for evidence in selected_items]
+        )
 
     def _selected_evidence_for_source(
         self,
@@ -586,447 +584,43 @@ class RCARules:
         *,
         max_items: int,
     ) -> list[EvidenceItem]:
-        evidence_items = self._evidence_for_source(state, source_type)
-        if len(evidence_items) <= 1:
-            return evidence_items
-
-        signals = self.evidence_selection_rules.selection_signals(state)
-        if not signals:
-            return evidence_items
-
-        scored_items = [
-            (
-                self._evidence_relevance_score(evidence, signals),
-                self._evidence_signal_score(evidence, signals),
-                evidence,
-            )
-            for evidence in evidence_items
-        ]
-        strongest_signal_score = max(signal_score for _, signal_score, _ in scored_items)
-
-        if strongest_signal_score <= 0:
-            return evidence_items
-
-        signal_ratio = 0.65 if source_type == EvidenceSourceType.KNOWLEDGE_BASE else 0.5
-        minimum_signal_score = max(1.0, strongest_signal_score * signal_ratio)
-        ranked_items = sorted(
-            scored_items,
-            key=lambda item: (
-                item[0],
-                item[1],
-                item[2].relevance_score or 0.0,
-                self._display_path(item[2].file_path or item[2].source_name).lower(),
-                item[2].line_start or 0,
-                item[2].evidence_id,
-            ),
-            reverse=True,
+        return self.evidence_selection.selected_evidence_for_source(
+            state,
+            source_type,
+            max_items=max_items,
         )
-        selected_items = [
-            evidence
-            for score, signal_score, evidence in ranked_items
-            if score > 0 and signal_score >= minimum_signal_score
-        ][:max_items]
-
-        if not selected_items:
-            return evidence_items
-
-        if source_type in {EvidenceSourceType.CODE, EvidenceSourceType.GRAPH}:
-            return self._prefer_primary_code_evidence(selected_items, signals)
-
-        return selected_items
 
     def _prefer_primary_code_evidence(
         self,
         evidence_items: list[EvidenceItem],
         signals: set[str],
     ) -> list[EvidenceItem]:
-        primary_items = [
-            evidence
-            for evidence in evidence_items
-            if self.code_path_rules.is_allowed_support_path(
-                self._display_path(evidence.file_path or evidence.source_name).lower(),
-                signals,
-            )
-        ]
-
-        return primary_items or evidence_items
+        return self.evidence_selection._prefer_primary_code_evidence(evidence_items, signals)
 
     def _evidence_for_source(
         self,
         state: WorkflowState,
         source_type: EvidenceSourceType,
     ) -> list[EvidenceItem]:
-        return [
-            evidence for evidence in state.evidence_items if evidence.source_type == source_type
-        ]
+        return self.evidence_selection.evidence_for_source(state, source_type)
 
     def _finding_text(self, evidence: EvidenceItem) -> str:
-        location = self._location(evidence)
-        content = " ".join(evidence.content.split())
-        content_lower = content.lower()
-        path = self._display_path(evidence.file_path or evidence.source_name)
-
-        if evidence.source_type == EvidenceSourceType.LOG:
-            if "invalid strategy: summary" in content_lower:
-                return (
-                    f"{location} shows the LLM router failed with "
-                    "`ValueError: Invalid strategy: summary` and triggered fallback."
-                )
-            if "resolved_strategy=parent_child" in content_lower:
-                return (
-                    f"{location} shows the fallback resolved the summary-style query "
-                    "to the supported `parent_child` retrieval strategy."
-                )
-            return f"{location} shows runtime signal: {self._shorten(content)}"
-
-        if evidence.source_type == EvidenceSourceType.CODE:
-            path_summary = self._path_aware_code_summary(path, location)
-            if path_summary is not None:
-                return path_summary
-
-            if "invalid strategy" in content_lower and "result.strategy" in content_lower:
-                return (
-                    f"{location} validates the LLM router strategy and raises an "
-                    "error when the model returns an unsupported value."
-                )
-            if "chatopenai" in content_lower and "router_prompt" in content_lower:
-                return (
-                    f"{location} builds the LLM router around the router prompt, "
-                    "structured `RouterResult`, and configured router model."
-                )
-            if "router_type" in content_lower and "llmrouterstrategy" in content_lower:
-                return (
-                    f"{location} selects the configured router implementation, "
-                    "including the LLM router path that produced the failure."
-                )
-            if "parent_child" in content_lower and "summary" in content_lower:
-                return (
-                    f"{location} maps summary-style selected-document queries to "
-                    "the supported `parent_child` retrieval strategy."
-                )
-            return f"{location} contains implementation context relevant to the incident."
-
-        if evidence.source_type == EvidenceSourceType.KNOWLEDGE_BASE:
-            return (
-                f"{location} documents expected behavior relevant to the incident: "
-                f"{self._shorten(content)}"
-            )
-
-        if evidence.source_type == EvidenceSourceType.GRAPH:
-            graph_details = self._graph_detail_text(evidence)
-            if graph_details:
-                return f"{location} shows structural code relationship: {graph_details}"
-            return f"{location} shows structural code relationship relevant to the incident."
-
-        return f"{location} supports the RCA: {self._shorten(content)}"
-
-    def _graph_detail_text(self, evidence: EvidenceItem) -> str:
-        details: list[str] = []
-
-        calls = self._focused_graph_values(
-            evidence.metadata.get("calls", ""),
-            exclude_uppercase_names=True,
-        )
-        called_by = self._focused_graph_values(
-            evidence.metadata.get("called_by", ""),
-            exclude_prefixes=("test_",),
-        )
-        config_keys = self._focused_graph_values(
-            evidence.metadata.get("config_keys", ""),
-            limit=3,
-        )
-        config_readers = self._focused_graph_values(
-            evidence.metadata.get("config_readers", ""),
-            limit=3,
-        )
-        imported_by = self._focused_graph_values(
-            evidence.metadata.get("imported_by", ""),
-            limit=3,
-            exclude_prefixes=("tests/", "eval/", "src/ui/"),
-        )
-
-        if config_readers and config_keys:
-            reader_text = ", ".join(config_readers)
-            key_text = ", ".join(config_keys)
-            details.append(f"uses config from {reader_text}, which reads {key_text}")
-            calls = [call for call in calls if call not in set(config_readers)]
-        elif config_keys:
-            details.append(f"reads config keys {', '.join(config_keys)}")
-        if calls:
-            details.append(f"calls {', '.join(calls)}")
-        if called_by:
-            details.append(f"called by {', '.join(called_by)}")
-        if imported_by:
-            details.append(f"imported by {', '.join(imported_by)}")
-
-        if details:
-            return "; ".join(details) + "."
-
-        return self._shorten(" ".join(evidence.content.split()))
-
-    def _focused_graph_values(
-        self,
-        value: str,
-        *,
-        limit: int = 5,
-        exclude_prefixes: tuple[str, ...] = (),
-        exclude_uppercase_names: bool = False,
-    ) -> list[str]:
-        noisy_values = {
-            "dict",
-            "float",
-            "int",
-            "len",
-            "list",
-            "round",
-            "set",
-            "str",
-            "time.perf_counter",
-            "traceable",
-            "zip",
-            "doc.metadata.get",
-            "logger.debug",
-            "logger.error",
-            "logger.info",
-            "logger.warning",
-            "ranked_documents.sort",
-            "reranker_model.predict",
-            "scored_docs.sort",
-            "st.error",
-            "st.warning",
-        }
-        noisy_suffixes = (
-            ".append",
-            ".extend",
-            ".get",
-            ".items",
-            ".keys",
-            ".predict",
-            ".sort",
-            ".values",
-        )
-        values: list[str] = []
-
-        for raw_item in value.split(","):
-            item = raw_item.strip()
-            normalized = item.lower()
-            if not item or normalized in noisy_values:
-                continue
-            if any(normalized.endswith(suffix) for suffix in noisy_suffixes):
-                continue
-            if exclude_uppercase_names and item[:1].isupper() and "." not in item:
-                continue
-            if any(normalized.startswith(prefix) for prefix in exclude_prefixes):
-                continue
-            values.append(item)
-
-        return self.unique(values)[:limit]
-
-    def _path_aware_code_summary(self, path: str, location: str) -> str | None:
-        normalized_path = path.lower()
-        path_tokens = self.evidence_selection_rules.tokens(normalized_path)
-
-        if "retrieval" in path_tokens and "factory" in path_tokens:
-            return (
-                f"{location} maps configured retrieval strategy names to concrete "
-                "retrieval strategy implementations and rejects unsupported values."
-            )
-        if "service" in path_tokens and "rag" in path_tokens:
-            return (
-                f"{location} resolves the retrieval strategy, retrieves documents, "
-                "reranks results, and builds the final RAG response path."
-            )
-        if "routing" in path_tokens and "llm" in path_tokens:
-            return (
-                f"{location} invokes the LLM router and validates that the returned "
-                "strategy is one of the supported retrieval strategy values."
-            )
-        if "routing" in path_tokens and "rule" in path_tokens and "based" in path_tokens:
-            return (
-                f"{location} maps document-level summary queries to the supported "
-                "`parent_child` retrieval strategy."
-            )
-        if "cache" in path_tokens:
-            return (
-                f"{location} defines cache reset behavior for RAG retrievers and "
-                "cached retrieval results."
-            )
-        if "upload" in path_tokens:
-            return (
-                f"{location} computes upload content state but still gates duplicate "
-                "handling through filename-based Streamlit session state before ingestion."
-            )
-        if path_tokens & {"reranker", "reranking", "rerank"}:
-            return (
-                f"{location} loads the cross-encoder reranker and defines fallback "
-                "behavior for scoring and ordering retrieved documents."
-            )
-        if "pipeline" in path_tokens:
-            return (
-                f"{location} deduplicates retrieved documents and sends them through "
-                "reranking before answer context is built."
-            )
-        if path_tokens & {"ingest", "ingestion"}:
-            return (
-                f"{location} coordinates document ingestion into standard and "
-                "parent-child retrieval indexes."
-            )
-        if "tests" in path_tokens and ("routing" in path_tokens or "retrieval" in path_tokens):
-            return (
-                f"{location} covers routing or retrieval behavior relevant to the incident."
-            )
-        if "eval" in path_tokens or "evaluation" in path_tokens:
-            return (
-                f"{location} contains evaluation context for retrieval or answer "
-                "quality checks relevant to the incident."
-            )
-
-        return None
-
-    def _evidence_relevance_score(
-        self,
-        evidence: EvidenceItem,
-        signals: set[str],
-    ) -> float:
-        score = self._evidence_signal_score(evidence, signals)
-        score += (evidence.relevance_score or 0.0) * 0.5
-
-        if evidence.source_type == EvidenceSourceType.CODE:
-            score += self._code_finding_penalty(
-                self._display_path(evidence.file_path or evidence.source_name).lower(),
-                signals,
-            )
-        if evidence.source_type == EvidenceSourceType.GRAPH:
-            score += self._graph_finding_penalty(
-                self._display_path(evidence.file_path or evidence.source_name).lower(),
-                signals,
-            )
-
-        return score
-
-    def _evidence_signal_score(
-        self,
-        evidence: EvidenceItem,
-        signals: set[str],
-    ) -> float:
-        path = self._display_path(evidence.file_path or evidence.source_name).lower()
-        path_source_tokens = self.evidence_selection_rules.tokens(
-            f"{path} {evidence.source_name}"
-        )
-        content_tokens = self.evidence_selection_rules.tokens(
-            " ".join(
-                [
-                    evidence.content,
-                    *evidence.metadata.values(),
-                ]
-            )
-        )
-
-        path_score = len(path_source_tokens & signals) * 3.0
-        content_score = min(len(content_tokens & signals), 10) * 1.0
-
-        return path_score + content_score
-
-    def _code_finding_penalty(self, path: str, signals: set[str]) -> float:
-        penalty = 0.0
-
-        penalty += self.code_path_rules.support_adjustment(
-            path,
-            signals,
-            penalty=-2.0,
-            mention_bonus=0.5,
-        )
-
-        if path.endswith("__init__.py"):
-            penalty -= 2.0
-        if path.endswith((".json", ".yml", ".yaml", ".md")):
-            penalty -= 1.5
-
-        return penalty
-
-    def _graph_finding_penalty(self, path: str, signals: set[str]) -> float:
-        penalty = 0.0
-
-        penalty += self.code_path_rules.support_adjustment(
-            path,
-            signals,
-            penalty=-8.0,
-            mention_bonus=0.5,
-        )
-
-        if path.startswith("src/"):
-            penalty += 2.0
-        if path.endswith("__init__.py"):
-            penalty -= 2.0
-
-        return penalty
+        return self.finding_rules.finding_text(evidence)
 
     def _shorten(self, value: str, *, max_length: int = 180) -> str:
-        if len(value) <= max_length:
-            return value
-        return value[: max_length - 3].rstrip() + "..."
+        return self.formatter.shorten(value, max_length=max_length)
 
     def _location(self, evidence: EvidenceItem) -> str:
-        location = self._display_path(evidence.file_path or evidence.source_name)
-        symbol = self._symbol_name(evidence)
-        if symbol:
-            return f"{location}:{symbol}"
-
-        if evidence.line_start and evidence.line_end:
-            return f"{location}:{evidence.line_start}-{evidence.line_end}"
-        return location
+        return self.formatter.location(evidence)
 
     def _symbol_name(self, evidence: EvidenceItem) -> str | None:
-        if evidence.source_type not in {EvidenceSourceType.CODE, EvidenceSourceType.GRAPH}:
-            return None
-
-        qualified_symbol = evidence.metadata.get("qualified_symbol")
-        if qualified_symbol:
-            return qualified_symbol
-
-        class_name = evidence.metadata.get("class_name")
-        function_name = evidence.metadata.get("function_name")
-
-        if class_name and function_name:
-            return f"{class_name}.{function_name}"
-
-        return function_name or class_name
+        return self.formatter.symbol_name(evidence)
 
     def _display_path(self, path: str) -> str:
-        normalized_path = path.replace("\\", "/")
-        repo_marker = "/conversational_rag/"
-        if repo_marker in normalized_path.lower():
-            marker_index = normalized_path.lower().index(repo_marker)
-            return normalized_path[marker_index + len(repo_marker) :]
-
-        for marker in ("/src/", "/tests/", "/eval/", "/docs/", "/sample_data/"):
-            if marker in normalized_path:
-                return f"{marker.strip('/')}/{normalized_path.split(marker, 1)[1]}"
-
-        if ":" in path or "\\" in path:
-            windows_parts = PureWindowsPath(path).parts
-            for anchor in ("src", "tests", "eval", "docs", "sample_data"):
-                if anchor in windows_parts:
-                    return "/".join(windows_parts[windows_parts.index(anchor) :])
-
-        return normalized_path
+        return self.formatter.display_path(path)
 
     def _combined_text(self, evidence_items: list[EvidenceItem]) -> str:
-        values: list[str] = []
-
-        for evidence in evidence_items:
-            values.extend(
-                [
-                    evidence.evidence_id,
-                    evidence.source_name,
-                    evidence.content,
-                    evidence.file_path or "",
-                ]
-            )
-
-            values.extend(str(value) for value in evidence.metadata.values())
-
-        return "\n".join(value for value in values if value)
+        return self.formatter.combined_text(evidence_items)
 
     def _has_invalid_summary_strategy(self, evidence_items: list[EvidenceItem]) -> bool:
         combined_text = self._combined_text(evidence_items).lower()
@@ -1096,34 +690,11 @@ class RCARules:
         source_type: EvidenceSourceType,
         patterns: list[str],
     ) -> list[str]:
-        normalized_patterns = [pattern.lower() for pattern in patterns]
-        locations: list[str] = []
-
-        for evidence in evidence_items:
-            if evidence.source_type != source_type:
-                continue
-
-            location = self._location(evidence)
-            normalized_location = location.lower()
-
-            if any(pattern in normalized_location for pattern in normalized_patterns):
-                locations.append(location)
-
-        return self.unique(locations)
+        return self.formatter.locations_matching(
+            evidence_items,
+            source_type=source_type,
+            patterns=patterns,
+        )
 
     def unique(self, values: list[str] | object) -> list[str]:
-        unique_values: list[str] = []
-        seen: set[str] = set()
-
-        for value in values:
-            if not isinstance(value, str):
-                continue
-
-            normalized = value.strip()
-            if not normalized or normalized in seen:
-                continue
-
-            seen.add(normalized)
-            unique_values.append(normalized)
-
-        return unique_values
+        return self.formatter.unique(values)

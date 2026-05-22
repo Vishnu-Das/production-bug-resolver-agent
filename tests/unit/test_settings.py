@@ -64,12 +64,17 @@ def test_investigate_command_runs_dynamic_workflow(monkeypatch) -> None:
     assert result.exit_code == 0
     assert "INC-001" in result.output
     assert "Starting dynamic investigation" in result.output
-    assert "Status: completed" in result.output
-    assert "evidence_count=4" in result.output
+    assert "Production Bug Resolver" in result.output
+    assert "Status:" in result.output
+    assert "completed" in result.output
+    assert "Output" in result.output
+    assert "Investigation Trace" in result.output
+    assert "code_investigator" in result.output
+    assert "SUCCESS" in result.output
     assert "llm.py:1-80" in result.output
-    assert "+1 more" in result.output
-    assert "Report: reports" in result.output
-
+    assert "Report written" in result.output
+    assert "reports" in result.output
+    assert "rca.md" in result.output
 
 def test_investigate_command_returns_nonzero_on_failure(monkeypatch) -> None:
     async def fake_run_investigation(

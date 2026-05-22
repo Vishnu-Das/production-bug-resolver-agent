@@ -9,7 +9,7 @@ generation.
 
 ---
 
-<img width="917" height="525" alt="image" src="https://github.com/user-attachments/assets/b3059d44-54e8-45f2-989d-506aa0e6c7ba" />
+<img width="1078" height="903" alt="image" src="https://github.com/user-attachments/assets/1baad765-837a-4ba7-8ed2-59cc6925c512" />
 
 ---
 
