@@ -22,15 +22,13 @@ from bug_resolver.providers.incident import IncidentProvider
 from bug_resolver.rules import GuardrailEngine
 from bug_resolver.schemas import (
     AgentDecision,
-    AgentExecutionRecord,
     AgentName,
-    AgentRunStatus,
     EvidenceItem,
     InvestigationStatus,
-    InvestigationStep,
     WorkflowState,
 )
-from bug_resolver.utils.ids import new_agent_decision_id, new_agent_execution_id
+from bug_resolver.utils.ids import new_agent_decision_id
+from bug_resolver.workflows.workflow_execution_recorder import WorkflowExecutionRecorder
 
 
 class DynamicBugResolutionWorkflow:
@@ -78,6 +76,7 @@ class DynamicBugResolutionWorkflow:
         self._max_agent_invocations_per_agent = max_agent_invocations_per_agent
         self._confidence_threshold = confidence_threshold
         self._minimum_evidence_count_before_rca = minimum_evidence_count_before_rca
+        self._execution_recorder = WorkflowExecutionRecorder()
 
     async def run(self, incident_id: str) -> WorkflowState:
         incident = await self._incident_provider.get_incident(incident_id)
@@ -103,15 +102,10 @@ class DynamicBugResolutionWorkflow:
                 state.record_guardrail_decision(guardrail_decision)
 
                 if not guardrail_decision.allowed:
-                    state.add_investigation_step(
-                        InvestigationStep(
-                            step_number=state.trace.next_step_number(),
-                            agent_name=decision.next_agent,
-                            run_status=AgentRunStatus.BLOCKED,
-                            decision_id=decision.decision_id,
-                            guardrail_id=guardrail_decision.guardrail_id,
-                            notes=[guardrail_decision.reason],
-                        )
+                    self._execution_recorder.record_blocked_guardrail_step(
+                        state=state,
+                        decision=decision,
+                        guardrail_decision=guardrail_decision,
                     )
                     if guardrail_decision.fallback_next_agent in {
                         AgentName.FINISH,
@@ -285,14 +279,10 @@ class DynamicBugResolutionWorkflow:
         decision: AgentDecision,
         evidence_items: list[EvidenceItem],
     ) -> None:
-        for evidence in evidence_items:
-            state.add_evidence(evidence)
-
-        self._record_successful_agent_run(
-            state=state,
-            decision=decision,
-            evidence_ids=[evidence.evidence_id for evidence in evidence_items],
-            output_summary=f"Collected {len(evidence_items)} evidence item(s).",
+        self._execution_recorder.record_successful_evidence_run(
+            state,
+            decision,
+            evidence_items,
         )
 
     def _record_successful_agent_run(
@@ -303,24 +293,11 @@ class DynamicBugResolutionWorkflow:
         evidence_ids: list[str],
         output_summary: str,
     ) -> None:
-        execution = AgentExecutionRecord(
-            execution_id=new_agent_execution_id(),
-            agent_name=decision.next_agent,
-            status=AgentRunStatus.SUCCEEDED,
-            decision_id=decision.decision_id,
-            output_summary=output_summary,
+        self._execution_recorder.record_successful_agent_run(
+            state=state,
+            decision=decision,
             evidence_ids=evidence_ids,
-        )
-        state.record_agent_execution(execution)
-        state.add_investigation_step(
-            InvestigationStep(
-                step_number=state.trace.next_step_number(),
-                agent_name=decision.next_agent,
-                run_status=AgentRunStatus.SUCCEEDED,
-                decision_id=decision.decision_id,
-                execution_id=execution.execution_id,
-                evidence_ids=evidence_ids,
-            )
+            output_summary=output_summary,
         )
 
     def _record_blocked_unsupported_agent(
@@ -328,24 +305,7 @@ class DynamicBugResolutionWorkflow:
         state: WorkflowState,
         decision: AgentDecision,
     ) -> None:
-        execution = AgentExecutionRecord(
-            execution_id=new_agent_execution_id(),
-            agent_name=decision.next_agent,
-            status=AgentRunStatus.BLOCKED,
-            decision_id=decision.decision_id,
-            output_summary="Agent execution is not wired in this workflow slice.",
-        )
-        state.record_agent_execution(execution)
-        state.add_investigation_step(
-            InvestigationStep(
-                step_number=state.trace.next_step_number(),
-                agent_name=decision.next_agent,
-                run_status=AgentRunStatus.BLOCKED,
-                decision_id=decision.decision_id,
-                execution_id=execution.execution_id,
-                notes=["Agent execution is not wired in this workflow slice."],
-            )
-        )
+        self._execution_recorder.record_blocked_unsupported_agent(state, decision)
 
     async def _run_evidence_evaluator(self, state: WorkflowState) -> None:
         decision = AgentDecision(
@@ -367,15 +327,10 @@ class DynamicBugResolutionWorkflow:
         state.record_guardrail_decision(guardrail_decision)
 
         if not guardrail_decision.allowed:
-            state.add_investigation_step(
-                InvestigationStep(
-                    step_number=state.trace.next_step_number(),
-                    agent_name=decision.next_agent,
-                    run_status=AgentRunStatus.BLOCKED,
-                    decision_id=decision.decision_id,
-                    guardrail_id=guardrail_decision.guardrail_id,
-                    notes=[guardrail_decision.reason],
-                )
+            self._execution_recorder.record_blocked_guardrail_step(
+                state=state,
+                decision=decision,
+                guardrail_decision=guardrail_decision,
             )
             return
 

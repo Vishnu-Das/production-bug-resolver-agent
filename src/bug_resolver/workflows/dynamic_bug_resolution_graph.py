@@ -27,17 +27,15 @@ from bug_resolver.providers.incident import IncidentProvider
 from bug_resolver.rules import GuardrailEngine
 from bug_resolver.schemas import (
     AgentDecision,
-    AgentExecutionRecord,
     AgentName,
-    AgentRunStatus,
     EvidenceItem,
     GuardrailDecision,
     InvestigationStatus,
-    InvestigationStep,
     WorkflowState,
 )
 from bug_resolver.schemas.common import StrictBaseModel
-from bug_resolver.utils.ids import new_agent_decision_id, new_agent_execution_id
+from bug_resolver.utils.ids import new_agent_decision_id
+from bug_resolver.workflows.workflow_execution_recorder import WorkflowExecutionRecorder
 
 
 GraphRoute = Literal[
@@ -108,6 +106,7 @@ class DynamicBugResolutionGraphWorkflow:
         self._max_agent_invocations_per_agent = max_agent_invocations_per_agent
         self._confidence_threshold = confidence_threshold
         self._minimum_evidence_count_before_rca = minimum_evidence_count_before_rca
+        self._execution_recorder = WorkflowExecutionRecorder()
         self._graph = self._build_graph().compile()
 
     async def run(self, incident_id: str) -> WorkflowState:
@@ -489,14 +488,10 @@ class DynamicBugResolutionGraphWorkflow:
         decision: AgentDecision,
         evidence_items: list[EvidenceItem],
     ) -> None:
-        for evidence in evidence_items:
-            state.add_evidence(evidence)
-
-        self._record_successful_agent_run(
-            state=state,
-            decision=decision,
-            evidence_ids=[evidence.evidence_id for evidence in evidence_items],
-            output_summary=f"Collected {len(evidence_items)} evidence item(s).",
+        self._execution_recorder.record_successful_evidence_run(
+            state,
+            decision,
+            evidence_items,
         )
 
     def _record_successful_agent_run(
@@ -507,24 +502,11 @@ class DynamicBugResolutionGraphWorkflow:
         evidence_ids: list[str],
         output_summary: str,
     ) -> None:
-        execution = AgentExecutionRecord(
-            execution_id=new_agent_execution_id(),
-            agent_name=decision.next_agent,
-            status=AgentRunStatus.SUCCEEDED,
-            decision_id=decision.decision_id,
-            output_summary=output_summary,
+        self._execution_recorder.record_successful_agent_run(
+            state=state,
+            decision=decision,
             evidence_ids=evidence_ids,
-        )
-        state.record_agent_execution(execution)
-        state.add_investigation_step(
-            InvestigationStep(
-                step_number=state.trace.next_step_number(),
-                agent_name=decision.next_agent,
-                run_status=AgentRunStatus.SUCCEEDED,
-                decision_id=decision.decision_id,
-                execution_id=execution.execution_id,
-                evidence_ids=evidence_ids,
-            )
+            output_summary=output_summary,
         )
 
     def _record_blocked_guardrail_step(
@@ -534,15 +516,10 @@ class DynamicBugResolutionGraphWorkflow:
         decision: AgentDecision,
         guardrail_decision: GuardrailDecision,
     ) -> None:
-        state.add_investigation_step(
-            InvestigationStep(
-                step_number=state.trace.next_step_number(),
-                agent_name=decision.next_agent,
-                run_status=AgentRunStatus.BLOCKED,
-                decision_id=decision.decision_id,
-                guardrail_id=guardrail_decision.guardrail_id,
-                notes=[guardrail_decision.reason],
-            )
+        self._execution_recorder.record_blocked_guardrail_step(
+            state=state,
+            decision=decision,
+            guardrail_decision=guardrail_decision,
         )
 
     def _record_blocked_unsupported_agent(
@@ -550,24 +527,7 @@ class DynamicBugResolutionGraphWorkflow:
         state: WorkflowState,
         decision: AgentDecision,
     ) -> None:
-        execution = AgentExecutionRecord(
-            execution_id=new_agent_execution_id(),
-            agent_name=decision.next_agent,
-            status=AgentRunStatus.BLOCKED,
-            decision_id=decision.decision_id,
-            output_summary="Agent execution is not wired in this workflow slice.",
-        )
-        state.record_agent_execution(execution)
-        state.add_investigation_step(
-            InvestigationStep(
-                step_number=state.trace.next_step_number(),
-                agent_name=decision.next_agent,
-                run_status=AgentRunStatus.BLOCKED,
-                decision_id=decision.decision_id,
-                execution_id=execution.execution_id,
-                notes=["Agent execution is not wired in this workflow slice."],
-            )
-        )
+        self._execution_recorder.record_blocked_unsupported_agent(state, decision)
 
     def _route_for_agent(self, agent_name: AgentName) -> GraphRoute:
         route_by_agent: dict[AgentName, GraphRoute] = {
