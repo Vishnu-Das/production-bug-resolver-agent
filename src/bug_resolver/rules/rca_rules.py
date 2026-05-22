@@ -296,6 +296,7 @@ class RCARules:
         selected_evidence = [
             *self._evidence_for_source(state, EvidenceSourceType.LOG),
             *self._selected_evidence_for_source(state, EvidenceSourceType.CODE, max_items=3),
+            *self._selected_evidence_for_source(state, EvidenceSourceType.GRAPH, max_items=2),
             *self._selected_evidence_for_source(
                 state,
                 EvidenceSourceType.KNOWLEDGE_BASE,

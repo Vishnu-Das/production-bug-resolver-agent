@@ -8,6 +8,8 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import Field
 
 from bug_resolver.agents import (
+    CodeGraphInvestigatorAgent,
+    CodeGraphInvestigatorInput,
     CodeInvestigatorAgent,
     CodeInvestigatorInput,
     EvidenceEvaluatorAgent,
@@ -43,6 +45,7 @@ GraphRoute = Literal[
     "guardrail",
     "log_investigator",
     "code_investigator",
+    "graph_investigator",
     "knowledge_base_investigator",
     "evidence_evaluator",
     "rca_writer",
@@ -82,6 +85,7 @@ class DynamicBugResolutionGraphWorkflow:
         rca_writer_agent: RCAWriterAgent,
         solution_recommendation_agent: SolutionRecommendationAgent,
         report_writer_agent: ReportWriterAgent,
+        code_graph_investigator_agent: CodeGraphInvestigatorAgent | None = None,
         max_steps: int = 12,
         max_replans: int = 2,
         max_agent_invocations_per_agent: int = 3,
@@ -93,6 +97,7 @@ class DynamicBugResolutionGraphWorkflow:
         self._guardrail_engine = guardrail_engine
         self._log_investigator_agent = log_investigator_agent
         self._code_investigator_agent = code_investigator_agent
+        self._code_graph_investigator_agent = code_graph_investigator_agent
         self._knowledge_base_investigator_agent = knowledge_base_investigator_agent
         self._evidence_evaluator_agent = evidence_evaluator_agent
         self._rca_writer_agent = rca_writer_agent
@@ -124,6 +129,7 @@ class DynamicBugResolutionGraphWorkflow:
         graph.add_node("guardrail", self._guardrail)
         graph.add_node("log_investigator", self._log_investigator)
         graph.add_node("code_investigator", self._code_investigator)
+        graph.add_node("graph_investigator", self._graph_investigator)
         graph.add_node("knowledge_base_investigator", self._knowledge_base_investigator)
         graph.add_node("evidence_evaluator", self._evidence_evaluator)
         graph.add_node("rca_writer", self._rca_writer)
@@ -140,6 +146,7 @@ class DynamicBugResolutionGraphWorkflow:
             {
                 "log_investigator": "log_investigator",
                 "code_investigator": "code_investigator",
+                "graph_investigator": "graph_investigator",
                 "knowledge_base_investigator": "knowledge_base_investigator",
                 "evidence_evaluator": "evidence_evaluator",
                 "rca_writer": "rca_writer",
@@ -150,6 +157,7 @@ class DynamicBugResolutionGraphWorkflow:
         )
         graph.add_edge("log_investigator", "evidence_evaluator")
         graph.add_edge("code_investigator", "evidence_evaluator")
+        graph.add_edge("graph_investigator", "evidence_evaluator")
         graph.add_edge("knowledge_base_investigator", "evidence_evaluator")
         graph.add_conditional_edges(
             "evidence_evaluator",
@@ -265,6 +273,25 @@ class DynamicBugResolutionGraphWorkflow:
         graph_state.next_route = "evidence_evaluator"
         return graph_state
 
+    async def _graph_investigator(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        decision = self._current_decision(state)
+        if self._code_graph_investigator_agent is None:
+            self._record_blocked_unsupported_agent(state, decision)
+            graph_state.next_route = "evidence_evaluator"
+            return graph_state
+
+        evidence_items = await self._code_graph_investigator_agent.run(
+            CodeGraphInvestigatorInput(
+                decision=decision,
+                evidence_items=state.evidence_items,
+                limit=5,
+            )
+        )
+        self._record_successful_evidence_run(state, decision, evidence_items)
+        graph_state.next_route = "evidence_evaluator"
+        return graph_state
+
     async def _knowledge_base_investigator(
         self,
         graph_state: DynamicGraphState,
@@ -305,7 +332,7 @@ class DynamicBugResolutionGraphWorkflow:
         if evaluation.retry_required:
             if state.can_replan():
                 state.increment_replan()
-            else:
+            elif not self._can_retry_for_structural_graph_evidence(state):
                 state.mark_low_confidence()
                 state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
                 graph_state.next_route = "finish"
@@ -403,6 +430,19 @@ class DynamicBugResolutionGraphWorkflow:
         state.mark_low_confidence()
         state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
         return "finish"
+
+    def _can_retry_for_structural_graph_evidence(self, state: WorkflowState) -> bool:
+        evaluation = state.evidence_evaluation
+        if evaluation is None:
+            return False
+
+        if "Structural graph evidence is missing." not in evaluation.missing_evidence:
+            return False
+
+        return (
+            AgentName.GRAPH_INVESTIGATOR in state.allowed_agent_names
+            and state.can_invoke_agent(AgentName.GRAPH_INVESTIGATOR)
+        )
 
     def _ensure_evidence_evaluator_decision(self, state: WorkflowState) -> AgentDecision:
         current_decision = state.current_decision
@@ -505,10 +545,35 @@ class DynamicBugResolutionGraphWorkflow:
             )
         )
 
+    def _record_blocked_unsupported_agent(
+        self,
+        state: WorkflowState,
+        decision: AgentDecision,
+    ) -> None:
+        execution = AgentExecutionRecord(
+            execution_id=new_agent_execution_id(),
+            agent_name=decision.next_agent,
+            status=AgentRunStatus.BLOCKED,
+            decision_id=decision.decision_id,
+            output_summary="Agent execution is not wired in this workflow slice.",
+        )
+        state.record_agent_execution(execution)
+        state.add_investigation_step(
+            InvestigationStep(
+                step_number=state.trace.next_step_number(),
+                agent_name=decision.next_agent,
+                run_status=AgentRunStatus.BLOCKED,
+                decision_id=decision.decision_id,
+                execution_id=execution.execution_id,
+                notes=["Agent execution is not wired in this workflow slice."],
+            )
+        )
+
     def _route_for_agent(self, agent_name: AgentName) -> GraphRoute:
         route_by_agent: dict[AgentName, GraphRoute] = {
             AgentName.LOG_INVESTIGATOR: "log_investigator",
             AgentName.CODE_INVESTIGATOR: "code_investigator",
+            AgentName.GRAPH_INVESTIGATOR: "graph_investigator",
             AgentName.KNOWLEDGE_BASE_INVESTIGATOR: "knowledge_base_investigator",
             AgentName.EVIDENCE_EVALUATOR: "evidence_evaluator",
             AgentName.RCA_WRITER: "rca_writer",

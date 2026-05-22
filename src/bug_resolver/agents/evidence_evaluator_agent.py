@@ -38,6 +38,7 @@ class EvidenceEvaluatorAgent(BaseAgent[WorkflowState, EvidenceEvaluationResult])
                 self._rules.improved_knowledge_queries(input_data) if retry_required else []
             ),
             reason=self._rules.reason(
+                state=input_data,
                 can_write_rca=can_write_rca,
                 retry_required=retry_required,
             ),

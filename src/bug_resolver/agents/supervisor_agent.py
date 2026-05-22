@@ -10,6 +10,7 @@ from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas.orchestration import AgentDecision, AgentName
 from bug_resolver.schemas.workflow_state import WorkflowState
 from bug_resolver.utils.ids import new_agent_decision_id
+from bug_resolver.prompts import SupervisorPromptBuilder
 
 
 class SupervisorRoutingOutput(StrictBaseModel):
@@ -32,8 +33,9 @@ class SupervisorAgent(BaseAgent[WorkflowState, AgentDecision]):
 
     name = "supervisor_agent"
 
-    def __init__(self, llm_client: LLMClient) -> None:
+    def __init__(self, llm_client: LLMClient, prompt_builder: SupervisorPromptBuilder | None = None,) -> None:
         self._llm_client = llm_client
+        self._prompt_builder = prompt_builder or SupervisorPromptBuilder()
 
     async def _run(self, input_data: WorkflowState) -> AgentDecision:
         routing_output = await self._llm_client.generate_structured(
@@ -53,22 +55,7 @@ class SupervisorAgent(BaseAgent[WorkflowState, AgentDecision]):
         )
 
     def _build_system_prompt(self) -> str:
-        return (
-            "You are the supervisor for a production bug investigation. "
-            "Choose exactly one next specialist agent. Use logs when runtime "
-            "behavior or stack traces are needed. Use code investigation when "
-            "the failure appears tied to a file, function, exception location, "
-            "or implementation bug. Use knowledge-base investigation when design "
-            "intent, expected behavior, README, docs, or architecture context is "
-            "needed. Use evidence evaluation when evidence sufficiency is unclear. "
-            "If no evidence has been collected yet, choose log investigation first "
-            "unless the incident already provides an exact code location that should "
-            "be inspected immediately. Do not choose evidence evaluation, RCA, "
-            "solution recommendation, report writing, or finish before evidence "
-            "has been collected. "
-            "Move to RCA only when evidence appears sufficient. Do not write the "
-            "RCA, save reports, or invent evidence."
-        )
+        return self._prompt_builder.build_system_prompt()
 
     def _build_prompt(self, state: WorkflowState) -> str:
         incident = state.incident

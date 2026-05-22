@@ -505,6 +505,58 @@ def test_reranker_rca_evidence_ids_include_ranking_code_and_kb() -> None:
     assert "kb-routing" not in evidence_ids
 
 
+def test_rca_evidence_ids_include_selected_graph_evidence() -> None:
+    state = make_state(
+        title="Reranker silently keeps original retrieval order",
+        description=(
+            "Answers cite unrelated sources after deployment. Logs mention reranking "
+            "model configuration and unchanged document order."
+        ),
+        affected_area="retrieval quality",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="app.log",
+        content="reranker_model=null scores=0.0 order_changed=false",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-code",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/reranker.py",
+        file_path="src/reranker.py",
+        content="def rerank_documents(...): return documents",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-graph",
+        source_type=EvidenceSourceType.GRAPH,
+        source_name="src/reranker.py",
+        file_path="src/reranker.py",
+        content=(
+            "src/reranker.py:rerank_documents calls load_reranker and reads "
+            "RERANKING_MODEL_NAME."
+        ),
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-unrelated-graph",
+        source_type=EvidenceSourceType.GRAPH,
+        source_name="src/upload.py",
+        file_path="src/upload.py",
+        content="src/upload.py:handle_upload calls save_file.",
+    )
+
+    evidence_ids = RCARules().evidence_ids(state)
+
+    assert "ev-log" in evidence_ids
+    assert "ev-code" in evidence_ids
+    assert "ev-graph" in evidence_ids
+    assert "ev-unrelated-graph" not in evidence_ids
+
+
 def test_generic_findings_are_kept_when_only_one_item_exists() -> None:
     state = make_state(
         title="Unknown incident",

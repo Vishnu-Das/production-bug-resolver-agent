@@ -1,0 +1,12 @@
+{
+  "incident_id": "INC-009",
+  "title": "Reranker config value does not affect answer ranking",
+  "description": "After deployment, the team expected RERANKING_MODEL_NAME to control reranking behavior, but answer citations still look unrelated and reranking appears to keep the original order. The investigation needs to identify which function reads the reranker config and which request path calls reranking before response generation.",
+  "severity": "high",
+  "affected_service": "conversational_rag",
+  "affected_area": "retrieval ranking configuration",
+  "metadata": {
+    "expected_config": "RERANKING_MODEL_NAME",
+    "structural_question": "Which function reads RERANKING_MODEL_NAME and which request path calls rerank_documents or rerank_documents_with_scores?"
+  }
+}
