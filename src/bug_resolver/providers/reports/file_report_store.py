@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from bug_resolver.providers.reports.base import ReportStore
-from bug_resolver.schemas.patch_suggestion import PatchSuggestion
+from bug_resolver.schemas.patch_suggestion import FilePatch, PatchSuggestion
 from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.solution import SolutionRecommendation
 
@@ -250,6 +250,21 @@ class FileReportStore(ReportStore):
         )
         self._add_section(
             lines,
+            "## Open Questions",
+            self._render_list_lines(patch_suggestion.open_questions),
+        )
+        self._add_section(
+            lines,
+            "## File Patches",
+            self._render_file_patch_lines(patch_suggestion.file_patches),
+        )
+        self._add_section(
+            lines,
+            "## Test Patches",
+            self._render_file_patch_lines(patch_suggestion.test_patches),
+        )
+        self._add_section(
+            lines,
             "## Evidence",
             self._render_list_lines(
                 [
@@ -263,7 +278,11 @@ class FileReportStore(ReportStore):
             "## Approval",
             [
                 f"Human approval required: {patch_suggestion.human_approval_required}",
-                "Target repository modified: false",
+                f"Analyze only: {str(patch_suggestion.analyze_only).lower()}",
+                (
+                    "Target repository modified: "
+                    f"{str(patch_suggestion.target_repo_modified).lower()}"
+                ),
             ],
         )
         self._add_section(
@@ -363,6 +382,17 @@ class FileReportStore(ReportStore):
             *remaining_lines,
             "```",
         ]
+
+    def _render_file_patch_lines(self, file_patches: list[FilePatch]) -> list[str]:
+        if not file_patches:
+            return ["- None"]
+
+        lines: list[str] = []
+        for file_patch in file_patches:
+            lines.append(f"- {file_patch.file_path} ({file_patch.patch_type})")
+            lines.append(f"  - reason: {file_patch.reason}")
+            lines.append(f"  - confidence_score: {file_patch.confidence_score}")
+        return lines
 
     def _render_metadata(self, metadata: dict[str, str]) -> str:
         return "\n".join(self._render_metadata_lines(metadata))

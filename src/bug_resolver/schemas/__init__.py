@@ -28,7 +28,7 @@ from bug_resolver.schemas.orchestration import (
     ToolCallRequest,
     ToolCallResult,
 )
-from bug_resolver.schemas.patch_suggestion import PatchSuggestion
+from bug_resolver.schemas.patch_suggestion import FilePatch, PatchSuggestion
 from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.solution import SolutionRecommendation
 from bug_resolver.schemas.workflow_state import WorkflowState
@@ -45,6 +45,7 @@ __all__ = [
     "EvidenceEvaluationResult",
     "EvidenceItem",
     "EvidenceSourceType",
+    "FilePatch",
     "GuardrailDecision",
     "Hypothesis",
     "HistoricalRCAContext",

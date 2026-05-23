@@ -37,11 +37,13 @@ async def test_build_dynamic_graph_workflow_wires_graph_workflow(monkeypatch, tm
         reports_dir=tmp_path / "reports",
         faiss_index_dir=tmp_path / "faiss",
         knowledge_base_dir=tmp_path / "knowledge_base",
+        MAX_INVESTIGATION_STEPS=18,
     )
 
     workflow = await graph_factory.build_dynamic_graph_workflow(settings)
 
     assert isinstance(workflow, DynamicBugResolutionGraphWorkflow)
+    assert workflow._max_steps == 18
 
 
 @pytest.mark.asyncio

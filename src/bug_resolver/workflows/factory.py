@@ -83,6 +83,7 @@ async def build_dynamic_workflow(
         solution_recommendation_agent=SolutionRecommendationAgent(llm_client=llm_client),
         patch_suggestion_agent=PatchSuggestionAgent(),
         report_writer_agent=ReportWriterAgent(FileReportStore(settings.reports_dir)),
+        max_steps=settings.max_investigation_steps,
         max_replans=settings.max_retries,
         confidence_threshold=settings.confidence_threshold,
         include_patch_plan=include_patch_plan,

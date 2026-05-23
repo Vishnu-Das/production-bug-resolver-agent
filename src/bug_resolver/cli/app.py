@@ -96,8 +96,10 @@ def investigate(
 
     _print_trace(state)
 
-    if state.final_report_path is not None:
-        _print_report_path(str(state.final_report_path))
+    if state.report_artifact_paths:
+        _print_report_paths([str(path) for path in state.report_artifact_paths])
+    elif state.final_report_path is not None:
+        _print_report_paths([str(state.final_report_path)])
 
     if state.errors:
         _print_errors(state.errors)
@@ -197,6 +199,22 @@ def _print_report_path(report_path: str) -> None:
         Panel(
             f"[bold green]✅ Report written successfully[/bold green]\n\n"
             f"[white]{report_path}[/white]",
+            title="[bold green]Output[/bold green]",
+            border_style="green",
+            box=box.ROUNDED,
+            padding=(1, 2),
+        )
+    )
+
+
+def _print_report_paths(report_paths: list[str]) -> None:
+    """Print the generated report artifact locations."""
+    rendered_paths = "\n".join(f"[white]- {path}[/white]" for path in report_paths)
+    console.print()
+    console.print(
+        Panel(
+            f"[bold green]Report written successfully[/bold green]\n\n"
+            f"{rendered_paths}",
             title="[bold green]Output[/bold green]",
             border_style="green",
             box=box.ROUNDED,

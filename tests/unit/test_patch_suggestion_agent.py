@@ -38,6 +38,8 @@ def build_solution() -> SolutionRecommendation:
         summary="Use content hash for duplicate upload handling.",
         immediate_steps=[
             "Update upload duplicate detection to compare content hash values.",
+            "Run upload regression tests.",
+            "Validate duplicate upload metrics after deployment.",
         ],
         tests_to_add=[
             "Add integration test for duplicate uploads with different filenames.",
@@ -45,6 +47,8 @@ def build_solution() -> SolutionRecommendation:
         risk_notes=["Validate behavior for legitimate document revisions."],
         confidence_score=0.8,
         evidence_ids=[
+            "EVID-LOG-001",
+            "kb-upload-ingestion",
             "evidence-src/services/upload_service.py:handle_file_upload",
             "historical-INC-007",
         ],
@@ -67,11 +71,23 @@ async def test_patch_suggestion_agent_builds_analyze_only_patch_plan() -> None:
     assert result.rca_report_id == "RCA-010"
     assert result.solution_recommendation_id == "SOL-010"
     assert result.human_approval_required is True
+    assert result.analyze_only is True
+    assert result.target_repo_modified is False
+    assert result.file_patches == []
+    assert result.test_patches == []
     assert result.affected_files == [
         "src/services/upload_service.py",
         "src/helpers/deduplication.py",
     ]
     assert "Use content hash as upload identity before ingestion." in result.behavior_changes
+    assert "Run upload regression tests." not in result.behavior_changes
+    assert (
+        "Validate duplicate upload metrics after deployment."
+        not in result.behavior_changes
+    )
+    assert result.behavior_changes.count(
+        "Update upload duplicate detection to compare content hash values."
+    ) == 1
     assert (
         "Add integration test for duplicate uploads with different filenames."
         in result.tests_to_add
@@ -83,4 +99,6 @@ async def test_patch_suggestion_agent_builds_analyze_only_patch_plan() -> None:
         "target_repo_modified": "false",
     }
     assert "historical-INC-007" in result.evidence_ids
+    assert result.open_questions == ["Should duplicate uploads be rejected or linked?"]
     assert any("Human approval is required" in risk for risk in result.risk_notes)
+    assert not any("Should duplicate uploads" in risk for risk in result.risk_notes)

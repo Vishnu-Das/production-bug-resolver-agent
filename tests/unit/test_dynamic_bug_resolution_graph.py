@@ -276,7 +276,12 @@ class FakeReportStore:
         solution: SolutionRecommendation | None = None,
         patch_suggestion: PatchSuggestion | None = None,
     ) -> list[Path]:
-        return [Path(f"reports/incidents/{report.incident_id}/rca.md")]
+        paths = [Path(f"reports/incidents/{report.incident_id}/rca.md")]
+        if solution is not None:
+            paths.append(Path(f"reports/incidents/{report.incident_id}/solution.md"))
+        if patch_suggestion is not None:
+            paths.append(Path(f"reports/incidents/{report.incident_id}/patch.md"))
+        return paths
 
     async def get_report(self, incident_id: str) -> RCAReport | None:
         return None
@@ -365,6 +370,10 @@ async def test_graph_workflow_completes_rca_solution_and_report() -> None:
     assert state.rca_report is not None
     assert state.solution_recommendation is not None
     assert state.final_report_path == Path("reports/incidents/INC-001/rca.md")
+    assert state.report_artifact_paths == [
+        Path("reports/incidents/INC-001/rca.md"),
+        Path("reports/incidents/INC-001/solution.md"),
+    ]
     assert step_agents[-3:] == [
         AgentName.RCA_WRITER,
         AgentName.SOLUTION_RECOMMENDER,
@@ -632,6 +641,13 @@ async def test_graph_workflow_can_generate_optional_patch_plan() -> None:
     assert state.investigation_status == InvestigationStatus.COMPLETED
     assert state.patch_suggestion is not None
     assert state.patch_suggestion.human_approval_required is True
+    assert state.patch_suggestion.analyze_only is True
+    assert state.patch_suggestion.target_repo_modified is False
+    assert state.report_artifact_paths == [
+        Path("reports/incidents/INC-001/rca.md"),
+        Path("reports/incidents/INC-001/solution.md"),
+        Path("reports/incidents/INC-001/patch.md"),
+    ]
     assert step_agents[-4:] == [
         AgentName.RCA_WRITER,
         AgentName.SOLUTION_RECOMMENDER,

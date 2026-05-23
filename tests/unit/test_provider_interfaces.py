@@ -60,6 +60,7 @@ class DummyReportStore:
         report: RCAReport,
         *,
         solution=None,
+        patch_suggestion=None,
     ) -> list[Path]:
         return [Path("reports/incidents/INC-001/rca.md")]
 

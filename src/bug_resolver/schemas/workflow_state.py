@@ -56,6 +56,7 @@ class WorkflowState(StrictBaseModel):
     patch_suggestion: PatchSuggestion | None = None
     report_save_result: ReportSaveResult | None = None
     final_report_path: Path | None = None
+    report_artifact_paths: list[Path] = Field(default_factory=list)
 
     current_decision: AgentDecision | None = None
     trace: InvestigationTrace = Field(default_factory=InvestigationTrace)

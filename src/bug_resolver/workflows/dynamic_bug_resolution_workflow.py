@@ -312,6 +312,7 @@ class DynamicBugResolutionWorkflow:
                 )
             )
             state.final_report_path = written_paths[0]
+            state.report_artifact_paths = written_paths
             state.investigation_status = InvestigationStatus.COMPLETED
             self._record_successful_agent_run(
                 state=state,

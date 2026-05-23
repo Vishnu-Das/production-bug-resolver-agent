@@ -13,6 +13,7 @@ from bug_resolver.schemas import (
     CodeContext,
     EvidenceItem,
     EvidenceSourceType,
+    FilePatch,
     GuardrailDecision,
     Hypothesis,
     Incident,
@@ -23,6 +24,7 @@ from bug_resolver.schemas import (
     LogAnalysisResult,
     LogEntry,
     LogLevel,
+    PatchSuggestion,
     RCAReport,
     SolutionRecommendation,
     ToolCallResult,
@@ -231,6 +233,32 @@ def test_solution_recommendation_schema() -> None:
     )
 
     assert solution.tests_to_add == ["Add test for missing output key"]
+
+
+def test_patch_suggestion_schema_is_future_ready_and_analyze_only() -> None:
+    file_patch = FilePatch(
+        file_path="src/app.py",
+        patch_type="modify",
+        unified_diff="",
+        reason="Guard the failing branch.",
+        evidence_ids=["evidence-src/app.py:handler"],
+        confidence_score=0.8,
+    )
+
+    suggestion = PatchSuggestion(
+        suggestion_id="PATCH-001",
+        incident_id="INC-001",
+        rca_report_id="RCA-001",
+        solution_recommendation_id="SOL-001",
+        summary="Analyze-only patch plan.",
+        confidence_score=0.8,
+        file_patches=[file_patch],
+    )
+
+    assert suggestion.analyze_only is True
+    assert suggestion.target_repo_modified is False
+    assert suggestion.file_patches == [file_patch]
+    assert suggestion.test_patches == []
 
 
 def test_workflow_state_retry_helpers() -> None:

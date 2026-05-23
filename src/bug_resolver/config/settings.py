@@ -34,6 +34,11 @@ class AppSettings(BaseSettings):
     knowledge_base_dir: Path = Field(default=Path("sample_data/knowledge_base"))
 
     max_retries: int = Field(default=2, alias="MAX_RETRIES")
+    max_investigation_steps: int = Field(
+        default=16,
+        ge=1,
+        alias="MAX_INVESTIGATION_STEPS",
+    )
     confidence_threshold: float = Field(default=0.75, alias="CONFIDENCE_THRESHOLD")
 
 

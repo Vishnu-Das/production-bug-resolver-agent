@@ -15,6 +15,7 @@ from bug_resolver.rules.guardrail_evidence_rules import GuardrailEvidenceRules
 from bug_resolver.rules.guardrail_fallback_policy import GuardrailFallbackPolicy
 from bug_resolver.rules.guardrail_graph_rules import GuardrailGraphRules
 from bug_resolver.rules.guardrail_routing_rules import GuardrailRoutingRules
+from bug_resolver.rules.patch_suggestion_rules import PatchSuggestionRules
 from bug_resolver.rules.solution_rules import SolutionRules
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "GuardrailFallbackPolicy",
     "GuardrailGraphRules",
     "GuardrailRoutingRules",
+    "PatchSuggestionRules",
     "SolutionRules",
 ]
