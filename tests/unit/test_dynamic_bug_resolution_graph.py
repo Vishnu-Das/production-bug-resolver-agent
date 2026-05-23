@@ -51,6 +51,21 @@ class FakeIncidentProvider:
         )
 
 
+class BehaviorMismatchIncidentProvider:
+    """Return a generic wrong-but-successful behavior incident."""
+
+    async def get_incident(self, incident_id: str) -> Incident:
+        return Incident(
+            incident_id=incident_id,
+            title="Successful responses contain wrong results",
+            description=(
+                "The service still returns successful responses, but users report "
+                "wrong results and expected behavior is unclear after deployment."
+            ),
+            affected_service="generic_service",
+        )
+
+
 class FakeSupervisorAgent:
     """Yield predetermined supervisor decisions to keep graph tests deterministic."""
 
@@ -109,6 +124,21 @@ class StructuralHintLogProvider:
                     "and which request path calls rerank_documents_with_scores()?"
                 ),
                 service_name="conversational_rag",
+            )
+        ]
+
+
+class BehaviorMismatchLogProvider:
+    """Return runtime evidence without a stack trace or exception."""
+
+    async def get_logs(self, incident_id: str) -> list[LogEntry]:
+        return [
+            LogEntry(
+                log_id="log-behavior",
+                level=LogLevel.INFO,
+                message="Request completed with unexpected result quality",
+                raw="request completed status=200 selected_strategy=fast_path",
+                service_name="generic_service",
             )
         ]
 
@@ -242,6 +272,7 @@ def decision(decision_id: str, agent_name: AgentName, queries: list[str]) -> Age
 def make_graph_workflow(
     supervisor: FakeSupervisorAgent,
     *,
+    incident_provider=None,
     evidence_evaluator_agent=None,
     log_provider=None,
     knowledge_base_provider=None,
@@ -250,7 +281,7 @@ def make_graph_workflow(
 ) -> DynamicBugResolutionGraphWorkflow:
     """Create the graph workflow with deterministic local test doubles."""
     return DynamicBugResolutionGraphWorkflow(
-        incident_provider=FakeIncidentProvider(),
+        incident_provider=incident_provider or FakeIncidentProvider(),
         supervisor_agent=supervisor,  # type: ignore[arg-type]
         guardrail_engine=GuardrailEngine(),
         log_investigator_agent=LogInvestigatorAgent(log_provider or FakeLogProvider()),
@@ -412,6 +443,45 @@ async def test_graph_workflow_blocks_repeated_kb_and_falls_back_to_code() -> Non
         step.agent_name == AgentName.CODE_INVESTIGATOR
         and step.run_status == AgentRunStatus.SUCCEEDED
         for step in state.trace.steps
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_routes_to_kb_for_expected_behavior_mismatch() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-BEHAVIOR logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["selected strategy code"]),
+            decision(
+                "decision-3",
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+                ["expected behavior deployment policy"],
+            ),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        incident_provider=BehaviorMismatchIncidentProvider(),
+        log_provider=BehaviorMismatchLogProvider(),
+        knowledge_base_provider=FakeKnowledgeBaseProvider(),
+    )
+
+    state = await workflow.run("INC-BEHAVIOR")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert supervisor.call_count == 3
+    assert any(
+        step.agent_name == AgentName.KNOWLEDGE_BASE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
+    )
+    assert any(
+        seen_state.evidence_evaluation is not None
+        and any(
+            "Knowledge-base evidence is missing" in missing
+            for missing in seen_state.evidence_evaluation.missing_evidence
+        )
+        for seen_state in supervisor.seen_states
     )
 
 

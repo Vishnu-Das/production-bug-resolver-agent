@@ -34,6 +34,37 @@ SYMBOL_REFERENCE_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za
 FUNCTION_CALL_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\(\)")
 CONFIG_KEY_PATTERN = re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b")
 
+EXPECTED_BEHAVIOR_TERMS = (
+    "expected behavior",
+    "expected result",
+    "actual result",
+    "intended behavior",
+    "behavior mismatch",
+    "wrong result",
+    "incorrect result",
+    "quality degraded",
+    "quality regression",
+    "should",
+    "must",
+    "policy",
+    "design",
+    "spec",
+    "specification",
+    "requirement",
+    "no exception",
+    "no error",
+    "still returns",
+    "successful response",
+    "after deployment",
+    "deployment behavior",
+    "configuration policy",
+    "config policy",
+    "silent fallback",
+    "fallback behavior",
+    "what should happen",
+    "which strategy should",
+)
+
 
 class EvidenceEvaluationRules:
     """
@@ -74,6 +105,9 @@ class EvidenceEvaluationRules:
         if self.structural_graph_evidence_required(state):
             return False
 
+        if self.knowledge_base_evidence_required(state):
+            return False
+
         source_types = self._source_types(state.evidence_items)
         has_primary_evidence = (
             EvidenceSourceType.LOG in source_types or EvidenceSourceType.CODE in source_types
@@ -85,6 +119,9 @@ class EvidenceEvaluationRules:
 
     def retry_required(self, state: WorkflowState, can_write_rca: bool) -> bool:
         if self.structural_graph_evidence_required(state):
+            return True
+
+        if self.knowledge_base_evidence_required(state):
             return True
 
         return not can_write_rca and state.can_replan()
@@ -123,6 +160,12 @@ class EvidenceEvaluationRules:
 
         if self.structural_graph_evidence_required(state):
             missing.append("Structural graph evidence is missing.")
+
+        if self.knowledge_base_evidence_required(state):
+            missing.append(
+                "Knowledge-base evidence is missing for expected behavior, policy, "
+                "configuration, deployment, or quality expectations."
+            )
 
         if not state.can_replan() and missing:
             missing.append("Maximum replans have been reached.")
@@ -179,6 +222,13 @@ class EvidenceEvaluationRules:
                 "ownership, or class/function relationship details."
             )
 
+        if self.knowledge_base_evidence_required(state):
+            return (
+                "Knowledge-base evidence is needed before RCA because the incident "
+                "context indicates a behavior, policy, configuration, deployment, "
+                "or quality expectation mismatch."
+            )
+
         if (
             EvidenceSourceType.CODE not in self._source_types(state.evidence_items)
             and self._has_structural_relationship_signal(state)
@@ -216,6 +266,22 @@ class EvidenceEvaluationRules:
 
         return self._has_structural_relationship_signal(state)
 
+    def knowledge_base_evidence_required(self, state: WorkflowState) -> bool:
+        source_types = self._source_types(state.evidence_items)
+        if EvidenceSourceType.KNOWLEDGE_BASE in source_types:
+            return False
+
+        if EvidenceSourceType.CODE not in source_types:
+            return False
+
+        if AgentName.KNOWLEDGE_BASE_INVESTIGATOR not in state.allowed_agent_names:
+            return False
+
+        if not state.can_invoke_agent(AgentName.KNOWLEDGE_BASE_INVESTIGATOR):
+            return False
+
+        return self._has_expected_behavior_signal(state)
+
     def _has_structural_relationship_signal(self, state: WorkflowState) -> bool:
         text = self._structural_signal_text(state)
         normalized = text.lower()
@@ -234,7 +300,6 @@ class EvidenceEvaluationRules:
                 "relationship",
                 "import",
                 "ownership",
-                "path",
             )
         )
 
@@ -252,6 +317,13 @@ class EvidenceEvaluationRules:
         )
 
     def _structural_signal_text(self, state: WorkflowState) -> str:
+        return self._state_signal_text(state)
+
+    def _has_expected_behavior_signal(self, state: WorkflowState) -> bool:
+        normalized = self._state_signal_text(state).lower()
+        return any(term in normalized for term in EXPECTED_BEHAVIOR_TERMS)
+
+    def _state_signal_text(self, state: WorkflowState) -> str:
         values = [
             state.incident.title,
             state.incident.description,

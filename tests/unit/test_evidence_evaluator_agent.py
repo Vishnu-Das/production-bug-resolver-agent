@@ -6,6 +6,7 @@ import pytest
 
 from bug_resolver.agents import EvidenceEvaluatorAgent
 from bug_resolver.schemas import (
+    AgentName,
     EvidenceItem,
     EvidenceSourceType,
     Incident,
@@ -48,6 +49,19 @@ def code_evidence() -> EvidenceItem:
         line_start=40,
         line_end=45,
         content="def route_query(...): return response['output']",
+        relevance_score=0.9,
+    )
+
+
+def generic_implementation_evidence() -> EvidenceItem:
+    return EvidenceItem(
+        evidence_id="ev-code-generic",
+        source_type=EvidenceSourceType.CODE,
+        source_name="src/service.py",
+        file_path="src/service.py",
+        line_start=10,
+        line_end=20,
+        content="def choose_strategy(query): return selected_strategy",
         relevance_score=0.9,
     )
 
@@ -134,6 +148,122 @@ async def test_evidence_evaluator_allows_rca_when_evidence_is_sufficient() -> No
     assert result.improved_code_queries == []
     assert result.improved_knowledge_queries == []
     assert result.reason == "Evidence is sufficient to proceed to RCA writing."
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_requests_kb_for_expected_behavior_mismatch() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        incident=Incident(
+            incident_id="INC-BEHAVIOR",
+            title="Successful responses contain wrong results",
+            description=(
+                "Users report that the service still returns a successful response, "
+                "but the result is incorrect and expected behavior is unclear after deployment."
+            ),
+            affected_service="generic_service",
+        ),
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-log-behavior",
+            source_type=EvidenceSourceType.LOG,
+            source_name="app.log",
+            content="request completed status=200 selected_strategy=fast_path",
+        )
+    )
+    state.add_evidence(generic_implementation_evidence())
+
+    result = await agent.run(state)
+
+    assert result.confidence_score == 0.8
+    assert result.can_write_rca is False
+    assert result.retry_required is True
+    assert (
+        "Knowledge-base evidence is missing for expected behavior, policy, "
+        "configuration, deployment, or quality expectations."
+        in result.missing_evidence
+    )
+    assert result.improved_knowledge_queries != []
+    assert result.reason == (
+        "Knowledge-base evidence is needed before RCA because the incident "
+        "context indicates a behavior, policy, configuration, deployment, "
+        "or quality expectation mismatch."
+    )
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_does_not_require_kb_for_clear_exception() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        incident=Incident(
+            incident_id="INC-EXCEPTION",
+            title="Request fails with TypeError",
+            description="Requests return 500 with a TypeError stack trace.",
+            affected_service="generic_service",
+        ),
+    )
+    state.add_evidence(log_evidence())
+    state.add_evidence(code_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is True
+    assert result.retry_required is False
+    assert not any("Knowledge-base evidence is missing" in item for item in result.missing_evidence)
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_allows_rca_when_expected_behavior_kb_exists() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        incident=Incident(
+            incident_id="INC-BEHAVIOR",
+            title="Successful responses contain wrong results",
+            description="Expected behavior is unclear after deployment.",
+            affected_service="generic_service",
+        ),
+    )
+    state.add_evidence(log_evidence())
+    state.add_evidence(generic_implementation_evidence())
+    state.add_evidence(knowledge_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is True
+    assert result.retry_required is False
+    assert not any("Knowledge-base evidence is missing" in item for item in result.missing_evidence)
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_does_not_require_kb_when_kb_agent_is_unavailable() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        allowed_agent_names=[
+            AgentName.LOG_INVESTIGATOR,
+            AgentName.CODE_INVESTIGATOR,
+            AgentName.EVIDENCE_EVALUATOR,
+            AgentName.RCA_WRITER,
+        ],
+        incident=Incident(
+            incident_id="INC-BEHAVIOR",
+            title="Successful responses contain wrong results",
+            description="Expected behavior is unclear after deployment.",
+            affected_service="generic_service",
+        ),
+    )
+    state.add_evidence(log_evidence())
+    state.add_evidence(generic_implementation_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is True
+    assert result.retry_required is False
+    assert not any("Knowledge-base evidence is missing" in item for item in result.missing_evidence)
 
 
 @pytest.mark.asyncio

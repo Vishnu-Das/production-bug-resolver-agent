@@ -233,6 +233,11 @@ async def test_inc_009_structural_graph_golden_investigation(tmp_path: Path) -> 
                 AgentName.GRAPH_INVESTIGATOR,
                 ["caller chain for rerank_documents_with_scores"],
             ),
+            decision(
+                "golden-009-kb",
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+                ["reranking configuration expected behavior"],
+            ),
         ]
     )
     workflow = build_golden_graph_workflow(
@@ -283,6 +288,7 @@ async def test_inc_009_structural_graph_golden_investigation(tmp_path: Path) -> 
         EvidenceSourceType.LOG,
         EvidenceSourceType.CODE,
         EvidenceSourceType.GRAPH,
+        EvidenceSourceType.KNOWLEDGE_BASE,
     }
     assert_report_files_exist(report_dir, "INC-009")
     assert "rerank_documents_with_scores" in graph_findings
