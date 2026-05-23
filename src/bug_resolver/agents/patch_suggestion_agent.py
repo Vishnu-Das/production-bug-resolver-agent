@@ -6,6 +6,10 @@ from bug_resolver.agents.base import BaseAgent
 from bug_resolver.rules.patch_suggestion_rules import PatchSuggestionRules
 from bug_resolver.schemas import PatchSuggestion, RCAReport, SolutionRecommendation
 from bug_resolver.schemas.common import StrictBaseModel
+from bug_resolver.utils.observability import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class PatchSuggestionInput(StrictBaseModel):
@@ -24,7 +28,14 @@ class PatchSuggestionAgent(BaseAgent[PatchSuggestionInput, PatchSuggestion]):
         self._rules = rules or PatchSuggestionRules()
 
     async def _run(self, input_data: PatchSuggestionInput) -> PatchSuggestion:
-        return self._rules.build_patch_suggestion(
+        suggestion = self._rules.build_patch_suggestion(
             rca_report=input_data.rca_report,
             solution=input_data.solution_recommendation,
         )
+        logger.info(
+            "patch suggestion generated incident_id=%s affected_files=%s evidence_count=%s",
+            suggestion.incident_id,
+            suggestion.affected_files,
+            len(suggestion.evidence_ids),
+        )
+        return suggestion

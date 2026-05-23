@@ -9,6 +9,10 @@ from bug_resolver.providers.code.base import CodeContextProvider
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore, VectorSearchResult
 from bug_resolver.rules.code_context_ranking_rules import CodeContextRankingRules
 from bug_resolver.schemas.code_context import CodeContext
+from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
+
+
+logger = get_logger(__name__)
 
 
 class FAISSCodeContextProvider(CodeContextProvider):
@@ -24,6 +28,7 @@ class FAISSCodeContextProvider(CodeContextProvider):
         self.embedding_client = embedding_client
         self.ranking_rules = ranking_rules or CodeContextRankingRules()
 
+    @traceable(name="code_context.search", run_type="retriever")
     async def search_code(
         self,
         queries: list[str],
@@ -38,6 +43,14 @@ class FAISSCodeContextProvider(CodeContextProvider):
         if not cleaned_queries:
             return []
 
+        logger.info(
+            "code search started query_count=%s limit=%s candidate_limit_per_query=%s",
+            len(cleaned_queries),
+            limit,
+            max(limit * 10, 50),
+        )
+        log_debug_payload(logger, "code search queries", payload=cleaned_queries)
+
         contexts_by_id: dict[str, CodeContext] = {}
 
         per_query_limit = max(limit * 10, 50)
@@ -48,6 +61,11 @@ class FAISSCodeContextProvider(CodeContextProvider):
             search_results = self.vector_store.search(
                 query_vector=query_vector,
                 limit=per_query_limit,
+            )
+            logger.debug(
+                "code vector search returned query=%s candidate_count=%s",
+                query[:120],
+                len(search_results),
             )
 
             for search_result in search_results:
@@ -71,11 +89,33 @@ class FAISSCodeContextProvider(CodeContextProvider):
                 if new_score > existing_score:
                     contexts_by_id[context.context_id] = context
 
-        return self.ranking_rules.rank_contexts(
+        ranked_contexts = self.ranking_rules.rank_contexts(
             list(contexts_by_id.values()),
             queries=cleaned_queries,
             limit=limit,
         )
+        logger.info(
+            "code search finished unique_candidates=%s returned=%s",
+            len(contexts_by_id),
+            len(ranked_contexts),
+        )
+        log_debug_payload(
+            logger,
+            "code search returned contexts",
+            payload=[
+                {
+                    "context_id": context.context_id,
+                    "file_path": context.file_path,
+                    "symbol": context.metadata.get("qualified_symbol")
+                    or context.function_name
+                    or context.class_name,
+                    "score": context.relevance_score,
+                    "query": context.retrieval_query,
+                }
+                for context in ranked_contexts
+            ],
+        )
+        return ranked_contexts
 
     def _is_deprecated_path(self, file_path: object) -> bool:
         if file_path is None:

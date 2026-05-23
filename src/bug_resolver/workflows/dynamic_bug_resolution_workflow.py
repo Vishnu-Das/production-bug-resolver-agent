@@ -34,7 +34,11 @@ from bug_resolver.schemas import (
     WorkflowState,
 )
 from bug_resolver.utils.ids import new_agent_decision_id
+from bug_resolver.utils.observability import get_logger, traceable
 from bug_resolver.workflows.workflow_execution_recorder import WorkflowExecutionRecorder
+
+
+logger = get_logger(__name__)
 
 
 class DynamicBugResolutionWorkflow:
@@ -94,7 +98,9 @@ class DynamicBugResolutionWorkflow:
         self._include_patch_diff = include_patch_diff
         self._execution_recorder = WorkflowExecutionRecorder()
 
+    @traceable(name="workflow.manual.run", run_type="chain")
     async def run(self, incident_id: str) -> WorkflowState:
+        logger.info("manual workflow started incident_id=%s", incident_id)
         incident = await self._incident_provider.get_incident(incident_id)
         state = WorkflowState(
             incident=incident,
@@ -110,6 +116,12 @@ class DynamicBugResolutionWorkflow:
             while state.can_take_step():
                 decision = await self._supervisor_agent.run(state)
                 state.record_decision(decision)
+                logger.info(
+                    "manual workflow decision incident_id=%s decision_id=%s next_agent=%s",
+                    incident_id,
+                    decision.decision_id,
+                    decision.next_agent.value,
+                )
 
                 guardrail_decision = self._guardrail_engine.validate_decision(
                     state=state,
@@ -166,8 +178,16 @@ class DynamicBugResolutionWorkflow:
 
             state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
             state.mark_low_confidence()
+            logger.info(
+                "manual workflow finished incident_id=%s status=%s evidence_count=%s steps=%s",
+                incident_id,
+                state.investigation_status.value,
+                len(state.evidence_items),
+                len(state.trace.steps),
+            )
             return state
         except Exception as exc:
+            logger.exception("manual workflow failed incident_id=%s", incident_id)
             state.add_error(str(exc))
             return state
 

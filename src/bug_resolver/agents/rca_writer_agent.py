@@ -13,6 +13,7 @@ from bug_resolver.rules.rca_rules import RCARules
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas import EvidenceSourceType, RCAReport, WorkflowState
 from bug_resolver.utils.ids import new_rca_report_id
+from bug_resolver.utils.observability import get_logger
 
 
 HYPOTHESIS_PREFIX_PATTERN = re.compile(r"^H\d+\s*:?\s*", re.IGNORECASE)
@@ -34,6 +35,7 @@ ANALYZE_ONLY_FORBIDDEN_PHRASES = (
     "opened a pull request",
     "created a pull request",
 )
+logger = get_logger(__name__)
 
 
 class RCAWriterFallback(Exception):
@@ -86,9 +88,15 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         self._prompt_builder = prompt_builder or RCAPromptBuilder()
 
     async def _run(self, input_data: WorkflowState) -> RCAReport:
+        logger.info(
+            "rca writer started incident_id=%s evidence_count=%s",
+            input_data.incident.incident_id,
+            len(input_data.evidence_items),
+        )
         deterministic_report = self._build_deterministic_report(input_data)
 
         if self._llm_client is None:
+            logger.info("rca writer using fallback reason=llm_client_not_configured")
             return self._with_fallback_metadata(
                 deterministic_report,
                 reason="llm_client_not_configured",
@@ -101,23 +109,32 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
                 system_prompt=self._build_system_prompt(),
             )
         except Exception:
+            logger.exception("rca writer llm call failed")
             return self._with_fallback_metadata(
                 deterministic_report,
                 reason="llm_call_failed",
             )
 
         try:
-            return self._build_report_from_llm_output(
+            report = self._build_report_from_llm_output(
                 state=input_data,
                 output=llm_output,
                 fallback_report=deterministic_report,
             )
+            logger.info(
+                "rca writer accepted llm output report_id=%s evidence_count=%s",
+                report.report_id,
+                len(report.evidence_ids),
+            )
+            return report
         except RCAWriterFallback as error:
+            logger.warning("rca writer using fallback reason=%s", error.reason)
             return self._with_fallback_metadata(
                 deterministic_report,
                 reason=error.reason,
             )
         except Exception:
+            logger.exception("rca writer failed while validating llm output")
             return self._with_fallback_metadata(
                 deterministic_report,
                 reason="llm_call_failed",

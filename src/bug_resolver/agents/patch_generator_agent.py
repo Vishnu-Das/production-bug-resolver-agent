@@ -13,6 +13,10 @@ from bug_resolver.schemas import (
     SolutionRecommendation,
 )
 from bug_resolver.schemas.common import StrictBaseModel
+from bug_resolver.utils.observability import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class PatchGeneratorInput(StrictBaseModel):
@@ -44,8 +48,15 @@ class PatchGeneratorAgent(BaseAgent[PatchGeneratorInput, PatchGenerationResult])
 
     async def _run(self, input_data: PatchGeneratorInput) -> PatchGenerationResult:
         authorized_files = self._code_backed_patch_targets(input_data)
+        logger.info(
+            "patch generator authorized files affected=%s authorized=%s evidence_ids=%s",
+            input_data.affected_files,
+            authorized_files,
+            input_data.evidence_ids,
+        )
         readable_files = await self._read_affected_files(authorized_files)
         if not readable_files:
+            logger.warning("patch generation skipped no readable authorized files")
             return PatchGenerationResult(
                 generated_diff=False,
                 warnings=[
@@ -58,6 +69,7 @@ class PatchGeneratorAgent(BaseAgent[PatchGeneratorInput, PatchGenerationResult])
             )
 
         if self._llm_client is None:
+            logger.warning("patch generation skipped no llm client")
             return PatchGenerationResult(
                 generated_diff=False,
                 warnings=[
@@ -81,11 +93,19 @@ class PatchGeneratorAgent(BaseAgent[PatchGeneratorInput, PatchGenerationResult])
             affected_files=authorized_files,
             readable_files=readable_files,
         )
-        return self._rules.validate_patch_result(
+        validated_result = self._rules.validate_patch_result(
             result=result,
             allowed_files=allowed_files,
             incident_context=self._incident_context(input_data),
         )
+        logger.info(
+            "patch generation validated generated_diff=%s file_patches=%s test_patches=%s warnings=%s",
+            validated_result.generated_diff,
+            len(validated_result.file_patches),
+            len(validated_result.test_patches),
+            validated_result.warnings,
+        )
+        return validated_result
 
     def _code_backed_patch_targets(self, input_data: PatchGeneratorInput) -> list[str]:
         code_evidence_paths = self._source_paths_from_code_evidence(input_data.evidence_ids)

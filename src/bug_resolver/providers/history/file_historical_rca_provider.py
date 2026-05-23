@@ -9,9 +9,11 @@ from typing import Any
 
 from bug_resolver.providers.history.base import HistoricalRCAProvider
 from bug_resolver.schemas import HistoricalRCAContext
+from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
 
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9_]+")
+logger = get_logger(__name__)
 STOPWORDS = frozenset(
     {
         "a",
@@ -43,6 +45,7 @@ class FileHistoricalRCAProvider(HistoricalRCAProvider):
     def __init__(self, reports_dir: str | Path) -> None:
         self.reports_dir = Path(reports_dir)
 
+    @traceable(name="historical_rca.search", run_type="retriever")
     async def search_history(
         self,
         queries: list[str],
@@ -54,6 +57,13 @@ class FileHistoricalRCAProvider(HistoricalRCAProvider):
         if not query_tokens:
             return []
 
+        logger.info(
+            "historical rca search started query_count=%s current_incident_id=%s limit=%s",
+            len(queries),
+            current_incident_id,
+            limit,
+        )
+        log_debug_payload(logger, "historical rca search queries", payload=queries)
         candidates: list[tuple[float, HistoricalRCAContext]] = []
         for report_path in self._report_paths():
             report_data = self._load_report(report_path)
@@ -78,7 +88,26 @@ class FileHistoricalRCAProvider(HistoricalRCAProvider):
             ),
             reverse=True,
         )
-        return [context for _, context in ranked[:limit]]
+        contexts = [context for _, context in ranked[:limit]]
+        logger.info(
+            "historical rca search finished candidates=%s returned=%s",
+            len(candidates),
+            len(contexts),
+        )
+        log_debug_payload(
+            logger,
+            "historical rca returned contexts",
+            payload=[
+                {
+                    "context_id": context.context_id,
+                    "incident_id": context.incident_id,
+                    "score": context.relevance_score,
+                    "matched_signals": context.matched_signals,
+                }
+                for context in contexts
+            ],
+        )
+        return contexts
 
     def _report_paths(self) -> list[Path]:
         if not self.reports_dir.exists():

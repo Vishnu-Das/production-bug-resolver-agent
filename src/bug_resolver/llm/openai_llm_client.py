@@ -3,6 +3,10 @@
 from openai import AsyncOpenAI
 
 from bug_resolver.llm.base import LLMClient, StructuredOutputT
+from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
+
+
+logger = get_logger(__name__)
 
 
 class OpenAILLMClient(LLMClient):
@@ -19,6 +23,7 @@ class OpenAILLMClient(LLMClient):
         self.model = model
         self.client = AsyncOpenAI(api_key=api_key)
 
+    @traceable(name="llm.generate_text", run_type="llm")
     async def generate_text(
         self,
         prompt: str,
@@ -29,6 +34,8 @@ class OpenAILLMClient(LLMClient):
             raise ValueError("Prompt cannot be empty")
 
         messages = self._build_messages(prompt=prompt, system_prompt=system_prompt)
+        logger.info("llm text generation started model=%s prompt_chars=%s", self.model, len(prompt))
+        log_debug_payload(logger, "llm text prompt", payload=prompt)
 
         response = await self.client.chat.completions.create(
             model=self.model,
@@ -40,8 +47,15 @@ class OpenAILLMClient(LLMClient):
         if content is None:
             raise ValueError("OpenAI response did not contain text content")
 
+        logger.info(
+            "llm text generation finished model=%s response_chars=%s",
+            self.model,
+            len(content),
+        )
+        log_debug_payload(logger, "llm text response", payload=content)
         return content
 
+    @traceable(name="llm.generate_structured", run_type="llm")
     async def generate_structured(
         self,
         prompt: str,
@@ -53,6 +67,13 @@ class OpenAILLMClient(LLMClient):
             raise ValueError("Prompt cannot be empty")
 
         messages = self._build_messages(prompt=prompt, system_prompt=system_prompt)
+        logger.info(
+            "llm structured generation started model=%s schema=%s prompt_chars=%s",
+            self.model,
+            output_schema.__name__,
+            len(prompt),
+        )
+        log_debug_payload(logger, "llm structured prompt", payload=prompt)
 
         response = await self.client.beta.chat.completions.parse(
             model=self.model,
@@ -65,6 +86,12 @@ class OpenAILLMClient(LLMClient):
         if parsed is None:
             raise ValueError("OpenAI response did not contain structured output")
 
+        logger.info(
+            "llm structured generation finished model=%s schema=%s",
+            self.model,
+            output_schema.__name__,
+        )
+        log_debug_payload(logger, "llm structured response", payload=parsed)
         return parsed
 
     def _build_messages(

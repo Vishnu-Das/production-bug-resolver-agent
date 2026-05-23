@@ -7,6 +7,10 @@ from bug_resolver.providers.reports.base import ReportStore
 from bug_resolver.schemas.patch_suggestion import FilePatch, PatchSuggestion
 from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.solution import SolutionRecommendation
+from bug_resolver.utils.observability import get_logger, traceable
+
+
+logger = get_logger(__name__)
 
 
 class FileReportStore(ReportStore):
@@ -15,6 +19,7 @@ class FileReportStore(ReportStore):
     def __init__(self, reports_dir: str | Path) -> None:
         self.reports_dir = Path(reports_dir)
 
+    @traceable(name="report_store.save", run_type="chain")
     async def save_report(
         self,
         report: RCAReport,
@@ -24,6 +29,13 @@ class FileReportStore(ReportStore):
     ) -> list[Path]:
         report_dir = self.reports_dir / "incidents" / report.incident_id
         report_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            "saving report artifacts incident_id=%s report_dir=%s has_solution=%s has_patch=%s",
+            report.incident_id,
+            report_dir,
+            solution is not None,
+            patch_suggestion is not None,
+        )
 
         json_path = report_dir / "rca.json"
         markdown_path = report_dir / "rca.md"
@@ -53,6 +65,11 @@ class FileReportStore(ReportStore):
             )
             written_paths.extend([patch_path, patch_markdown_path])
 
+        logger.info(
+            "saved report artifacts incident_id=%s paths=%s",
+            report.incident_id,
+            [str(path) for path in written_paths],
+        )
         return written_paths
 
     async def get_report(self, incident_id: str) -> RCAReport | None:

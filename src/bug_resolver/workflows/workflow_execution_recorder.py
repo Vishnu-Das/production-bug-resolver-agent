@@ -12,6 +12,10 @@ from bug_resolver.schemas import (
     WorkflowState,
 )
 from bug_resolver.utils.ids import new_agent_execution_id
+from bug_resolver.utils.observability import get_logger, log_debug_payload
+
+
+logger = get_logger(__name__)
 
 
 class WorkflowExecutionRecorder:
@@ -25,6 +29,15 @@ class WorkflowExecutionRecorder:
     ) -> None:
         for evidence in evidence_items:
             state.add_evidence(evidence)
+
+        logger.info(
+            "workflow evidence recorded incident_id=%s agent=%s count=%s ids=%s",
+            state.incident.incident_id,
+            decision.next_agent.value,
+            len(evidence_items),
+            [evidence.evidence_id for evidence in evidence_items],
+        )
+        log_debug_payload(logger, "workflow evidence items", payload=evidence_items)
 
         self.record_successful_agent_run(
             state=state,
@@ -50,6 +63,14 @@ class WorkflowExecutionRecorder:
             evidence_ids=evidence_ids,
         )
         state.record_agent_execution(execution)
+        logger.info(
+            "workflow step succeeded incident_id=%s agent=%s decision_id=%s evidence_count=%s summary=%s",
+            state.incident.incident_id,
+            decision.next_agent.value,
+            decision.decision_id,
+            len(evidence_ids),
+            output_summary,
+        )
         state.add_investigation_step(
             InvestigationStep(
                 step_number=state.trace.next_step_number(),
@@ -68,6 +89,19 @@ class WorkflowExecutionRecorder:
         decision: AgentDecision,
         guardrail_decision: GuardrailDecision,
     ) -> None:
+        logger.warning(
+            "workflow step blocked incident_id=%s agent=%s decision_id=%s reason=%s violated=%s fallback=%s",
+            state.incident.incident_id,
+            decision.next_agent.value,
+            decision.decision_id,
+            guardrail_decision.reason,
+            guardrail_decision.violated_rules,
+            (
+                guardrail_decision.fallback_next_agent.value
+                if guardrail_decision.fallback_next_agent
+                else None
+            ),
+        )
         state.add_investigation_step(
             InvestigationStep(
                 step_number=state.trace.next_step_number(),
@@ -84,6 +118,12 @@ class WorkflowExecutionRecorder:
         state: WorkflowState,
         decision: AgentDecision,
     ) -> None:
+        logger.warning(
+            "workflow unsupported agent incident_id=%s agent=%s decision_id=%s",
+            state.incident.incident_id,
+            decision.next_agent.value,
+            decision.decision_id,
+        )
         execution = AgentExecutionRecord(
             execution_id=new_agent_execution_id(),
             agent_name=decision.next_agent,

@@ -41,7 +41,11 @@ from bug_resolver.schemas import (
 )
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.utils.ids import new_agent_decision_id
+from bug_resolver.utils.observability import get_logger, traceable
 from bug_resolver.workflows.workflow_execution_recorder import WorkflowExecutionRecorder
+
+
+logger = get_logger(__name__)
 
 
 GraphRoute = Literal[
@@ -128,8 +132,10 @@ class DynamicBugResolutionGraphWorkflow:
         self._execution_recorder = WorkflowExecutionRecorder()
         self._graph = self._build_graph().compile()
 
+    @traceable(name="workflow.graph.run", run_type="chain")
     async def run(self, incident_id: str) -> WorkflowState:
         """Run a LangGraph-backed investigation and return the final WorkflowState."""
+        logger.info("graph workflow started incident_id=%s", incident_id)
         graph_input = DynamicGraphState(incident_id=incident_id)
         graph_output = await self._graph.ainvoke(graph_input)
         final_graph_state = DynamicGraphState.model_validate(graph_output)
@@ -137,7 +143,15 @@ class DynamicBugResolutionGraphWorkflow:
         if final_graph_state.workflow_state is None:
             raise ValueError("LangGraph workflow finished without a WorkflowState")
 
-        return final_graph_state.workflow_state
+        state = final_graph_state.workflow_state
+        logger.info(
+            "graph workflow finished incident_id=%s status=%s evidence_count=%s steps=%s",
+            incident_id,
+            state.investigation_status.value,
+            len(state.evidence_items),
+            len(state.trace.steps),
+        )
+        return state
 
     def _build_graph(self) -> StateGraph:
         graph = StateGraph(DynamicGraphState)
@@ -240,6 +254,12 @@ class DynamicBugResolutionGraphWorkflow:
 
         decision = await self._supervisor_agent.run(state)
         state.record_decision(decision)
+        logger.info(
+            "graph workflow decision incident_id=%s decision_id=%s next_agent=%s route=guardrail",
+            state.incident.incident_id,
+            decision.decision_id,
+            decision.next_agent.value,
+        )
         graph_state.next_route = "guardrail"
         return graph_state
 

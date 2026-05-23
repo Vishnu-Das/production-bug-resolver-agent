@@ -20,6 +20,8 @@ class AppSettings(BaseSettings):
     )
 
     app_name: str = "Production Bug Resolver Agent"
+    debug: bool = Field(default=False, alias="DEBUG")
+    log_level: str | None = Field(default=None, alias="LOG_LEVEL")
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")

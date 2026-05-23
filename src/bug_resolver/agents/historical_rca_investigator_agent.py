@@ -9,6 +9,10 @@ from bug_resolver.providers.history import HistoricalRCAProvider
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas.evidence import EvidenceItem
 from bug_resolver.schemas.orchestration import AgentDecision
+from bug_resolver.utils.observability import get_logger, log_debug_payload
+
+
+logger = get_logger(__name__)
 
 
 class HistoricalRCAInvestigatorInput(StrictBaseModel):
@@ -34,6 +38,14 @@ class HistoricalRCAInvestigatorAgent(
         input_data: HistoricalRCAInvestigatorInput,
     ) -> list[EvidenceItem]:
         queries = input_data.decision.queries or [input_data.decision.reason]
+        logger.info(
+            "historical rca investigator search incident_id=%s decision_id=%s query_count=%s limit=%s",
+            input_data.incident_id,
+            input_data.decision.decision_id,
+            len(queries),
+            input_data.limit,
+        )
+        log_debug_payload(logger, "historical rca investigator queries", payload=queries)
         contexts = await self._historical_rca_provider.search_history(
             queries,
             current_incident_id=input_data.incident_id,
@@ -45,4 +57,10 @@ class HistoricalRCAInvestigatorAgent(
             evidence.metadata["agent_name"] = self.name
             evidence.metadata["decision_id"] = input_data.decision.decision_id
 
+        logger.info(
+            "historical rca investigator evidence decision_id=%s count=%s ids=%s",
+            input_data.decision.decision_id,
+            len(evidence_items),
+            [evidence.evidence_id for evidence in evidence_items],
+        )
         return evidence_items

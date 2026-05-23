@@ -12,6 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from bug_resolver.config.settings import get_settings
+from bug_resolver.utils.observability import configure_logging, get_logger
 from bug_resolver.workflows import build_dynamic_workflow
 from bug_resolver.workflows.graph_factory import build_dynamic_graph_workflow
 from bug_resolver.schemas import AgentName
@@ -23,6 +24,7 @@ app = typer.Typer(
 )
 
 console = Console()
+logger = get_logger(__name__)
 
 
 class WorkflowChoice(StrEnum):
@@ -68,8 +70,23 @@ def investigate(
         "--include-patch-diff",
         help="Generate analyze-only unified diff suggestions with the patch plan.",
     ),
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        help="Enable verbose debug logs for workflow, retrieval, and report generation.",
+    ),
 ) -> None:
     """Run a dynamic supervisor-led bug investigation for an incident."""
+    settings = get_settings()
+    configure_logging(debug=debug or settings.debug, log_level=settings.log_level)
+    logger.info(
+        "investigation command started incident_id=%s workflow=%s patch_plan=%s patch_diff=%s debug=%s",
+        incident_id,
+        workflow.value,
+        include_patch_plan or include_patch_diff,
+        include_patch_diff,
+        debug or settings.debug,
+    )
     console.print("[bold cyan]Starting dynamic investigation[/bold cyan]\n")
 
     try:
@@ -82,6 +99,7 @@ def investigate(
             )
         )
     except Exception as exc:
+        logger.exception("investigation command failed incident_id=%s workflow=%s", incident_id, workflow.value)
         console.print(
             Panel(
                 f"[bold red]Investigation failed[/bold red]\n\n{exc}",
@@ -113,6 +131,14 @@ def investigate(
 
     if state.low_confidence:
         _print_low_confidence_warning()
+
+    logger.info(
+        "investigation command finished incident_id=%s status=%s evidence_count=%s step_count=%s",
+        incident_id,
+        state.investigation_status.value,
+        len(state.evidence_items),
+        len(state.trace.steps),
+    )
 
 
 def _print_investigation_summary(

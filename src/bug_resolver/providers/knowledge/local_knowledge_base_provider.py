@@ -4,9 +4,11 @@ from pathlib import Path
 
 from bug_resolver.providers.knowledge.base import KnowledgeBaseProvider
 from bug_resolver.schemas.knowledge_context import KnowledgeContext
+from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
 
 
 SUPPORTED_DOC_EXTENSIONS = {".md", ".txt"}
+logger = get_logger(__name__)
 
 
 class LocalKnowledgeBaseProvider(KnowledgeBaseProvider):
@@ -16,6 +18,7 @@ class LocalKnowledgeBaseProvider(KnowledgeBaseProvider):
         self.knowledge_base_dir = Path(knowledge_base_dir)
         self.max_results = max_results
 
+    @traceable(name="knowledge_base.search", run_type="retriever")
     async def search_knowledge(
         self,
         queries: list[str],
@@ -25,6 +28,8 @@ class LocalKnowledgeBaseProvider(KnowledgeBaseProvider):
         if not queries:
             return []
 
+        logger.info("knowledge search started query_count=%s limit=%s", len(queries), limit)
+        log_debug_payload(logger, "knowledge search queries", payload=queries)
         documents = self._load_documents()
         scored_documents = self._score_documents(documents=documents, queries=queries)
 
@@ -36,7 +41,7 @@ class LocalKnowledgeBaseProvider(KnowledgeBaseProvider):
             reverse=True,
         )[:max_results]
 
-        return [
+        contexts = [
             self._to_knowledge_context(
                 file_path=file_path,
                 content=content,
@@ -46,6 +51,25 @@ class LocalKnowledgeBaseProvider(KnowledgeBaseProvider):
             for file_path, score, content, matched_query in top_documents
             if score > 0
         ]
+        logger.info(
+            "knowledge search finished documents=%s returned=%s",
+            len(documents),
+            len(contexts),
+        )
+        log_debug_payload(
+            logger,
+            "knowledge search returned contexts",
+            payload=[
+                {
+                    "context_id": context.context_id,
+                    "document": context.document_name,
+                    "score": context.relevance_score,
+                    "query": context.retrieval_query,
+                }
+                for context in contexts
+            ],
+        )
+        return contexts
 
     def _load_documents(self) -> list[tuple[Path, str]]:
         if not self.knowledge_base_dir.exists():
