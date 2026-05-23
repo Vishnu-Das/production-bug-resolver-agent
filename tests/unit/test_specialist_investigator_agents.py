@@ -144,7 +144,11 @@ async def test_code_investigator_agent_uses_supervisor_queries() -> None:
         )
     )
 
-    assert provider.queries == ["router.py route_query TypeError", "route_query"]
+    assert provider.queries == [
+        "router.py route_query TypeError",
+        "route_query",
+        "router.py",
+    ]
     assert provider.limit == 3
     assert len(evidence) == 1
     assert evidence[0].source_type == EvidenceSourceType.CODE
@@ -184,8 +188,9 @@ async def test_code_investigator_agent_enriches_code_queries() -> None:
     assert provider.queries is not None
     joined_queries = "\n".join(provider.queries)
     assert "RERANKING_MODEL_NAME" in joined_queries
-    assert "load_reranker" in joined_queries
-    assert "rerank_documents_with_scores" in joined_queries
+    assert "reranker_model" in joined_queries
+    assert "config" in joined_queries
+    assert "order_changed" in joined_queries
 
 
 @pytest.mark.asyncio

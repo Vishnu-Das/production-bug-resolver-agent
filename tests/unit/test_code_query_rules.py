@@ -27,13 +27,26 @@ def test_upload_query_enrichment_adds_content_hash_and_upload_terms() -> None:
     joined_queries = "\n".join(queries)
 
     assert queries[0].startswith("content_hash")
-    assert "handle_file_upload" in joined_queries
     assert "processed_uploads" in joined_queries
     assert "duplicate_content_detected" in joined_queries
     assert "filename" in joined_queries
+    assert "dedup" in joined_queries
+    assert "ingestion" in joined_queries
 
 
-def test_reranker_query_enrichment_adds_config_and_symbol_terms() -> None:
+def test_upload_query_enrichment_does_not_invent_target_repo_symbols() -> None:
+    decision = make_decision(queries=["duplicate files appear after upload"])
+
+    queries = CodeQueryRules().enrich_queries(decision)
+    joined_queries = "\n".join(queries)
+
+    assert "upload" in joined_queries
+    assert "dedup" in joined_queries
+    assert "handle_file_upload" not in joined_queries
+    assert "upload_service.py" not in joined_queries
+
+
+def test_reranker_query_enrichment_adds_generic_config_terms() -> None:
     decision = make_decision(
         queries=[
             'RERANKING_MODEL_NAME="" reranker_model=null scores="0.0" order_changed=false'
@@ -44,9 +57,22 @@ def test_reranker_query_enrichment_adds_config_and_symbol_terms() -> None:
     joined_queries = "\n".join(queries)
 
     assert "RERANKING_MODEL_NAME" in joined_queries
-    assert "load_reranker" in joined_queries
-    assert "rerank_documents_with_scores" in joined_queries
+    assert "reranker_model" in joined_queries
+    assert "config" in joined_queries
+    assert "reranking" in joined_queries
     assert "order_changed" in joined_queries
+
+
+def test_query_enrichment_preserves_observed_function_names() -> None:
+    decision = make_decision(
+        queries=["caller chain shows load_reranker() reads RERANKING_MODEL_NAME"]
+    )
+
+    queries = CodeQueryRules().enrich_queries(decision)
+    joined_queries = "\n".join(queries)
+
+    assert "load_reranker" in joined_queries
+    assert "RERANKING_MODEL_NAME" in joined_queries
 
 
 def test_summary_query_enrichment_adds_routing_strategy_terms() -> None:
@@ -68,10 +94,11 @@ def test_reason_is_used_when_supervisor_queries_are_missing() -> None:
     joined_queries = "\n".join(queries)
 
     assert queries[0] == "Need code for reranker_model null order_changed false"
-    assert "rerank_documents" in joined_queries
+    assert "reranking" in joined_queries
+    assert "config" in joined_queries
 
 
-def test_query_enrichment_uses_existing_log_evidence() -> None:
+def test_query_enrichment_uses_existing_log_evidence_generically() -> None:
     decision = make_decision(queries=["answer quality degraded"])
     evidence_items = [
         EvidenceItem(
@@ -90,8 +117,52 @@ def test_query_enrichment_uses_existing_log_evidence() -> None:
 
     assert "answer quality degraded" in queries
     assert "RERANKING_MODEL_NAME" in joined_queries
-    assert "load_reranker" in joined_queries
-    assert "rerank_documents_with_scores" in joined_queries
+    assert "reranker_model" in joined_queries
+    assert "reranking" in joined_queries
+    assert "order_changed" in joined_queries
+
+
+def test_query_enrichment_uses_relevant_kb_evidence() -> None:
+    decision = make_decision(queries=["duplicate upload documents"])
+    evidence_items = [
+        EvidenceItem(
+            evidence_id="kb-upload",
+            source_type=EvidenceSourceType.KNOWLEDGE_BASE,
+            source_name="ingestion-guide.md",
+            content=(
+                "Duplicate uploads should compare content_hash values before "
+                "creating document records."
+            ),
+        )
+    ]
+
+    queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
+    joined_queries = "\n".join(queries)
+
+    assert "content_hash" in joined_queries
+    assert "duplicate" in joined_queries
+    assert "upload" in joined_queries
+
+
+def test_query_enrichment_uses_relevant_graph_evidence() -> None:
+    decision = make_decision(queries=["reranker configuration fallback"])
+    evidence_items = [
+        EvidenceItem(
+            evidence_id="graph-1",
+            source_type=EvidenceSourceType.GRAPH,
+            source_name="graph",
+            file_path="src/search.py",
+            content="SearchPipeline.rerank calls load_model() before scoring.",
+            metadata={"qualified_symbol": "SearchPipeline.rerank"},
+        )
+    ]
+
+    queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
+    joined_queries = "\n".join(queries)
+
+    assert "SearchPipeline.rerank" in joined_queries
+    assert "load_model" in joined_queries
+    assert "src/search.py" in joined_queries
 
 
 def test_query_enrichment_ignores_unrelated_kb_evidence() -> None:
@@ -108,9 +179,9 @@ def test_query_enrichment_ignores_unrelated_kb_evidence() -> None:
     queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
     joined_queries = "\n".join(queries)
 
-    assert "handle_file_upload" in joined_queries
+    assert "dedup" in joined_queries
     assert "parent_child" not in joined_queries
-    assert "rerank_documents" not in joined_queries
+    assert "reranking" not in joined_queries
 
 
 def test_query_enrichment_deduplicates_repeated_queries() -> None:
