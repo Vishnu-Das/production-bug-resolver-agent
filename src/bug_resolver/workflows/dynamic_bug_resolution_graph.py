@@ -19,6 +19,8 @@ from bug_resolver.agents import (
     KnowledgeBaseInvestigatorInput,
     LogInvestigatorAgent,
     LogInvestigatorInput,
+    PatchSuggestionAgent,
+    PatchSuggestionInput,
     RCAWriterAgent,
     ReportWriterAgent,
     ReportWriterInput,
@@ -51,6 +53,7 @@ GraphRoute = Literal[
     "evidence_evaluator",
     "rca_writer",
     "solution_recommender",
+    "patch_suggester",
     "report_writer",
     "finish",
 ]
@@ -86,6 +89,7 @@ class DynamicBugResolutionGraphWorkflow:
         rca_writer_agent: RCAWriterAgent,
         solution_recommendation_agent: SolutionRecommendationAgent,
         report_writer_agent: ReportWriterAgent,
+        patch_suggestion_agent: PatchSuggestionAgent | None = None,
         code_graph_investigator_agent: CodeGraphInvestigatorAgent | None = None,
         historical_rca_investigator_agent: HistoricalRCAInvestigatorAgent | None = None,
         max_steps: int = 12,
@@ -93,6 +97,7 @@ class DynamicBugResolutionGraphWorkflow:
         max_agent_invocations_per_agent: int = 3,
         confidence_threshold: float = 0.75,
         minimum_evidence_count_before_rca: int = 2,
+        include_patch_plan: bool = False,
     ) -> None:
         self._incident_provider = incident_provider
         self._supervisor_agent = supervisor_agent
@@ -105,12 +110,14 @@ class DynamicBugResolutionGraphWorkflow:
         self._evidence_evaluator_agent = evidence_evaluator_agent
         self._rca_writer_agent = rca_writer_agent
         self._solution_recommendation_agent = solution_recommendation_agent
+        self._patch_suggestion_agent = patch_suggestion_agent
         self._report_writer_agent = report_writer_agent
         self._max_steps = max_steps
         self._max_replans = max_replans
         self._max_agent_invocations_per_agent = max_agent_invocations_per_agent
         self._confidence_threshold = confidence_threshold
         self._minimum_evidence_count_before_rca = minimum_evidence_count_before_rca
+        self._include_patch_plan = include_patch_plan
         self._execution_recorder = WorkflowExecutionRecorder()
         self._graph = self._build_graph().compile()
 
@@ -139,6 +146,7 @@ class DynamicBugResolutionGraphWorkflow:
         graph.add_node("evidence_evaluator", self._evidence_evaluator)
         graph.add_node("rca_writer", self._rca_writer)
         graph.add_node("solution_recommender", self._solution_recommender)
+        graph.add_node("patch_suggester", self._patch_suggester)
         graph.add_node("report_writer", self._report_writer)
         graph.add_node("finish", self._finish)
 
@@ -157,6 +165,7 @@ class DynamicBugResolutionGraphWorkflow:
                 "evidence_evaluator": "evidence_evaluator",
                 "rca_writer": "rca_writer",
                 "solution_recommender": "solution_recommender",
+                "patch_suggester": "patch_suggester",
                 "report_writer": "report_writer",
                 "finish": "finish",
             },
@@ -176,7 +185,15 @@ class DynamicBugResolutionGraphWorkflow:
             },
         )
         graph.add_edge("rca_writer", "solution_recommender")
-        graph.add_edge("solution_recommender", "report_writer")
+        graph.add_conditional_edges(
+            "solution_recommender",
+            self._route_after_solution_recommendation,
+            {
+                "patch_suggester": "patch_suggester",
+                "report_writer": "report_writer",
+            },
+        )
+        graph.add_edge("patch_suggester", "report_writer")
         graph.add_edge("report_writer", "finish")
         graph.add_edge("finish", END)
 
@@ -410,6 +427,40 @@ class DynamicBugResolutionGraphWorkflow:
             evidence_ids=state.solution_recommendation.evidence_ids,
             output_summary=state.solution_recommendation.summary,
         )
+        graph_state.next_route = self._route_after_solution_recommendation(graph_state)
+        return graph_state
+
+    async def _patch_suggester(self, graph_state: DynamicGraphState) -> DynamicGraphState:
+        state = self._state(graph_state)
+        if not self._include_patch_plan:
+            graph_state.next_route = "report_writer"
+            return graph_state
+        if state.rca_report is None:
+            raise ValueError("patch suggestion requires RCA report")
+        if state.solution_recommendation is None:
+            raise ValueError("patch suggestion requires solution recommendation")
+        decision = self._ensure_forced_decision(
+            state=state,
+            agent_name=AgentName.PATCH_SUGGESTER,
+            reason="Optional patch suggestion requested; generate analyze-only patch plan.",
+        )
+        if self._patch_suggestion_agent is None:
+            self._record_blocked_unsupported_agent(state, decision)
+            graph_state.next_route = "report_writer"
+            return graph_state
+
+        state.patch_suggestion = await self._patch_suggestion_agent.run(
+            PatchSuggestionInput(
+                rca_report=state.rca_report,
+                solution_recommendation=state.solution_recommendation,
+            )
+        )
+        self._record_successful_agent_run(
+            state=state,
+            decision=decision,
+            evidence_ids=state.patch_suggestion.evidence_ids,
+            output_summary=state.patch_suggestion.summary,
+        )
         graph_state.next_route = "report_writer"
         return graph_state
 
@@ -424,11 +475,12 @@ class DynamicBugResolutionGraphWorkflow:
             should_continue=False,
         )
         written_paths = await self._report_writer_agent.run(
-            ReportWriterInput(
-                report=state.rca_report,
-                solution=state.solution_recommendation,
+                ReportWriterInput(
+                    report=state.rca_report,
+                    solution=state.solution_recommendation,
+                    patch_suggestion=state.patch_suggestion,
+                )
             )
-        )
         state.final_report_path = written_paths[0]
         state.investigation_status = InvestigationStatus.COMPLETED
         self._record_successful_agent_run(
@@ -459,6 +511,21 @@ class DynamicBugResolutionGraphWorkflow:
         state.mark_low_confidence()
         state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
         return "finish"
+
+    def _route_after_solution_recommendation(
+        self,
+        graph_state: DynamicGraphState,
+    ) -> GraphRoute:
+        state = self._state(graph_state)
+        if (
+            self._include_patch_plan
+            and state.patch_suggestion is None
+            and state.rca_report is not None
+            and state.solution_recommendation is not None
+        ):
+            return "patch_suggester"
+
+        return "report_writer"
 
     def _can_retry_for_structural_graph_evidence(self, state: WorkflowState) -> bool:
         evaluation = state.evidence_evaluation
@@ -569,6 +636,7 @@ class DynamicBugResolutionGraphWorkflow:
             AgentName.EVIDENCE_EVALUATOR: "evidence_evaluator",
             AgentName.RCA_WRITER: "rca_writer",
             AgentName.SOLUTION_RECOMMENDER: "solution_recommender",
+            AgentName.PATCH_SUGGESTER: "patch_suggester",
             AgentName.REPORT_WRITER: "report_writer",
             AgentName.FINISH: "finish",
         }

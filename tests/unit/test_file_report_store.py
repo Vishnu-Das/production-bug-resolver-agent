@@ -5,6 +5,7 @@ import json
 import pytest
 
 from bug_resolver.providers.reports.file_report_store import FileReportStore
+from bug_resolver.schemas import PatchSuggestion
 from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.solution import SolutionRecommendation
 
@@ -173,6 +174,71 @@ async def test_file_report_store_saves_solution_markdown_when_solution_is_provid
     assert "- fallback_used: true" in saved_solution_markdown
     assert "- fallback_reason: llm_call_failed" in saved_solution_markdown
     assert "- recommendation_id: SOL-001" in saved_solution_markdown
+
+
+@pytest.mark.asyncio
+async def test_file_report_store_saves_patch_markdown_when_patch_plan_is_provided(
+    tmp_path,
+):
+    report = RCAReport(
+        report_id="RCA-010",
+        incident_id="INC-010",
+        title="RCA",
+        incident_summary="Summary.",
+        root_cause="Root cause.",
+        technical_explanation="Technical explanation.",
+        confidence_score=0.9,
+        confidence_reason="Enough evidence exists.",
+    )
+    solution = SolutionRecommendation(
+        recommendation_id="SOL-010",
+        incident_id="INC-010",
+        rca_report_id="RCA-010",
+        summary="Fix duplicate upload handling.",
+        confidence_score=0.85,
+    )
+    patch_suggestion = PatchSuggestion(
+        suggestion_id="PATCH-010",
+        incident_id="INC-010",
+        rca_report_id="RCA-010",
+        solution_recommendation_id="SOL-010",
+        summary="Use content hash as upload identity.",
+        affected_files=["src/services/upload_service.py"],
+        behavior_changes=["Use content hash instead of filename for duplicate detection."],
+        tests_to_add=["Add same-content different-filename upload regression test."],
+        validation_commands=["Run upload service tests."],
+        risk_notes=["Human approval is required."],
+        confidence_score=0.85,
+        evidence_ids=["evidence-src/services/upload_service.py:handle_file_upload"],
+        metadata={
+            "patch_suggestion_writer": "deterministic",
+            "analyze_only": "true",
+            "target_repo_modified": "false",
+        },
+    )
+
+    store = FileReportStore(reports_dir=tmp_path)
+
+    result = await store.save_report(
+        report,
+        solution=solution,
+        patch_suggestion=patch_suggestion,
+    )
+
+    patch_json_path = tmp_path / "incidents" / "INC-010" / "patch.json"
+    patch_markdown_path = tmp_path / "incidents" / "INC-010" / "patch.md"
+
+    assert patch_json_path in result
+    assert patch_markdown_path in result
+    saved_patch_json = json.loads(patch_json_path.read_text(encoding="utf-8"))
+    saved_patch_markdown = patch_markdown_path.read_text(encoding="utf-8")
+
+    assert saved_patch_json["suggestion_id"] == "PATCH-010"
+    assert "# Patch Suggestion for INC-010" in saved_patch_markdown
+    assert "## Affected Files" in saved_patch_markdown
+    assert "- src/services/upload_service.py" in saved_patch_markdown
+    assert "Human approval required: True" in saved_patch_markdown
+    assert "Target repository modified: false" in saved_patch_markdown
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from bug_resolver.agents.base import BaseAgent
 from bug_resolver.providers.reports.base import ReportStore
-from bug_resolver.schemas import RCAReport, SolutionRecommendation
+from bug_resolver.schemas import PatchSuggestion, RCAReport, SolutionRecommendation
 from bug_resolver.schemas.common import StrictBaseModel
 
 
@@ -15,6 +15,7 @@ class ReportWriterInput(StrictBaseModel):
 
     report: RCAReport
     solution: SolutionRecommendation | None = None
+    patch_suggestion: PatchSuggestion | None = None
 
 
 class ReportWriterAgent(BaseAgent[ReportWriterInput, list[Path]]):
@@ -37,6 +38,7 @@ class ReportWriterAgent(BaseAgent[ReportWriterInput, list[Path]]):
         return await self._report_store.save_report(
             input_data.report,
             solution=input_data.solution,
+            patch_suggestion=input_data.patch_suggestion,
         )
 
     def _validate_output(self, output: list[Path]) -> None:

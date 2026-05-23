@@ -9,6 +9,7 @@ from bug_resolver.agents import (
     HistoricalRCAInvestigatorAgent,
     KnowledgeBaseInvestigatorAgent,
     LogInvestigatorAgent,
+    PatchSuggestionAgent,
     RCAWriterAgent,
     ReportWriterAgent,
     SolutionRecommendationAgent,
@@ -35,7 +36,11 @@ from bug_resolver.workflows.dynamic_bug_resolution_workflow import (
 from bug_resolver.workflows.workflow_dependencies import load_or_build_code_index
 
 
-async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionWorkflow:
+async def build_dynamic_workflow(
+    settings: AppSettings,
+    *,
+    include_patch_plan: bool = False,
+) -> DynamicBugResolutionWorkflow:
     """Build the fully wired dynamic workflow for CLI investigations."""
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is required to run investigations.")
@@ -76,9 +81,11 @@ async def build_dynamic_workflow(settings: AppSettings) -> DynamicBugResolutionW
         evidence_evaluator_agent=EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(llm_client=llm_client),
         solution_recommendation_agent=SolutionRecommendationAgent(llm_client=llm_client),
+        patch_suggestion_agent=PatchSuggestionAgent(),
         report_writer_agent=ReportWriterAgent(FileReportStore(settings.reports_dir)),
         max_replans=settings.max_retries,
         confidence_threshold=settings.confidence_threshold,
+        include_patch_plan=include_patch_plan,
     )
 
 

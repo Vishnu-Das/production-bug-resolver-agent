@@ -9,6 +9,7 @@ from bug_resolver.agents import (
     HistoricalRCAInvestigatorAgent,
     KnowledgeBaseInvestigatorAgent,
     LogInvestigatorAgent,
+    PatchSuggestionAgent,
     RCAWriterAgent,
     ReportWriterAgent,
     SolutionRecommendationAgent,
@@ -37,6 +38,8 @@ from bug_resolver.workflows.workflow_dependencies import load_or_build_code_inde
 
 async def build_dynamic_graph_workflow(
     settings: AppSettings,
+    *,
+    include_patch_plan: bool = False,
 ) -> DynamicBugResolutionGraphWorkflow:
     """Build the fully wired LangGraph workflow for future CLI investigations."""
     if not settings.openai_api_key:
@@ -78,7 +81,9 @@ async def build_dynamic_graph_workflow(
         evidence_evaluator_agent=EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(llm_client=llm_client),
         solution_recommendation_agent=SolutionRecommendationAgent(llm_client=llm_client),
+        patch_suggestion_agent=PatchSuggestionAgent(),
         report_writer_agent=ReportWriterAgent(FileReportStore(settings.reports_dir)),
         max_replans=settings.max_retries,
         confidence_threshold=settings.confidence_threshold,
+        include_patch_plan=include_patch_plan,
     )

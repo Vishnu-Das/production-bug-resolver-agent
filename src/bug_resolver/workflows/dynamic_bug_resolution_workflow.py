@@ -14,6 +14,8 @@ from bug_resolver.agents import (
     KnowledgeBaseInvestigatorInput,
     LogInvestigatorAgent,
     LogInvestigatorInput,
+    PatchSuggestionAgent,
+    PatchSuggestionInput,
     RCAWriterAgent,
     ReportWriterAgent,
     ReportWriterInput,
@@ -55,6 +57,7 @@ class DynamicBugResolutionWorkflow:
         rca_writer_agent: RCAWriterAgent,
         solution_recommendation_agent: SolutionRecommendationAgent,
         report_writer_agent: ReportWriterAgent,
+        patch_suggestion_agent: PatchSuggestionAgent | None = None,
         code_graph_investigator_agent: CodeGraphInvestigatorAgent | None = None,
         historical_rca_investigator_agent: HistoricalRCAInvestigatorAgent | None = None,
         max_steps: int = 12,
@@ -62,6 +65,7 @@ class DynamicBugResolutionWorkflow:
         max_agent_invocations_per_agent: int = 3,
         confidence_threshold: float = 0.75,
         minimum_evidence_count_before_rca: int = 2,
+        include_patch_plan: bool = False,
     ) -> None:
         self._incident_provider = incident_provider
         self._supervisor_agent = supervisor_agent
@@ -74,12 +78,14 @@ class DynamicBugResolutionWorkflow:
         self._evidence_evaluator_agent = evidence_evaluator_agent
         self._rca_writer_agent = rca_writer_agent
         self._solution_recommendation_agent = solution_recommendation_agent
+        self._patch_suggestion_agent = patch_suggestion_agent
         self._report_writer_agent = report_writer_agent
         self._max_steps = max_steps
         self._max_replans = max_replans
         self._max_agent_invocations_per_agent = max_agent_invocations_per_agent
         self._confidence_threshold = confidence_threshold
         self._minimum_evidence_count_before_rca = minimum_evidence_count_before_rca
+        self._include_patch_plan = include_patch_plan
         self._execution_recorder = WorkflowExecutionRecorder()
 
     async def run(self, incident_id: str) -> WorkflowState:
@@ -272,6 +278,29 @@ class DynamicBugResolutionWorkflow:
             )
             return
 
+        if decision.next_agent == AgentName.PATCH_SUGGESTER:
+            if state.rca_report is None:
+                raise ValueError("patch suggestion requires RCA report")
+            if state.solution_recommendation is None:
+                raise ValueError("patch suggestion requires solution recommendation")
+            if self._patch_suggestion_agent is None:
+                self._record_blocked_unsupported_agent(state, decision)
+                return
+
+            state.patch_suggestion = await self._patch_suggestion_agent.run(
+                PatchSuggestionInput(
+                    rca_report=state.rca_report,
+                    solution_recommendation=state.solution_recommendation,
+                )
+            )
+            self._record_successful_agent_run(
+                state=state,
+                decision=decision,
+                evidence_ids=state.patch_suggestion.evidence_ids,
+                output_summary=state.patch_suggestion.summary,
+            )
+            return
+
         if decision.next_agent == AgentName.REPORT_WRITER:
             if state.rca_report is None:
                 raise ValueError("report writing requires RCA report")
@@ -279,6 +308,7 @@ class DynamicBugResolutionWorkflow:
                 ReportWriterInput(
                     report=state.rca_report,
                     solution=state.solution_recommendation,
+                    patch_suggestion=state.patch_suggestion,
                 )
             )
             state.final_report_path = written_paths[0]
@@ -394,6 +424,24 @@ class DynamicBugResolutionWorkflow:
             )
             state.record_decision(solution_decision)
             await self._execute_decision(state=state, decision=solution_decision)
+
+        if (
+            self._include_patch_plan
+            and state.patch_suggestion is None
+            and state.rca_report is not None
+            and state.solution_recommendation is not None
+        ):
+            patch_decision = AgentDecision(
+                decision_id=new_agent_decision_id(),
+                next_agent=AgentName.PATCH_SUGGESTER,
+                reason="Optional patch suggestion requested; generate analyze-only patch plan.",
+                queries=[],
+                expected_evidence=[],
+                should_continue=True,
+                metadata={"forced_by_workflow": "true"},
+            )
+            state.record_decision(patch_decision)
+            await self._execute_decision(state=state, decision=patch_decision)
 
         if state.final_report_path is None:
             report_decision = AgentDecision(

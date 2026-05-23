@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from bug_resolver.providers.reports.base import ReportStore
+from bug_resolver.schemas.patch_suggestion import PatchSuggestion
 from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.solution import SolutionRecommendation
 
@@ -19,6 +20,7 @@ class FileReportStore(ReportStore):
         report: RCAReport,
         *,
         solution: SolutionRecommendation | None = None,
+        patch_suggestion: PatchSuggestion | None = None,
     ) -> list[Path]:
         report_dir = self.reports_dir / "incidents" / report.incident_id
         report_dir.mkdir(parents=True, exist_ok=True)
@@ -29,6 +31,8 @@ class FileReportStore(ReportStore):
         self._save_json(report=report, json_path=json_path)
         self._save_markdown(report=report, markdown_path=markdown_path)
 
+        written_paths = [markdown_path, json_path]
+
         if solution is not None:
             solution_path = report_dir / "solution.json"
             solution_markdown_path = report_dir / "solution.md"
@@ -37,9 +41,19 @@ class FileReportStore(ReportStore):
                 solution=solution,
                 markdown_path=solution_markdown_path,
             )
-            return [markdown_path, json_path, solution_path, solution_markdown_path]
+            written_paths.extend([solution_path, solution_markdown_path])
 
-        return [markdown_path, json_path]
+        if patch_suggestion is not None:
+            patch_path = report_dir / "patch.json"
+            patch_markdown_path = report_dir / "patch.md"
+            self._save_patch_json(patch_suggestion=patch_suggestion, json_path=patch_path)
+            self._save_patch_markdown(
+                patch_suggestion=patch_suggestion,
+                markdown_path=patch_markdown_path,
+            )
+            written_paths.extend([patch_path, patch_markdown_path])
+
+        return written_paths
 
     async def get_report(self, incident_id: str) -> RCAReport | None:
         json_path = self.reports_dir / "incidents" / incident_id / "rca.json"
@@ -66,6 +80,29 @@ class FileReportStore(ReportStore):
                 solution.model_dump(mode="json"),
                 indent=2,
             ),
+            encoding="utf-8",
+        )
+
+    def _save_patch_json(
+        self,
+        patch_suggestion: PatchSuggestion,
+        json_path: Path,
+    ) -> None:
+        json_path.write_text(
+            json.dumps(
+                patch_suggestion.model_dump(mode="json"),
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    def _save_patch_markdown(
+        self,
+        patch_suggestion: PatchSuggestion,
+        markdown_path: Path,
+    ) -> None:
+        markdown_path.write_text(
+            self._build_patch_markdown(patch_suggestion),
             encoding="utf-8",
         )
 
@@ -179,6 +216,69 @@ class FileReportStore(ReportStore):
             lines,
             "## Metadata",
             self._render_metadata_lines(report.metadata),
+        )
+
+        return "\n".join(lines) + "\n"
+
+    def _build_patch_markdown(self, patch_suggestion: PatchSuggestion) -> str:
+        lines: list[str] = [f"# Patch Suggestion for {patch_suggestion.incident_id}"]
+        self._add_section(lines, "## Summary", [patch_suggestion.summary])
+        self._add_section(
+            lines,
+            "## Affected Files",
+            self._render_list_lines(patch_suggestion.affected_files),
+        )
+        self._add_section(
+            lines,
+            "## Behavior Changes",
+            self._render_list_lines(patch_suggestion.behavior_changes),
+        )
+        self._add_section(
+            lines,
+            "## Tests to Add",
+            self._render_list_lines(patch_suggestion.tests_to_add),
+        )
+        self._add_section(
+            lines,
+            "## Validation Commands",
+            self._render_list_lines(patch_suggestion.validation_commands),
+        )
+        self._add_section(
+            lines,
+            "## Risk Notes",
+            self._render_list_lines(patch_suggestion.risk_notes),
+        )
+        self._add_section(
+            lines,
+            "## Evidence",
+            self._render_list_lines(
+                [
+                    self._display_evidence_id(evidence_id)
+                    for evidence_id in patch_suggestion.evidence_ids
+                ]
+            ),
+        )
+        self._add_section(
+            lines,
+            "## Approval",
+            [
+                f"Human approval required: {patch_suggestion.human_approval_required}",
+                "Target repository modified: false",
+            ],
+        )
+        self._add_section(
+            lines,
+            "## Metadata",
+            [
+                f"- suggestion_id: {patch_suggestion.suggestion_id}",
+                f"- rca_report_id: {patch_suggestion.rca_report_id}",
+                (
+                    "- solution_recommendation_id: "
+                    f"{patch_suggestion.solution_recommendation_id}"
+                ),
+                f"- confidence_score: {patch_suggestion.confidence_score}",
+                *self._render_metadata_lines(patch_suggestion.metadata),
+            ],
         )
 
         return "\n".join(lines) + "\n"

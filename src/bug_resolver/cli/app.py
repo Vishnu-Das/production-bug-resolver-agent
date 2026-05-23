@@ -58,12 +58,23 @@ def investigate(
         "--workflow",
         help="Workflow implementation to run.",
     ),
+    include_patch_plan: bool = typer.Option(
+        False,
+        "--include-patch-plan",
+        help="Save an analyze-only human-reviewable patch plan with the report.",
+    ),
 ) -> None:
     """Run a dynamic supervisor-led bug investigation for an incident."""
     console.print("[bold cyan]Starting dynamic investigation[/bold cyan]\n")
 
     try:
-        state = asyncio.run(_run_investigation(incident_id=incident_id, workflow=workflow))
+        state = asyncio.run(
+            _run_investigation(
+                incident_id=incident_id,
+                workflow=workflow,
+                include_patch_plan=include_patch_plan,
+            )
+        )
     except Exception as exc:
         console.print(
             Panel(
@@ -314,12 +325,19 @@ def _compact_evidence_id(evidence_id: str) -> str:
 async def _run_investigation(
     incident_id: str,
     workflow: WorkflowChoice = WorkflowChoice.MANUAL,
+    include_patch_plan: bool = False,
 ):
     """Build and run the selected investigation workflow."""
     settings = get_settings()
     workflow_runner = (
-        await build_dynamic_graph_workflow(settings)
+        await build_dynamic_graph_workflow(
+            settings,
+            include_patch_plan=include_patch_plan,
+        )
         if workflow == WorkflowChoice.GRAPH
-        else await build_dynamic_workflow(settings)
+        else await build_dynamic_workflow(
+            settings,
+            include_patch_plan=include_patch_plan,
+        )
     )
     return await workflow_runner.run(incident_id)

@@ -54,6 +54,7 @@ class GuardrailEngine:
             in {
                 AgentName.EVIDENCE_EVALUATOR,
                 AgentName.HISTORICAL_RCA_INVESTIGATOR,
+                AgentName.PATCH_SUGGESTER,
                 AgentName.RCA_WRITER,
                 AgentName.SOLUTION_RECOMMENDER,
                 AgentName.REPORT_WRITER,
@@ -90,6 +91,12 @@ class GuardrailEngine:
                 violated_rules.append("report_requires_rca")
             if state.solution_recommendation is None:
                 violated_rules.append("report_requires_solution")
+
+        if decision.next_agent == AgentName.PATCH_SUGGESTER:
+            if state.rca_report is None:
+                violated_rules.append("patch_suggestion_requires_rca")
+            if state.solution_recommendation is None:
+                violated_rules.append("patch_suggestion_requires_solution")
 
         if decision.next_agent == AgentName.FINISH:
             if not self._routing_rules.can_finish(state):

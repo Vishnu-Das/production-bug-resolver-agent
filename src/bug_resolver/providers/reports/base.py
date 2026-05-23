@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from bug_resolver.schemas import RCAReport, SolutionRecommendation
+from bug_resolver.schemas import PatchSuggestion, RCAReport, SolutionRecommendation
 
 
 @runtime_checkable
@@ -15,6 +15,7 @@ class ReportStore(Protocol):
         report: RCAReport,
         *,
         solution: SolutionRecommendation | None = None,
+        patch_suggestion: PatchSuggestion | None = None,
     ) -> list[Path]:
         """
         Save an RCA report.

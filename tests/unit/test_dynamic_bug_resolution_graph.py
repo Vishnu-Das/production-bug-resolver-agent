@@ -13,6 +13,7 @@ from bug_resolver.agents import (
     HistoricalRCAInvestigatorAgent,
     KnowledgeBaseInvestigatorAgent,
     LogInvestigatorAgent,
+    PatchSuggestionAgent,
     RCAWriterAgent,
     ReportWriterAgent,
     SolutionRecommendationAgent,
@@ -32,6 +33,7 @@ from bug_resolver.schemas import (
     KnowledgeContext,
     LogEntry,
     LogLevel,
+    PatchSuggestion,
     RCAReport,
     SolutionRecommendation,
     WorkflowState,
@@ -272,6 +274,7 @@ class FakeReportStore:
         report: RCAReport,
         *,
         solution: SolutionRecommendation | None = None,
+        patch_suggestion: PatchSuggestion | None = None,
     ) -> list[Path]:
         return [Path(f"reports/incidents/{report.incident_id}/rca.md")]
 
@@ -316,6 +319,7 @@ def make_graph_workflow(
     historical_rca_provider=None,
     max_steps: int = 12,
     max_replans: int = 2,
+    include_patch_plan: bool = False,
 ) -> DynamicBugResolutionGraphWorkflow:
     """Create the graph workflow with deterministic local test doubles."""
     return DynamicBugResolutionGraphWorkflow(
@@ -334,10 +338,12 @@ def make_graph_workflow(
         evidence_evaluator_agent=evidence_evaluator_agent or EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(),
         solution_recommendation_agent=SolutionRecommendationAgent(),
+        patch_suggestion_agent=PatchSuggestionAgent(),
         report_writer_agent=ReportWriterAgent(FakeReportStore()),
         max_steps=max_steps,
         max_replans=max_replans,
         minimum_evidence_count_before_rca=2,
+        include_patch_plan=include_patch_plan,
     )
 
 
@@ -606,5 +612,29 @@ async def test_graph_workflow_routes_to_final_writers_when_evaluation_can_write_
     assert step_agents[-3:] == [
         AgentName.RCA_WRITER,
         AgentName.SOLUTION_RECOMMENDER,
+        AgentName.REPORT_WRITER,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_can_generate_optional_patch_plan() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+        ]
+    )
+    workflow = make_graph_workflow(supervisor, include_patch_plan=True)
+
+    state = await workflow.run("INC-001")
+    step_agents = [step.agent_name for step in state.trace.steps]
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert state.patch_suggestion is not None
+    assert state.patch_suggestion.human_approval_required is True
+    assert step_agents[-4:] == [
+        AgentName.RCA_WRITER,
+        AgentName.SOLUTION_RECOMMENDER,
+        AgentName.PATCH_SUGGESTER,
         AgentName.REPORT_WRITER,
     ]
