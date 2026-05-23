@@ -14,6 +14,8 @@ from bug_resolver.agents import (
     KnowledgeBaseInvestigatorInput,
     LogInvestigatorAgent,
     LogInvestigatorInput,
+    PatchGeneratorAgent,
+    PatchGeneratorInput,
     PatchSuggestionAgent,
     PatchSuggestionInput,
     RCAWriterAgent,
@@ -58,6 +60,7 @@ class DynamicBugResolutionWorkflow:
         solution_recommendation_agent: SolutionRecommendationAgent,
         report_writer_agent: ReportWriterAgent,
         patch_suggestion_agent: PatchSuggestionAgent | None = None,
+        patch_generator_agent: PatchGeneratorAgent | None = None,
         code_graph_investigator_agent: CodeGraphInvestigatorAgent | None = None,
         historical_rca_investigator_agent: HistoricalRCAInvestigatorAgent | None = None,
         max_steps: int = 12,
@@ -66,6 +69,7 @@ class DynamicBugResolutionWorkflow:
         confidence_threshold: float = 0.75,
         minimum_evidence_count_before_rca: int = 2,
         include_patch_plan: bool = False,
+        include_patch_diff: bool = False,
     ) -> None:
         self._incident_provider = incident_provider
         self._supervisor_agent = supervisor_agent
@@ -79,13 +83,15 @@ class DynamicBugResolutionWorkflow:
         self._rca_writer_agent = rca_writer_agent
         self._solution_recommendation_agent = solution_recommendation_agent
         self._patch_suggestion_agent = patch_suggestion_agent
+        self._patch_generator_agent = patch_generator_agent
         self._report_writer_agent = report_writer_agent
         self._max_steps = max_steps
         self._max_replans = max_replans
         self._max_agent_invocations_per_agent = max_agent_invocations_per_agent
         self._confidence_threshold = confidence_threshold
         self._minimum_evidence_count_before_rca = minimum_evidence_count_before_rca
-        self._include_patch_plan = include_patch_plan
+        self._include_patch_plan = include_patch_plan or include_patch_diff
+        self._include_patch_diff = include_patch_diff
         self._execution_recorder = WorkflowExecutionRecorder()
 
     async def run(self, incident_id: str) -> WorkflowState:
@@ -301,6 +307,51 @@ class DynamicBugResolutionWorkflow:
             )
             return
 
+        if decision.next_agent == AgentName.PATCH_GENERATOR:
+            if state.rca_report is None:
+                raise ValueError("patch generation requires RCA report")
+            if state.solution_recommendation is None:
+                raise ValueError("patch generation requires solution recommendation")
+            if state.patch_suggestion is None:
+                raise ValueError("patch generation requires patch suggestion")
+            if self._patch_generator_agent is None:
+                self._record_blocked_unsupported_agent(state, decision)
+                return
+
+            generation_result = await self._patch_generator_agent.run(
+                PatchGeneratorInput(
+                    rca_report=state.rca_report,
+                    solution_recommendation=state.solution_recommendation,
+                    affected_files=state.patch_suggestion.affected_files,
+                    evidence_ids=state.patch_suggestion.evidence_ids,
+                )
+            )
+            state.patch_suggestion = state.patch_suggestion.model_copy(
+                update={
+                    "file_patches": generation_result.file_patches,
+                    "test_patches": generation_result.test_patches,
+                    "open_questions": self._merge_strings(
+                        state.patch_suggestion.open_questions,
+                        generation_result.open_questions,
+                    ),
+                    "warnings": self._merge_strings(
+                        state.patch_suggestion.warnings,
+                        generation_result.warnings,
+                    ),
+                }
+            )
+            self._record_successful_agent_run(
+                state=state,
+                decision=decision,
+                evidence_ids=state.patch_suggestion.evidence_ids,
+                output_summary=(
+                    "Generated patch diffs."
+                    if generation_result.generated_diff
+                    else "Patch diff generation skipped."
+                ),
+            )
+            return
+
         if decision.next_agent == AgentName.REPORT_WRITER:
             if state.rca_report is None:
                 raise ValueError("report writing requires RCA report")
@@ -444,6 +495,24 @@ class DynamicBugResolutionWorkflow:
             state.record_decision(patch_decision)
             await self._execute_decision(state=state, decision=patch_decision)
 
+        if (
+            self._include_patch_diff
+            and state.patch_suggestion is not None
+            and not state.patch_suggestion.file_patches
+            and not state.patch_suggestion.test_patches
+        ):
+            patch_generator_decision = AgentDecision(
+                decision_id=new_agent_decision_id(),
+                next_agent=AgentName.PATCH_GENERATOR,
+                reason="Optional patch diff requested; generate analyze-only unified diffs.",
+                queries=[],
+                expected_evidence=[],
+                should_continue=True,
+                metadata={"forced_by_workflow": "true"},
+            )
+            state.record_decision(patch_generator_decision)
+            await self._execute_decision(state=state, decision=patch_generator_decision)
+
         if state.final_report_path is None:
             report_decision = AgentDecision(
                 decision_id=new_agent_decision_id(),
@@ -458,3 +527,15 @@ class DynamicBugResolutionWorkflow:
             await self._execute_decision(state=state, decision=report_decision)
 
         return state.investigation_status == InvestigationStatus.COMPLETED
+
+    def _merge_strings(self, *groups: list[str]) -> list[str]:
+        merged: list[str] = []
+        seen: set[str] = set()
+        for group in groups:
+            for value in group:
+                normalized = value.strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                merged.append(normalized)
+        return merged

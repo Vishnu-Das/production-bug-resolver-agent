@@ -24,6 +24,7 @@ from bug_resolver.schemas import (
     LogAnalysisResult,
     LogEntry,
     LogLevel,
+    PatchGenerationResult,
     PatchSuggestion,
     RCAReport,
     SolutionRecommendation,
@@ -259,6 +260,16 @@ def test_patch_suggestion_schema_is_future_ready_and_analyze_only() -> None:
     assert suggestion.target_repo_modified is False
     assert suggestion.file_patches == [file_patch]
     assert suggestion.test_patches == []
+
+
+def test_patch_generation_result_defaults_to_no_generated_diff() -> None:
+    result = PatchGenerationResult()
+
+    assert result.generated_diff is False
+    assert result.file_patches == []
+    assert result.test_patches == []
+    assert result.open_questions == []
+    assert result.warnings == []
 
 
 def test_workflow_state_retry_helpers() -> None:

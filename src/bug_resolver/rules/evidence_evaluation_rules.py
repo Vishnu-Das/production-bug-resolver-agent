@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 from bug_resolver.schemas.orchestration import AgentName
 
@@ -94,6 +95,9 @@ class EvidenceEvaluationRules:
     not inspect or generate an RCA report.
     """
 
+    def __init__(self, code_path_rules: CodeEvidencePathRules | None = None) -> None:
+        self._code_path_rules = code_path_rules or CodeEvidencePathRules()
+
     def confidence_score(self, state: WorkflowState) -> float:
         source_types = self._source_types(state.evidence_items)
         if not source_types:
@@ -125,6 +129,9 @@ class EvidenceEvaluationRules:
         if self.structural_graph_evidence_required(state):
             return False
 
+        if self.graph_discovered_code_evidence_required(state):
+            return False
+
         if self.knowledge_base_evidence_required(state):
             return False
 
@@ -142,6 +149,9 @@ class EvidenceEvaluationRules:
 
     def retry_required(self, state: WorkflowState, can_write_rca: bool) -> bool:
         if self.structural_graph_evidence_required(state):
+            return True
+
+        if self.graph_discovered_code_evidence_required(state):
             return True
 
         if self.knowledge_base_evidence_required(state):
@@ -187,6 +197,11 @@ class EvidenceEvaluationRules:
         if self.structural_graph_evidence_required(state):
             missing.append("Structural graph evidence is missing.")
 
+        if self.graph_discovered_code_evidence_required(state):
+            missing.append(
+                "Implementation code evidence is missing for graph-discovered source files."
+            )
+
         if self.knowledge_base_evidence_required(state):
             missing.append(
                 "Knowledge-base evidence is missing for expected behavior, policy, "
@@ -208,7 +223,10 @@ class EvidenceEvaluationRules:
         return []
 
     def improved_code_queries(self, state: WorkflowState) -> list[str]:
-        if EvidenceSourceType.CODE in self._source_types(state.evidence_items):
+        if (
+            EvidenceSourceType.CODE in self._source_types(state.evidence_items)
+            and not self.graph_discovered_code_evidence_required(state)
+        ):
             return []
 
         queries = [
@@ -219,6 +237,21 @@ class EvidenceEvaluationRules:
         for evidence in state.evidence_items:
             if evidence.source_type == EvidenceSourceType.LOG:
                 queries.append(evidence.content)
+            if evidence.source_type == EvidenceSourceType.KNOWLEDGE_BASE:
+                queries.extend(
+                    [
+                        evidence.source_name,
+                        evidence.content,
+                    ]
+                )
+            if evidence.source_type == EvidenceSourceType.GRAPH:
+                queries.extend(
+                    [
+                        evidence.file_path or evidence.source_name,
+                        evidence.content,
+                        *evidence.metadata.values(),
+                    ]
+                )
 
         return self.unique(queries)
 
@@ -251,6 +284,14 @@ class EvidenceEvaluationRules:
                 "Structural relationship evidence is needed before RCA because "
                 "the incident context asks for caller/callee, config-reader, import, "
                 "ownership, or class/function relationship details."
+            )
+
+        if self.graph_discovered_code_evidence_required(state):
+            return (
+                "Implementation code evidence is needed for graph-discovered source "
+                "files before RCA or patch generation. Graph evidence can identify "
+                "relationships, but exact code evidence is needed for implementation "
+                "ownership."
             )
 
         if self.knowledge_base_evidence_required(state):
@@ -303,6 +344,26 @@ class EvidenceEvaluationRules:
             return False
 
         return self._has_structural_relationship_signal(state)
+
+    def graph_discovered_code_evidence_required(self, state: WorkflowState) -> bool:
+        source_types = self._source_types(state.evidence_items)
+        if EvidenceSourceType.GRAPH not in source_types:
+            return False
+
+        if AgentName.CODE_INVESTIGATOR not in state.allowed_agent_names:
+            return False
+
+        if not state.can_invoke_agent(AgentName.CODE_INVESTIGATOR):
+            return False
+
+        code_paths = self._code_evidence_paths(state)
+        implementation_code_paths = {
+            path for path in code_paths if not self._code_path_rules.is_support_path(path)
+        }
+        if implementation_code_paths:
+            return False
+
+        return bool(self._graph_source_paths(state) - code_paths)
 
     def knowledge_base_evidence_required(self, state: WorkflowState) -> bool:
         source_types = self._source_types(state.evidence_items)
@@ -378,6 +439,28 @@ class EvidenceEvaluationRules:
 
     def _has_historical_rca_signal(self, state: WorkflowState) -> bool:
         return self._has_signal_terms(self._state_signal_text(state), HISTORICAL_RCA_TERMS)
+
+    def _code_evidence_paths(self, state: WorkflowState) -> set[str]:
+        return {
+            self._normalize_path(evidence.file_path or evidence.source_name)
+            for evidence in state.evidence_items
+            if evidence.source_type == EvidenceSourceType.CODE
+            and (evidence.file_path or evidence.source_name)
+        }
+
+    def _graph_source_paths(self, state: WorkflowState) -> set[str]:
+        return {
+            self._normalize_path(evidence.file_path or evidence.source_name)
+            for evidence in state.evidence_items
+            if evidence.source_type == EvidenceSourceType.GRAPH
+            and (evidence.file_path or evidence.source_name)
+            and self._normalize_path(evidence.file_path or evidence.source_name).startswith(
+                ("src/", "app/", "services/", "lib/")
+            )
+        }
+
+    def _normalize_path(self, path: str) -> str:
+        return path.replace("\\", "/").lower().strip()
 
     def _has_signal_terms(self, value: str, terms: tuple[str, ...]) -> bool:
         normalized = value.lower()

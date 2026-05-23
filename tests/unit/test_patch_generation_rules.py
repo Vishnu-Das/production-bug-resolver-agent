@@ -1,0 +1,224 @@
+"""Tests for safe patch generation validation rules."""
+
+from __future__ import annotations
+
+from bug_resolver.rules import PatchGenerationRules
+from bug_resolver.schemas import FilePatch, PatchGenerationResult
+
+
+def test_patch_generation_rules_allows_only_affected_readable_files() -> None:
+    rules = PatchGenerationRules()
+
+    allowed_files = rules.allowed_patch_files(
+        affected_files=["src/app.py", "src/missing.py"],
+        readable_files={"src/app.py": "print('hello')\n"},
+    )
+
+    assert allowed_files == {"src/app.py"}
+
+
+def test_patch_generation_rules_keeps_valid_patch() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/app.py",
+                unified_diff=(
+                    "--- a/src/app.py\n"
+                    "+++ b/src/app.py\n"
+                    "@@\n"
+                    "-old\n"
+                    "+new\n"
+                ),
+                reason="Fix the failing branch.",
+                evidence_ids=["evidence-src/app.py:handler"],
+                confidence_score=0.8,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/app.py"},
+    )
+
+    assert validated.generated_diff is True
+    assert len(validated.file_patches) == 1
+    assert validated.warnings == []
+
+
+def test_patch_generation_rules_rejects_invented_file_and_empty_diff() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/invented.py",
+                unified_diff="--- a/src/invented.py\n+++ b/src/invented.py\n",
+                reason="Invented file.",
+                confidence_score=0.4,
+            ),
+            FilePatch(
+                file_path="src/app.py",
+                unified_diff="",
+                reason="Empty diff.",
+                confidence_score=0.4,
+            ),
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/app.py"},
+    )
+
+    assert validated.generated_diff is False
+    assert validated.file_patches == []
+    assert any("unreadable or unapproved" in warning for warning in validated.warnings)
+    assert any("empty diff" in warning for warning in validated.warnings)
+
+
+def test_patch_generation_rules_rejects_mismatched_diff_header() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/app.py",
+                unified_diff="--- a/src/other.py\n+++ b/src/other.py\n@@\n-old\n+new\n",
+                reason="Wrong file header.",
+                confidence_score=0.4,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/app.py"},
+    )
+
+    assert validated.generated_diff is False
+    assert validated.file_patches == []
+    assert any("headers do not match" in warning for warning in validated.warnings)
+
+
+def test_patch_generation_rules_rejects_placeholder_implementation() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/app.py",
+                unified_diff=(
+                    "--- a/src/app.py\n"
+                    "+++ b/src/app.py\n"
+                    "@@\n"
+                    "+RERANKING_MODEL_NAME = ...  # require config here\n"
+                    "+def upload_exists():\n"
+                    "+    \"\"\"Implementation needed.\"\"\"\n"
+                    "+    pass\n"
+                    "+# ... remaining code unchanged\n"
+                ),
+                reason="Placeholder implementation.",
+                confidence_score=0.4,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/app.py"},
+    )
+
+    assert validated.generated_diff is False
+    assert validated.file_patches == []
+    assert any("placeholder" in warning for warning in validated.warnings)
+
+
+def test_patch_generation_rules_rejects_signature_changing_single_file_patch() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/router.py",
+                unified_diff=(
+                    "--- a/src/router.py\n"
+                    "+++ b/src/router.py\n"
+                    "@@\n"
+                    "-def route(query: str) -> RouterResult:\n"
+                    "+def route(query: str, content: bytes) -> RouterResult:\n"
+                    "     return RouterResult(strategy='hybrid')\n"
+                ),
+                reason="Changes public signature.",
+                confidence_score=0.4,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/router.py"},
+    )
+
+    assert validated.generated_diff is False
+    assert validated.file_patches == []
+    assert any("function signature" in warning for warning in validated.warnings)
+
+
+def test_patch_generation_rules_rejects_upload_dedupe_patch_to_routing_file() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/rag/routing/rule_based.py",
+                unified_diff=(
+                    "--- a/src/rag/routing/rule_based.py\n"
+                    "+++ b/src/rag/routing/rule_based.py\n"
+                    "@@\n"
+                    "-return route\n"
+                    "+return route\n"
+                ),
+                reason="Wrong owner.",
+                confidence_score=0.4,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/rag/routing/rule_based.py"},
+        incident_context="duplicate upload content_hash ingestion bug",
+    )
+
+    assert validated.generated_diff is False
+    assert validated.file_patches == []
+    assert any("routing code" in warning for warning in validated.warnings)
+
+
+def test_patch_generation_rules_generated_diff_false_when_all_patches_rejected() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        generated_diff=True,
+        file_patches=[
+            FilePatch(
+                file_path="src/app.py",
+                unified_diff="",
+                reason="Empty diff.",
+                confidence_score=0.4,
+            )
+        ],
+        test_patches=[
+            FilePatch(
+                file_path="src/test_app.py",
+                unified_diff="--- a/src/other.py\n+++ b/src/other.py\n",
+                reason="Mismatched header.",
+                confidence_score=0.4,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/app.py", "src/test_app.py"},
+    )
+
+    assert validated.generated_diff is False
+    assert validated.file_patches == []
+    assert validated.test_patches == []

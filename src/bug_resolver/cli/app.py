@@ -63,6 +63,11 @@ def investigate(
         "--include-patch-plan",
         help="Save an analyze-only human-reviewable patch plan with the report.",
     ),
+    include_patch_diff: bool = typer.Option(
+        False,
+        "--include-patch-diff",
+        help="Generate analyze-only unified diff suggestions with the patch plan.",
+    ),
 ) -> None:
     """Run a dynamic supervisor-led bug investigation for an incident."""
     console.print("[bold cyan]Starting dynamic investigation[/bold cyan]\n")
@@ -72,7 +77,8 @@ def investigate(
             _run_investigation(
                 incident_id=incident_id,
                 workflow=workflow,
-                include_patch_plan=include_patch_plan,
+                include_patch_plan=include_patch_plan or include_patch_diff,
+                include_patch_diff=include_patch_diff,
             )
         )
     except Exception as exc:
@@ -344,6 +350,7 @@ async def _run_investigation(
     incident_id: str,
     workflow: WorkflowChoice = WorkflowChoice.MANUAL,
     include_patch_plan: bool = False,
+    include_patch_diff: bool = False,
 ):
     """Build and run the selected investigation workflow."""
     settings = get_settings()
@@ -351,11 +358,13 @@ async def _run_investigation(
         await build_dynamic_graph_workflow(
             settings,
             include_patch_plan=include_patch_plan,
+            include_patch_diff=include_patch_diff,
         )
         if workflow == WorkflowChoice.GRAPH
         else await build_dynamic_workflow(
             settings,
             include_patch_plan=include_patch_plan,
+            include_patch_diff=include_patch_diff,
         )
     )
     return await workflow_runner.run(incident_id)

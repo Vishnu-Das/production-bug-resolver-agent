@@ -114,6 +114,39 @@ def build_vector_store_with_noisy_test_match() -> FAISSVectorStore:
     return store
 
 
+def build_vector_store_with_deep_implementation_match() -> FAISSVectorStore:
+    store = FAISSVectorStore(dimension=3)
+    vectors = [[0.0, 1.0, 0.0] for _ in range(12)]
+    vectors.append([0.0, 0.8, 0.6])
+    metadata = [
+        {
+            "item_id": f"tests/rag/test_service.py:test_case_{index}",
+            "file_path": "/repo/tests/rag/test_service.py",
+            "snippet": "def test_stream_response_uses_router_selected_strategy(): pass",
+            "line_start": index + 1,
+            "line_end": index + 1,
+        }
+        for index in range(12)
+    ]
+    metadata.append(
+        {
+            "item_id": "src/services/upload_service.py:handle_file_upload",
+            "file_path": "/repo/src/services/upload_service.py",
+            "snippet": (
+                "def handle_file_upload(): "
+                "content_hash = hashlib.sha256(file_bytes).hexdigest(); "
+                "st.session_state.processed_uploads.add(filename)"
+            ),
+            "line_start": 1,
+            "line_end": 20,
+            "function_name": "handle_file_upload",
+            "metadata": {"qualified_symbol": "handle_file_upload"},
+        }
+    )
+    store.add(vectors=vectors, metadata=metadata)
+    return store
+
+
 @pytest.mark.asyncio
 async def test_faiss_code_context_provider_returns_matching_context():
     provider = FAISSCodeContextProvider(
@@ -219,3 +252,20 @@ async def test_faiss_code_context_provider_returns_ranked_top_k_results():
     results = await provider.search_code(["search retrieval service"], limit=1)
 
     assert [result.context_id for result in results] == ["src/rag/service.py:1-40"]
+
+
+@pytest.mark.asyncio
+async def test_faiss_code_context_provider_retrieves_deeper_primary_implementation_candidates():
+    provider = FAISSCodeContextProvider(
+        vector_store=build_vector_store_with_deep_implementation_match(),
+        embedding_client=FakeEmbeddingClient(),
+    )
+
+    results = await provider.search_code(
+        ["search duplicate upload content_hash processed_uploads handler"],
+        limit=3,
+    )
+
+    assert [result.context_id for result in results] == [
+        "src/services/upload_service.py:handle_file_upload"
+    ]

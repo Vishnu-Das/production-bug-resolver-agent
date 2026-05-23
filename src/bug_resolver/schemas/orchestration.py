@@ -25,6 +25,7 @@ class AgentName(StrEnum):
     GRAPH_INVESTIGATOR = "graph_investigator"
     HISTORICAL_RCA_INVESTIGATOR = "historical_rca_investigator"
     PATCH_SUGGESTER = "patch_suggester"
+    PATCH_GENERATOR = "patch_generator"
     FINISH = "finish"
 
 

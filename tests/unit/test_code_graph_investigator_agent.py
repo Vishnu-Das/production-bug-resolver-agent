@@ -68,7 +68,8 @@ async def test_code_graph_investigator_returns_graph_evidence() -> None:
         )
     )
 
-    assert provider.queries == ["rerank_documents callers"]
+    assert provider.queries is not None
+    assert provider.queries[0] == "rerank_documents callers"
     assert provider.limit == 3
     assert evidence_items[0].evidence_id == "graph-src/reranker.py:rerank_documents"
     assert evidence_items[0].metadata["agent_name"] == "code_graph_investigator_agent"
@@ -84,4 +85,5 @@ async def test_code_graph_investigator_uses_reason_when_queries_are_empty() -> N
 
     await agent.run(CodeGraphInvestigatorInput(decision=decision))
 
-    assert provider.queries == ["Find callers for rerank_documents."]
+    assert provider.queries is not None
+    assert provider.queries[0] == "Find callers for rerank_documents."

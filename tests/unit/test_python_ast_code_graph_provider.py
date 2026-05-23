@@ -198,3 +198,47 @@ def test_stream_response_reranking_config_path(mock_router, mock_retriever):
     assert contexts
     assert contexts[0].relative_path == "src/reranker.py"
     assert all(not context.relative_path.startswith("tests/") for context in contexts)
+
+
+@pytest.mark.asyncio
+async def test_python_ast_code_graph_provider_filters_support_symbols_when_primary_exists(
+    tmp_path: Path,
+) -> None:
+    write_file(
+        tmp_path / "src" / "services" / "upload_service.py",
+        """
+def handle_file_upload(file_bytes, filename):
+    content_hash = calculate_content_hash(file_bytes)
+    return content_hash
+
+
+def calculate_content_hash(file_bytes):
+    return file_bytes
+""".strip(),
+    )
+    write_file(
+        tmp_path / "src" / "ui" / "chat.py",
+        """
+def handle_upload_button(file_bytes):
+    return handle_file_upload(file_bytes, "demo.pdf")
+""".strip(),
+    )
+    write_file(
+        tmp_path / "tests" / "test_upload.py",
+        """
+def test_handle_file_upload_duplicate_content_hash():
+    assert True
+""".strip(),
+    )
+
+    provider = PythonASTCodeGraphProvider(tmp_path)
+
+    contexts = await provider.search_graph(
+        ["duplicate upload content_hash handler"],
+        limit=5,
+    )
+
+    assert contexts
+    assert {context.relative_path for context in contexts} == {
+        "src/services/upload_service.py"
+    }

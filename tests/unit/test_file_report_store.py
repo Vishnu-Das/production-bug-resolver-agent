@@ -5,7 +5,7 @@ import json
 import pytest
 
 from bug_resolver.providers.reports.file_report_store import FileReportStore
-from bug_resolver.schemas import PatchSuggestion
+from bug_resolver.schemas import FilePatch, PatchSuggestion
 from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.solution import SolutionRecommendation
 
@@ -208,6 +208,22 @@ async def test_file_report_store_saves_patch_markdown_when_patch_plan_is_provide
         tests_to_add=["Add same-content different-filename upload regression test."],
         validation_commands=["Run upload service tests."],
         risk_notes=["Human approval is required."],
+        warnings=["Patch diff was generated for review only."],
+        file_patches=[
+            FilePatch(
+                file_path="src/services/upload_service.py",
+                unified_diff=(
+                    "--- a/src/services/upload_service.py\n"
+                    "+++ b/src/services/upload_service.py\n"
+                    "@@\n"
+                    "-old\n"
+                    "+new\n"
+                ),
+                reason="Use content hash for duplicate detection.",
+                evidence_ids=["evidence-src/services/upload_service.py:handle_file_upload"],
+                confidence_score=0.8,
+            )
+        ],
         confidence_score=0.85,
         evidence_ids=["evidence-src/services/upload_service.py:handle_file_upload"],
         metadata={
@@ -237,6 +253,11 @@ async def test_file_report_store_saves_patch_markdown_when_patch_plan_is_provide
     assert "# Patch Suggestion for INC-010" in saved_patch_markdown
     assert "## Affected Files" in saved_patch_markdown
     assert "- src/services/upload_service.py" in saved_patch_markdown
+    assert "## Warnings" in saved_patch_markdown
+    assert "Patch diff was generated for review only." in saved_patch_markdown
+    assert "## File Patches" in saved_patch_markdown
+    assert "```diff" in saved_patch_markdown
+    assert "--- a/src/services/upload_service.py" in saved_patch_markdown
     assert "Human approval required: True" in saved_patch_markdown
     assert "Target repository modified: false" in saved_patch_markdown
 

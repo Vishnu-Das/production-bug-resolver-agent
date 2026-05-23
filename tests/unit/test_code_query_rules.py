@@ -32,6 +32,8 @@ def test_upload_query_enrichment_adds_content_hash_and_upload_terms() -> None:
     assert "filename" in joined_queries
     assert "dedup" in joined_queries
     assert "ingestion" in joined_queries
+    assert "service" in joined_queries
+    assert "handler" in joined_queries
 
 
 def test_upload_query_enrichment_does_not_invent_target_repo_symbols() -> None:
@@ -163,6 +165,35 @@ def test_query_enrichment_uses_relevant_graph_evidence() -> None:
     assert "SearchPipeline.rerank" in joined_queries
     assert "load_model" in joined_queries
     assert "src/search.py" in joined_queries
+
+
+def test_query_enrichment_uses_graph_owner_hints_for_follow_up_code_search() -> None:
+    decision = make_decision(queries=["duplicate upload content_hash ingestion"])
+    evidence_items = [
+        EvidenceItem(
+            evidence_id="graph-src/ingest.py:ingest_single_document",
+            source_type=EvidenceSourceType.GRAPH,
+            source_name="src/ingest.py",
+            file_path="src/ingest.py",
+            content=(
+                "src/ingest.py:ingest_single_document is called by handle_file_upload "
+                "and imported by src/services/upload_service.py."
+            ),
+            metadata={
+                "qualified_symbol": "ingest_single_document",
+                "called_by": "handle_file_upload",
+                "imported_by": "src/services/upload_service.py",
+            },
+        )
+    ]
+
+    queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
+    joined_queries = "\n".join(queries)
+
+    assert "src/ingest.py" in joined_queries
+    assert "src/services/upload_service.py" in joined_queries
+    assert "handle_file_upload" in joined_queries
+    assert "ingest_single_document" in joined_queries
 
 
 def test_query_enrichment_ignores_unrelated_kb_evidence() -> None:

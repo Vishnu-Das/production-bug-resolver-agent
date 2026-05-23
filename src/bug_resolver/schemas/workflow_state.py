@@ -39,6 +39,7 @@ def _default_allowed_agent_names() -> list[AgentName]:
         AgentName.PATCH_SUGGESTER,
         AgentName.REPORT_WRITER,
         AgentName.FINISH,
+        AgentName.PATCH_GENERATOR,
     ]
 
 

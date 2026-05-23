@@ -80,9 +80,16 @@ class CodeContextRankingRules:
             raise ValueError("limit must be greater than 0")
 
         query_text = " ".join(queries).lower()
+        query_tokens = self.path_rules.tokens(query_text)
         ranked_contexts = sorted(
             contexts,
-            key=lambda context: self._sort_key(context, query_text),
+            key=lambda context: self._sort_key(context, query_text, query_tokens),
+        )
+
+        ranked_contexts = self._prefer_primary_contexts(
+            ranked_contexts,
+            query_text,
+            query_tokens,
         )
 
         deduplicated_contexts: list[CodeContext] = []
@@ -98,26 +105,36 @@ class CodeContextRankingRules:
 
         return deduplicated_contexts
 
-    def _sort_key(self, context: CodeContext, query_text: str) -> tuple[float, str, int, str]:
+    def _sort_key(
+        self,
+        context: CodeContext,
+        query_text: str,
+        query_tokens: set[str],
+    ) -> tuple[float, str, int, str]:
         return (
-            -self._ranking_score(context, query_text),
+            -self._ranking_score(context, query_text, query_tokens),
             self._normalized_path(context),
             context.line_start or 0,
             context.context_id,
         )
 
-    def _ranking_score(self, context: CodeContext, query_text: str) -> float:
+    def _ranking_score(
+        self,
+        context: CodeContext,
+        query_text: str,
+        query_tokens: set[str],
+    ) -> float:
         score = context.relevance_score or 0.0
         path = self._normalized_path(context)
 
         if self._is_source_file(path) and not self.path_rules.is_support_path(path):
             score += 0.15
 
-        query_tokens = self.path_rules.tokens(query_text)
+        score += self._lexical_overlap_score(context, query_tokens)
         score += self.path_rules.support_adjustment(
             path,
             query_tokens,
-            penalty=-0.35,
+            penalty=-1.0,
             mention_bonus=0.12,
         )
 
@@ -134,6 +151,64 @@ class CodeContextRankingRules:
                 score -= 0.20
 
         return score
+
+    def _lexical_overlap_score(
+        self,
+        context: CodeContext,
+        query_tokens: set[str],
+    ) -> float:
+        if not query_tokens:
+            return 0.0
+
+        path_tokens = self.path_rules.tokens(context.file_path)
+        metadata_tokens = self.path_rules.tokens(
+            " ".join(str(value) for value in context.metadata.values())
+        )
+        symbol_tokens = self.path_rules.tokens(
+            " ".join(
+                value
+                for value in (context.class_name, context.function_name)
+                if value
+            )
+        )
+        snippet_tokens = self.path_rules.tokens(context.snippet)
+
+        path_overlap = len(path_tokens & query_tokens) * 0.35
+        symbol_overlap = len(symbol_tokens & query_tokens) * 0.45
+        metadata_overlap = len(metadata_tokens & query_tokens) * 0.25
+        snippet_overlap = min(len(snippet_tokens & query_tokens), 8) * 0.10
+
+        return path_overlap + symbol_overlap + metadata_overlap + snippet_overlap
+
+    def _prefer_primary_contexts(
+        self,
+        ranked_contexts: list[CodeContext],
+        query_text: str,
+        query_tokens: set[str],
+    ) -> list[CodeContext]:
+        if self._query_mentions_support_surface(query_tokens):
+            return ranked_contexts
+
+        primary_contexts = [
+            context
+            for context in ranked_contexts
+            if self._is_primary_context(context, query_text)
+        ]
+
+        if not primary_contexts:
+            return ranked_contexts
+
+        return primary_contexts
+
+    def _is_primary_context(self, context: CodeContext, query_text: str) -> bool:
+        path = self._normalized_path(context)
+        if self.path_rules.is_support_path(path):
+            return False
+        if self._is_config_file(path) and not self._query_mentions(query_text, CONFIG_QUERY_TERMS):
+            return False
+        if self._is_init_file(path) and not self._query_mentions(query_text, INIT_QUERY_TERMS):
+            return False
+        return True
 
     def _overlaps_existing_context(
         self,
@@ -179,3 +254,9 @@ class CodeContextRankingRules:
     def _query_mentions(self, query_text: str, terms: set[str]) -> bool:
         tokens = set(re.findall(r"[a-z0-9_]+", query_text.lower()))
         return bool(tokens & terms)
+
+    def _query_mentions_support_surface(self, query_tokens: set[str]) -> bool:
+        return any(
+            query_tokens & role.query_terms
+            for role in self.path_rules.support_roles
+        )

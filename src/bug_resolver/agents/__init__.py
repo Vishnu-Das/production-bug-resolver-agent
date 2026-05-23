@@ -22,6 +22,10 @@ from bug_resolver.agents.patch_suggestion_agent import (
     PatchSuggestionAgent,
     PatchSuggestionInput,
 )
+from bug_resolver.agents.patch_generator_agent import (
+    PatchGeneratorAgent,
+    PatchGeneratorInput,
+)
 from bug_resolver.agents.rca_writer_agent import RCAWriterAgent, RCAWriterOutput
 from bug_resolver.agents.evidence_evaluator_agent import EvidenceEvaluatorAgent
 from bug_resolver.agents.historical_rca_investigator_agent import (
@@ -52,6 +56,8 @@ __all__ = [
     "KnowledgeBaseInvestigatorInput",
     "LogInvestigatorAgent",
     "LogInvestigatorInput",
+    "PatchGeneratorAgent",
+    "PatchGeneratorInput",
     "PatchSuggestionAgent",
     "PatchSuggestionInput",
     "RCAWriterAgent",

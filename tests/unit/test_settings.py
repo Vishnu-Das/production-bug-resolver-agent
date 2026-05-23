@@ -69,10 +69,12 @@ def test_investigate_command_runs_dynamic_workflow(monkeypatch) -> None:
         incident_id: str,
         workflow: WorkflowChoice = WorkflowChoice.MANUAL,
         include_patch_plan: bool = False,
+        include_patch_diff: bool = False,
     ) -> WorkflowState:
         assert incident_id == "INC-001"
         assert workflow == WorkflowChoice.MANUAL
         assert include_patch_plan is False
+        assert include_patch_diff is False
         return state
 
     monkeypatch.setattr(cli_app, "_run_investigation", fake_run_investigation)
@@ -101,9 +103,11 @@ def test_investigate_command_returns_nonzero_on_failure(monkeypatch) -> None:
         incident_id: str,
         workflow: WorkflowChoice = WorkflowChoice.MANUAL,
         include_patch_plan: bool = False,
+        include_patch_diff: bool = False,
     ) -> WorkflowState:
         assert workflow == WorkflowChoice.MANUAL
         assert include_patch_plan is False
+        assert include_patch_diff is False
         raise ValueError("boom")
 
     monkeypatch.setattr(cli_app, "_run_investigation", fake_run_investigation)
@@ -129,10 +133,12 @@ def test_investigate_command_can_select_graph_workflow(monkeypatch) -> None:
         incident_id: str,
         workflow: WorkflowChoice = WorkflowChoice.MANUAL,
         include_patch_plan: bool = False,
+        include_patch_diff: bool = False,
     ) -> WorkflowState:
         assert incident_id == "INC-001"
         assert workflow == WorkflowChoice.GRAPH
         assert include_patch_plan is False
+        assert include_patch_diff is False
         return state
 
     monkeypatch.setattr(cli_app, "_run_investigation", fake_run_investigation)
@@ -161,10 +167,12 @@ def test_investigate_command_can_enable_patch_plan(monkeypatch) -> None:
         incident_id: str,
         workflow: WorkflowChoice = WorkflowChoice.MANUAL,
         include_patch_plan: bool = False,
+        include_patch_diff: bool = False,
     ) -> WorkflowState:
         assert incident_id == "INC-001"
         assert workflow == WorkflowChoice.MANUAL
         assert include_patch_plan is True
+        assert include_patch_diff is False
         return state
 
     monkeypatch.setattr(cli_app, "_run_investigation", fake_run_investigation)
@@ -172,6 +180,39 @@ def test_investigate_command_can_enable_patch_plan(monkeypatch) -> None:
     result = runner.invoke(
         app,
         ["investigate", "--incident-id", "INC-001", "--include-patch-plan"],
+    )
+
+    assert result.exit_code == 0
+    assert "Status: completed" in result.output
+
+
+def test_investigate_command_patch_diff_implies_patch_plan(monkeypatch) -> None:
+    state = WorkflowState(
+        incident=Incident(
+            incident_id="INC-001",
+            title="Bug",
+            description="Something failed",
+        ),
+        investigation_status=InvestigationStatus.COMPLETED,
+    )
+
+    async def fake_run_investigation(
+        incident_id: str,
+        workflow: WorkflowChoice = WorkflowChoice.MANUAL,
+        include_patch_plan: bool = False,
+        include_patch_diff: bool = False,
+    ) -> WorkflowState:
+        assert incident_id == "INC-001"
+        assert workflow == WorkflowChoice.MANUAL
+        assert include_patch_plan is True
+        assert include_patch_diff is True
+        return state
+
+    monkeypatch.setattr(cli_app, "_run_investigation", fake_run_investigation)
+
+    result = runner.invoke(
+        app,
+        ["investigate", "--incident-id", "INC-001", "--include-patch-diff"],
     )
 
     assert result.exit_code == 0

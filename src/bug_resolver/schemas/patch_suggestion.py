@@ -13,11 +13,21 @@ class FilePatch(StrictBaseModel):
     """Future-ready file patch container for human-reviewed diffs."""
 
     file_path: str = Field(..., min_length=1)
-    patch_type: Literal["modify", "create", "delete"]
+    patch_type: Literal["modify", "create", "delete"] = "modify"
     unified_diff: str = ""
     reason: str = Field(..., min_length=1)
     evidence_ids: list[str] = Field(default_factory=list)
     confidence_score: ConfidenceScore
+
+
+class PatchGenerationResult(StrictBaseModel):
+    """Structured result from safe analyze-only patch diff generation."""
+
+    file_patches: list[FilePatch] = Field(default_factory=list)
+    test_patches: list[FilePatch] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    generated_diff: bool = False
 
 
 class PatchSuggestion(StrictBaseModel):
@@ -35,6 +45,7 @@ class PatchSuggestion(StrictBaseModel):
     validation_commands: list[str] = Field(default_factory=list)
     risk_notes: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     file_patches: list[FilePatch] = Field(default_factory=list)
     test_patches: list[FilePatch] = Field(default_factory=list)
 

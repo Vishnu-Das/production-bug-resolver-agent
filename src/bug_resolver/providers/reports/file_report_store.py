@@ -255,6 +255,11 @@ class FileReportStore(ReportStore):
         )
         self._add_section(
             lines,
+            "## Warnings",
+            self._render_list_lines(patch_suggestion.warnings),
+        )
+        self._add_section(
+            lines,
             "## File Patches",
             self._render_file_patch_lines(patch_suggestion.file_patches),
         )
@@ -392,6 +397,13 @@ class FileReportStore(ReportStore):
             lines.append(f"- {file_patch.file_path} ({file_patch.patch_type})")
             lines.append(f"  - reason: {file_patch.reason}")
             lines.append(f"  - confidence_score: {file_patch.confidence_score}")
+            if file_patch.evidence_ids:
+                lines.append(f"  - evidence_ids: {', '.join(file_patch.evidence_ids)}")
+            if file_patch.unified_diff:
+                lines.append("")
+                lines.append("```diff")
+                lines.extend(file_patch.unified_diff.splitlines())
+                lines.append("```")
         return lines
 
     def _render_metadata(self, metadata: dict[str, str]) -> str:

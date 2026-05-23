@@ -10,6 +10,7 @@ from bug_resolver.providers.code import CodeContextProvider
 from bug_resolver.providers.incident import IncidentProvider
 from bug_resolver.providers.knowledge import KnowledgeBaseProvider
 from bug_resolver.providers.logs import LogProvider
+from bug_resolver.providers.patches import PatchContextProvider
 from bug_resolver.providers.reports import ReportStore
 from bug_resolver.schemas import (
     CodeContext,
@@ -68,6 +69,11 @@ class DummyReportStore:
         return None
 
 
+class DummyPatchContextProvider:
+    async def read_file(self, file_path: str) -> str | None:
+        return None
+
+
 class DummyLLMClient:
     async def generate_text(
         self,
@@ -101,6 +107,7 @@ def test_dummy_providers_satisfy_runtime_protocols() -> None:
     assert isinstance(DummyCodeContextProvider(), CodeContextProvider)
     assert isinstance(DummyKnowledgeBaseProvider(), KnowledgeBaseProvider)
     assert isinstance(DummyReportStore(), ReportStore)
+    assert isinstance(DummyPatchContextProvider(), PatchContextProvider)
     assert isinstance(DummyLLMClient(), LLMClient)
     assert isinstance(DummyEmbeddingClient(), EmbeddingClient)
 

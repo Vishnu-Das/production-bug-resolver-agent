@@ -40,7 +40,7 @@ class FAISSCodeContextProvider(CodeContextProvider):
 
         contexts_by_id: dict[str, CodeContext] = {}
 
-        per_query_limit = max(limit * 3, 10)
+        per_query_limit = max(limit * 10, 50)
 
         for query in cleaned_queries:
             query_vector = await self.embedding_client.embed_text(query)

@@ -9,6 +9,7 @@ from bug_resolver.agents import (
     HistoricalRCAInvestigatorAgent,
     KnowledgeBaseInvestigatorAgent,
     LogInvestigatorAgent,
+    PatchGeneratorAgent,
     PatchSuggestionAgent,
     RCAWriterAgent,
     ReportWriterAgent,
@@ -28,6 +29,7 @@ from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
     LocalKnowledgeBaseProvider,
 )
 from bug_resolver.providers.logs.file_log_provider import FileLogProvider
+from bug_resolver.providers.patches import LocalFilePatchContextProvider
 from bug_resolver.providers.reports.file_report_store import FileReportStore
 from bug_resolver.rules import GuardrailEngine
 from bug_resolver.workflows.dynamic_bug_resolution_graph import (
@@ -40,6 +42,7 @@ async def build_dynamic_graph_workflow(
     settings: AppSettings,
     *,
     include_patch_plan: bool = False,
+    include_patch_diff: bool = False,
 ) -> DynamicBugResolutionGraphWorkflow:
     """Build the fully wired LangGraph workflow for future CLI investigations."""
     if not settings.openai_api_key:
@@ -82,9 +85,14 @@ async def build_dynamic_graph_workflow(
         rca_writer_agent=RCAWriterAgent(llm_client=llm_client),
         solution_recommendation_agent=SolutionRecommendationAgent(llm_client=llm_client),
         patch_suggestion_agent=PatchSuggestionAgent(),
+        patch_generator_agent=PatchGeneratorAgent(
+            llm_client=llm_client,
+            patch_context_provider=LocalFilePatchContextProvider(settings.target_repo_path),
+        ),
         report_writer_agent=ReportWriterAgent(FileReportStore(settings.reports_dir)),
         max_steps=settings.max_investigation_steps,
         max_replans=settings.max_retries,
         confidence_threshold=settings.confidence_threshold,
         include_patch_plan=include_patch_plan,
+        include_patch_diff=include_patch_diff,
     )

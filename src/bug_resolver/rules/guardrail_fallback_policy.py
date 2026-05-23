@@ -45,6 +45,9 @@ class GuardrailFallbackPolicy:
         if blocked_agent == AgentName.PATCH_SUGGESTER:
             return AgentName.SOLUTION_RECOMMENDER
 
+        if blocked_agent == AgentName.PATCH_GENERATOR:
+            return AgentName.PATCH_SUGGESTER
+
         if blocked_agent == AgentName.RCA_WRITER:
             return AgentName.EVIDENCE_EVALUATOR
 

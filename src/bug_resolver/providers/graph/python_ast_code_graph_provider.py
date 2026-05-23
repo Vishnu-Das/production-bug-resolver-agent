@@ -60,7 +60,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
             (self._ranking_rules.score_symbol(symbol, query_tokens, query_text), symbol)
             for symbol in symbols
         ]
-        top_symbols = [
+        ranked_symbols = [
             symbol
             for score, symbol in sorted(
                 scored_symbols,
@@ -74,7 +74,11 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                 reverse=True,
             )
             if score > 0
-        ][:limit]
+        ]
+        top_symbols = self._ranking_rules.prefer_primary_symbols(
+            ranked_symbols,
+            query_tokens,
+        )[:limit]
 
         return [
             self._to_context(
