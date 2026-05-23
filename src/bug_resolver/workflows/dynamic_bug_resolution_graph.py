@@ -13,6 +13,8 @@ from bug_resolver.agents import (
     CodeInvestigatorAgent,
     CodeInvestigatorInput,
     EvidenceEvaluatorAgent,
+    HistoricalRCAInvestigatorAgent,
+    HistoricalRCAInvestigatorInput,
     KnowledgeBaseInvestigatorAgent,
     KnowledgeBaseInvestigatorInput,
     LogInvestigatorAgent,
@@ -44,6 +46,7 @@ GraphRoute = Literal[
     "log_investigator",
     "code_investigator",
     "graph_investigator",
+    "historical_rca_investigator",
     "knowledge_base_investigator",
     "evidence_evaluator",
     "rca_writer",
@@ -84,6 +87,7 @@ class DynamicBugResolutionGraphWorkflow:
         solution_recommendation_agent: SolutionRecommendationAgent,
         report_writer_agent: ReportWriterAgent,
         code_graph_investigator_agent: CodeGraphInvestigatorAgent | None = None,
+        historical_rca_investigator_agent: HistoricalRCAInvestigatorAgent | None = None,
         max_steps: int = 12,
         max_replans: int = 2,
         max_agent_invocations_per_agent: int = 3,
@@ -96,6 +100,7 @@ class DynamicBugResolutionGraphWorkflow:
         self._log_investigator_agent = log_investigator_agent
         self._code_investigator_agent = code_investigator_agent
         self._code_graph_investigator_agent = code_graph_investigator_agent
+        self._historical_rca_investigator_agent = historical_rca_investigator_agent
         self._knowledge_base_investigator_agent = knowledge_base_investigator_agent
         self._evidence_evaluator_agent = evidence_evaluator_agent
         self._rca_writer_agent = rca_writer_agent
@@ -129,6 +134,7 @@ class DynamicBugResolutionGraphWorkflow:
         graph.add_node("log_investigator", self._log_investigator)
         graph.add_node("code_investigator", self._code_investigator)
         graph.add_node("graph_investigator", self._graph_investigator)
+        graph.add_node("historical_rca_investigator", self._historical_rca_investigator)
         graph.add_node("knowledge_base_investigator", self._knowledge_base_investigator)
         graph.add_node("evidence_evaluator", self._evidence_evaluator)
         graph.add_node("rca_writer", self._rca_writer)
@@ -146,6 +152,7 @@ class DynamicBugResolutionGraphWorkflow:
                 "log_investigator": "log_investigator",
                 "code_investigator": "code_investigator",
                 "graph_investigator": "graph_investigator",
+                "historical_rca_investigator": "historical_rca_investigator",
                 "knowledge_base_investigator": "knowledge_base_investigator",
                 "evidence_evaluator": "evidence_evaluator",
                 "rca_writer": "rca_writer",
@@ -157,6 +164,7 @@ class DynamicBugResolutionGraphWorkflow:
         graph.add_edge("log_investigator", "evidence_evaluator")
         graph.add_edge("code_investigator", "evidence_evaluator")
         graph.add_edge("graph_investigator", "evidence_evaluator")
+        graph.add_edge("historical_rca_investigator", "evidence_evaluator")
         graph.add_edge("knowledge_base_investigator", "evidence_evaluator")
         graph.add_conditional_edges(
             "evidence_evaluator",
@@ -284,6 +292,28 @@ class DynamicBugResolutionGraphWorkflow:
             CodeGraphInvestigatorInput(
                 decision=decision,
                 evidence_items=state.evidence_items,
+                limit=5,
+            )
+        )
+        self._record_successful_evidence_run(state, decision, evidence_items)
+        graph_state.next_route = "evidence_evaluator"
+        return graph_state
+
+    async def _historical_rca_investigator(
+        self,
+        graph_state: DynamicGraphState,
+    ) -> DynamicGraphState:
+        state = self._state(graph_state)
+        decision = self._current_decision(state)
+        if self._historical_rca_investigator_agent is None:
+            self._record_blocked_unsupported_agent(state, decision)
+            graph_state.next_route = "evidence_evaluator"
+            return graph_state
+
+        evidence_items = await self._historical_rca_investigator_agent.run(
+            HistoricalRCAInvestigatorInput(
+                incident_id=state.incident.incident_id,
+                decision=decision,
                 limit=5,
             )
         )
@@ -534,6 +564,7 @@ class DynamicBugResolutionGraphWorkflow:
             AgentName.LOG_INVESTIGATOR: "log_investigator",
             AgentName.CODE_INVESTIGATOR: "code_investigator",
             AgentName.GRAPH_INVESTIGATOR: "graph_investigator",
+            AgentName.HISTORICAL_RCA_INVESTIGATOR: "historical_rca_investigator",
             AgentName.KNOWLEDGE_BASE_INVESTIGATOR: "knowledge_base_investigator",
             AgentName.EVIDENCE_EVALUATOR: "evidence_evaluator",
             AgentName.RCA_WRITER: "rca_writer",

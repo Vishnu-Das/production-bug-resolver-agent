@@ -709,6 +709,36 @@ def test_generic_findings_are_kept_when_only_one_item_exists() -> None:
     ]
 
 
+def test_historical_findings_are_separate_supporting_context() -> None:
+    state = make_state(
+        title="Duplicate records are happening again",
+        description="This looks similar to a previous RCA.",
+        affected_area="document ingestion",
+    )
+    add_evidence(
+        state,
+        evidence_id="historical-INC-OLD",
+        source_type=EvidenceSourceType.HISTORICAL_RCA,
+        source_name="Prior duplicate upload incident",
+        content=(
+            "Similar prior incident INC-OLD: duplicate records. Prior RCA root "
+            "cause: upload deduplication used unstable document identity."
+        ),
+        file_path="reports/incidents/INC-OLD/rca.json",
+        relevance_score=0.9,
+    )
+
+    findings = RCARules().build_historical_findings(state)
+
+    assert findings == [
+        (
+            "reports/incidents/INC-OLD/rca.json describes similar prior incident "
+            "prior: Similar prior incident INC-OLD: duplicate records. Prior RCA "
+            "root cause: upload deduplication used unstable document identity."
+        )
+    ]
+
+
 def test_generic_evidence_id_fallback_keeps_evidence_when_no_strong_signal_exists() -> None:
     state = make_state(
         title="Unknown incident",

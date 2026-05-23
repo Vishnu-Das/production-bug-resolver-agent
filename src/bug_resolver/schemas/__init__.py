@@ -12,6 +12,7 @@ from bug_resolver.schemas.common import (
 from bug_resolver.schemas.evaluation import EvidenceEvaluationResult
 from bug_resolver.schemas.evidence import EvidenceItem
 from bug_resolver.schemas.hypothesis import Hypothesis
+from bug_resolver.schemas.historical_rca import HistoricalRCAContext
 from bug_resolver.schemas.incident import Incident
 from bug_resolver.schemas.knowledge_context import KnowledgeContext
 from bug_resolver.schemas.logs import LogAnalysisResult, LogEntry, StackTraceFrame
@@ -45,6 +46,7 @@ __all__ = [
     "EvidenceSourceType",
     "GuardrailDecision",
     "Hypothesis",
+    "HistoricalRCAContext",
     "HypothesisStatus",
     "Incident",
     "IncidentSeverity",

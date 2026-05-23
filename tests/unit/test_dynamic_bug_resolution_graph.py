@@ -10,6 +10,7 @@ from bug_resolver.agents import (
     CodeGraphInvestigatorAgent,
     CodeInvestigatorAgent,
     EvidenceEvaluatorAgent,
+    HistoricalRCAInvestigatorAgent,
     KnowledgeBaseInvestigatorAgent,
     LogInvestigatorAgent,
     RCAWriterAgent,
@@ -25,6 +26,7 @@ from bug_resolver.schemas import (
     CodeGraphContext,
     EvidenceEvaluationResult,
     EvidenceSourceType,
+    HistoricalRCAContext,
     Incident,
     InvestigationStatus,
     KnowledgeContext,
@@ -48,6 +50,33 @@ class FakeIncidentProvider:
             title="Summary route fails",
             description="Users get 500 errors when asking summary questions.",
             affected_service="conversational_rag",
+        )
+
+
+class BehaviorMismatchIncidentProvider:
+    """Return a generic wrong-but-successful behavior incident."""
+
+    async def get_incident(self, incident_id: str) -> Incident:
+        return Incident(
+            incident_id=incident_id,
+            title="Successful responses contain wrong results",
+            description=(
+                "The service still returns successful responses, but users report "
+                "wrong results and expected behavior is unclear after deployment."
+            ),
+            affected_service="generic_service",
+        )
+
+
+class RecurringIncidentProvider:
+    """Return a generic incident that explicitly references recurrence."""
+
+    async def get_incident(self, incident_id: str) -> Incident:
+        return Incident(
+            incident_id=incident_id,
+            title="Duplicate records are happening again",
+            description="This looks like a repeat incident similar to a previous RCA.",
+            affected_service="generic_service",
         )
 
 
@@ -109,6 +138,21 @@ class StructuralHintLogProvider:
                     "and which request path calls rerank_documents_with_scores()?"
                 ),
                 service_name="conversational_rag",
+            )
+        ]
+
+
+class BehaviorMismatchLogProvider:
+    """Return runtime evidence without a stack trace or exception."""
+
+    async def get_logs(self, incident_id: str) -> list[LogEntry]:
+        return [
+            LogEntry(
+                log_id="log-behavior",
+                level=LogLevel.INFO,
+                message="Request completed with unexpected result quality",
+                raw="request completed status=200 selected_strategy=fast_path",
+                service_name="generic_service",
             )
         ]
 
@@ -197,6 +241,29 @@ class FakeKnowledgeBaseProvider:
         ]
 
 
+class FakeHistoricalRCAProvider:
+    """Return one similar prior RCA context."""
+
+    async def search_history(
+        self,
+        queries: list[str],
+        *,
+        current_incident_id: str | None = None,
+        limit: int = 5,
+    ) -> list[HistoricalRCAContext]:
+        return [
+            HistoricalRCAContext(
+                context_id="historical-INC-OLD",
+                incident_id="INC-OLD",
+                title="Prior duplicate record incident",
+                root_cause="Prior RCA found duplicate handling used unstable identity.",
+                confidence_score=0.82,
+                content="Similar prior incident involved duplicate records.",
+                relevance_score=0.77,
+            )
+        ]
+
+
 class FakeReportStore:
     """Pretend to persist generated reports and return a stable path."""
 
@@ -242,20 +309,25 @@ def decision(decision_id: str, agent_name: AgentName, queries: list[str]) -> Age
 def make_graph_workflow(
     supervisor: FakeSupervisorAgent,
     *,
+    incident_provider=None,
     evidence_evaluator_agent=None,
     log_provider=None,
     knowledge_base_provider=None,
+    historical_rca_provider=None,
     max_steps: int = 12,
     max_replans: int = 2,
 ) -> DynamicBugResolutionGraphWorkflow:
     """Create the graph workflow with deterministic local test doubles."""
     return DynamicBugResolutionGraphWorkflow(
-        incident_provider=FakeIncidentProvider(),
+        incident_provider=incident_provider or FakeIncidentProvider(),
         supervisor_agent=supervisor,  # type: ignore[arg-type]
         guardrail_engine=GuardrailEngine(),
         log_investigator_agent=LogInvestigatorAgent(log_provider or FakeLogProvider()),
         code_investigator_agent=CodeInvestigatorAgent(FakeCodeContextProvider()),
         code_graph_investigator_agent=CodeGraphInvestigatorAgent(FakeCodeGraphProvider()),
+        historical_rca_investigator_agent=HistoricalRCAInvestigatorAgent(
+            historical_rca_provider or FakeHistoricalRCAProvider()
+        ),
         knowledge_base_investigator_agent=KnowledgeBaseInvestigatorAgent(
             knowledge_base_provider or EmptyKnowledgeBaseProvider()
         ),
@@ -412,6 +484,78 @@ async def test_graph_workflow_blocks_repeated_kb_and_falls_back_to_code() -> Non
         step.agent_name == AgentName.CODE_INVESTIGATOR
         and step.run_status == AgentRunStatus.SUCCEEDED
         for step in state.trace.steps
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_routes_to_kb_for_expected_behavior_mismatch() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-BEHAVIOR logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["selected strategy code"]),
+            decision(
+                "decision-3",
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+                ["expected behavior deployment policy"],
+            ),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        incident_provider=BehaviorMismatchIncidentProvider(),
+        log_provider=BehaviorMismatchLogProvider(),
+        knowledge_base_provider=FakeKnowledgeBaseProvider(),
+    )
+
+    state = await workflow.run("INC-BEHAVIOR")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert supervisor.call_count == 3
+    assert any(
+        step.agent_name == AgentName.KNOWLEDGE_BASE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
+    )
+    assert any(
+        seen_state.evidence_evaluation is not None
+        and any(
+            "Knowledge-base evidence is missing" in missing
+            for missing in seen_state.evidence_evaluation.missing_evidence
+        )
+        for seen_state in supervisor.seen_states
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_routes_to_historical_rca_for_recurrence_signal() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-REPEAT logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["duplicate handling code"]),
+            decision(
+                "decision-3",
+                AgentName.HISTORICAL_RCA_INVESTIGATOR,
+                ["similar previous duplicate record RCA"],
+            ),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        incident_provider=RecurringIncidentProvider(),
+    )
+
+    state = await workflow.run("INC-REPEAT")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert supervisor.call_count == 3
+    assert any(
+        step.agent_name == AgentName.HISTORICAL_RCA_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
+    )
+    assert any(
+        evidence.source_type == EvidenceSourceType.HISTORICAL_RCA
+        for evidence in state.evidence_items
     )
 
 

@@ -31,6 +31,11 @@ class RCAEvidenceSelectionRules:
                 EvidenceSourceType.KNOWLEDGE_BASE,
                 max_items=2,
             ),
+            *self.selected_evidence_for_source(
+                state,
+                EvidenceSourceType.HISTORICAL_RCA,
+                max_items=2,
+            ),
         ]
 
         evidence_ids = self.formatter.unique(

@@ -6,6 +6,7 @@ from bug_resolver.agents import (
     CodeGraphInvestigatorAgent,
     CodeInvestigatorAgent,
     EvidenceEvaluatorAgent,
+    HistoricalRCAInvestigatorAgent,
     KnowledgeBaseInvestigatorAgent,
     LogInvestigatorAgent,
     RCAWriterAgent,
@@ -20,6 +21,7 @@ from bug_resolver.providers.code.faiss_code_context_provider import (
     FAISSCodeContextProvider,
 )
 from bug_resolver.providers.graph import PythonASTCodeGraphProvider
+from bug_resolver.providers.history import FileHistoricalRCAProvider
 from bug_resolver.providers.incident.file_incident_provider import FileIncidentProvider
 from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
     LocalKnowledgeBaseProvider,
@@ -66,6 +68,9 @@ async def build_dynamic_graph_workflow(
         ),
         code_graph_investigator_agent=CodeGraphInvestigatorAgent(
             PythonASTCodeGraphProvider(settings.target_repo_path)
+        ),
+        historical_rca_investigator_agent=HistoricalRCAInvestigatorAgent(
+            FileHistoricalRCAProvider(settings.historical_rca_dir)
         ),
         knowledge_base_investigator_agent=KnowledgeBaseInvestigatorAgent(
             LocalKnowledgeBaseProvider(settings.knowledge_base_dir)

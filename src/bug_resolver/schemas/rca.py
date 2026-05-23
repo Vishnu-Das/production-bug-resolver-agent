@@ -23,6 +23,7 @@ class RCAReport(StrictBaseModel):
     code_findings: list[str] = Field(default_factory=list)
     graph_findings: list[str] = Field(default_factory=list)
     knowledge_base_findings: list[str] = Field(default_factory=list)
+    historical_findings: list[str] = Field(default_factory=list)
 
     hypotheses_considered: list[str] = Field(default_factory=list)
     selected_hypothesis_id: str | None = None

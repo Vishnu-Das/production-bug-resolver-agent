@@ -1,0 +1,32 @@
+[
+  {
+    "log_id": "log-001",
+    "level": "info",
+    "message": "Initial onboarding guide upload completed normally.",
+    "service_name": "conversational_rag.upload",
+    "environment": "local-sample",
+    "request_id": "req_910a",
+    "trace_id": "trace-upload-010",
+    "raw": "2026-05-21T09:07:11Z INFO conversational_rag.upload request_id=req_910a filename=\"onboarding-guide.pdf\" content_hash=\"sha256:77ac91\" processed_uploads_before=3 ingestion_started=true"
+  },
+  {
+    "log_id": "log-002",
+    "level": "info",
+    "message": "A similar PDF upload was accepted under another filename.",
+    "service_name": "conversational_rag.upload",
+    "environment": "local-sample",
+    "request_id": "req_910b",
+    "trace_id": "trace-upload-010",
+    "raw": "2026-05-21T09:11:42Z INFO conversational_rag.upload request_id=req_910b filename=\"onboarding-guide-final.pdf\" content_hash=\"sha256:77ac91\" processed_uploads_match=false dedupe_key=\"filename\" ingestion_started=true"
+  },
+  {
+    "log_id": "log-003",
+    "level": "warning",
+    "message": "Repeated citations were returned from two filenames with matching content.",
+    "service_name": "conversational_rag.retrieval",
+    "environment": "local-sample",
+    "request_id": "req_910c",
+    "trace_id": "trace-upload-010",
+    "raw": "2026-05-21T09:14:03Z WARNING conversational_rag.retrieval request_id=req_910c duplicate_content_detected=true content_hash=\"sha256:77ac91\" sources=\"onboarding-guide.pdf,onboarding-guide-final.pdf\" recurrence_hint=\"similar_previous_rca\""
+  }
+]

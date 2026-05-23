@@ -27,6 +27,8 @@ async def test_sample_incidents_and_logs_are_loadable() -> None:
         "INC-006",
         "INC-007",
         "INC-008",
+        "INC-009",
+        "INC-010",
     ]:
         incident = await incident_provider.get_incident(incident_id)
         logs = await log_provider.get_logs(incident_id)

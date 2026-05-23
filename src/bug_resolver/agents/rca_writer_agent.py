@@ -55,6 +55,7 @@ class RCAWriterOutput(StrictBaseModel):
     code_findings: list[str]
     graph_findings: list[str] = Field(default_factory=list)
     knowledge_base_findings: list[str]
+    historical_findings: list[str] = Field(default_factory=list)
     hypotheses_considered: list[str]
     selected_hypothesis_id: str | None = None
     root_cause: str = Field(..., min_length=1)
@@ -134,6 +135,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             code_findings=self._rules.build_code_findings(input_data),
             graph_findings=self._rules.build_graph_findings(input_data),
             knowledge_base_findings=self._rules.build_knowledge_base_findings(input_data),
+            historical_findings=self._rules.build_historical_findings(input_data),
             hypotheses_considered=self._rules.build_hypotheses_considered(input_data),
             selected_hypothesis_id=self._rules.selected_hypothesis_id(input_data),
             root_cause=self._rules.build_root_cause(input_data),
@@ -243,6 +245,13 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             evidence_ids=evidence_ids,
             fallback_report=fallback_report,
         )
+        evidence_ids = self._ensure_source_evidence_when_findings_exist(
+            state=state,
+            findings=output.historical_findings,
+            source_type=EvidenceSourceType.HISTORICAL_RCA,
+            evidence_ids=evidence_ids,
+            fallback_report=fallback_report,
+        )
 
         return RCAReport(
             report_id=new_rca_report_id(),
@@ -255,6 +264,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             code_findings=output.code_findings,
             graph_findings=output.graph_findings,
             knowledge_base_findings=output.knowledge_base_findings,
+            historical_findings=output.historical_findings,
             hypotheses_considered=hypotheses_considered,
             selected_hypothesis_id=selected_hypothesis_id,
             root_cause=output.root_cause,
@@ -331,6 +341,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             *output.code_findings,
             *output.graph_findings,
             *output.knowledge_base_findings,
+            *output.historical_findings,
             *output.hypotheses_considered,
             output.root_cause,
             output.technical_explanation,
@@ -394,6 +405,7 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             *output.code_findings,
             *output.graph_findings,
             *output.knowledge_base_findings,
+            *output.historical_findings,
             *output.hypotheses_considered,
             output.root_cause,
             output.technical_explanation,

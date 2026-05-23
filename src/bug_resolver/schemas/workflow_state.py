@@ -30,6 +30,7 @@ def _default_allowed_agent_names() -> list[AgentName]:
         AgentName.LOG_INVESTIGATOR,
         AgentName.CODE_INVESTIGATOR,
         AgentName.GRAPH_INVESTIGATOR,
+        AgentName.HISTORICAL_RCA_INVESTIGATOR,
         AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
         AgentName.EVIDENCE_EVALUATOR,
         AgentName.RCA_WRITER,

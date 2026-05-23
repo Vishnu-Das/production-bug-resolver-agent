@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 
 import bug_resolver.cli.app as cli_app
 from bug_resolver.cli.app import WorkflowChoice, app
+from bug_resolver.config.settings import AppSettings
 from bug_resolver.schemas import (
     AgentName,
     AgentRunStatus,
@@ -16,6 +17,12 @@ from bug_resolver.schemas import (
 )
 
 runner = CliRunner()
+
+
+def test_settings_loads_historical_rca_dir(tmp_path: Path) -> None:
+    settings = AppSettings(HISTORICAL_RCA_DIR=tmp_path / "history")
+
+    assert settings.historical_rca_dir == tmp_path / "history"
 
 
 def test_version_command() -> None:

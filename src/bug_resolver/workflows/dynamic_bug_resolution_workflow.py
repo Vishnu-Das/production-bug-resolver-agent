@@ -8,6 +8,8 @@ from bug_resolver.agents import (
     CodeInvestigatorAgent,
     CodeInvestigatorInput,
     EvidenceEvaluatorAgent,
+    HistoricalRCAInvestigatorAgent,
+    HistoricalRCAInvestigatorInput,
     KnowledgeBaseInvestigatorAgent,
     KnowledgeBaseInvestigatorInput,
     LogInvestigatorAgent,
@@ -54,6 +56,7 @@ class DynamicBugResolutionWorkflow:
         solution_recommendation_agent: SolutionRecommendationAgent,
         report_writer_agent: ReportWriterAgent,
         code_graph_investigator_agent: CodeGraphInvestigatorAgent | None = None,
+        historical_rca_investigator_agent: HistoricalRCAInvestigatorAgent | None = None,
         max_steps: int = 12,
         max_replans: int = 2,
         max_agent_invocations_per_agent: int = 3,
@@ -66,6 +69,7 @@ class DynamicBugResolutionWorkflow:
         self._log_investigator_agent = log_investigator_agent
         self._code_investigator_agent = code_investigator_agent
         self._code_graph_investigator_agent = code_graph_investigator_agent
+        self._historical_rca_investigator_agent = historical_rca_investigator_agent
         self._knowledge_base_investigator_agent = knowledge_base_investigator_agent
         self._evidence_evaluator_agent = evidence_evaluator_agent
         self._rca_writer_agent = rca_writer_agent
@@ -195,6 +199,22 @@ class DynamicBugResolutionWorkflow:
                 CodeGraphInvestigatorInput(
                     decision=decision,
                     evidence_items=state.evidence_items,
+                    limit=5,
+                )
+            )
+            self._record_successful_evidence_run(state, decision, evidence_items)
+            await self._run_evidence_evaluator(state)
+            return
+
+        if decision.next_agent == AgentName.HISTORICAL_RCA_INVESTIGATOR:
+            if self._historical_rca_investigator_agent is None:
+                self._record_blocked_unsupported_agent(state, decision)
+                return
+
+            evidence_items = await self._historical_rca_investigator_agent.run(
+                HistoricalRCAInvestigatorInput(
+                    incident_id=state.incident.incident_id,
+                    decision=decision,
                     limit=5,
                 )
             )
