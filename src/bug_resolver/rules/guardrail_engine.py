@@ -53,6 +53,7 @@ class GuardrailEngine:
             and decision.next_agent
             in {
                 AgentName.EVIDENCE_EVALUATOR,
+                AgentName.HISTORICAL_RCA_INVESTIGATOR,
                 AgentName.RCA_WRITER,
                 AgentName.SOLUTION_RECOMMENDER,
                 AgentName.REPORT_WRITER,

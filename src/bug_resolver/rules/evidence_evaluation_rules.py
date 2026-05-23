@@ -33,6 +33,7 @@ PYTHON_PATH_PATTERN = re.compile(r"\b(?:src|tests|eval|app|services)/[A-Za-z0-9_
 SYMBOL_REFERENCE_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\b")
 FUNCTION_CALL_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\(\)")
 CONFIG_KEY_PATTERN = re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b")
+SIGNAL_TOKEN_PATTERN = re.compile(r"[a-z0-9_]+")
 
 EXPECTED_BEHAVIOR_TERMS = (
     "expected behavior",
@@ -63,6 +64,25 @@ EXPECTED_BEHAVIOR_TERMS = (
     "fallback behavior",
     "what should happen",
     "which strategy should",
+)
+
+HISTORICAL_RCA_TERMS = (
+    "again",
+    "recurring",
+    "recurrence",
+    "regression",
+    "similar incident",
+    "similar issue",
+    "seen before",
+    "happened before",
+    "previous incident",
+    "previous rca",
+    "past incident",
+    "known issue",
+    "same failure",
+    "same problem",
+    "repeat incident",
+    "repeated incident",
 )
 
 
@@ -108,6 +128,9 @@ class EvidenceEvaluationRules:
         if self.knowledge_base_evidence_required(state):
             return False
 
+        if self.historical_rca_evidence_required(state):
+            return False
+
         source_types = self._source_types(state.evidence_items)
         has_primary_evidence = (
             EvidenceSourceType.LOG in source_types or EvidenceSourceType.CODE in source_types
@@ -122,6 +145,9 @@ class EvidenceEvaluationRules:
             return True
 
         if self.knowledge_base_evidence_required(state):
+            return True
+
+        if self.historical_rca_evidence_required(state):
             return True
 
         return not can_write_rca and state.can_replan()
@@ -165,6 +191,11 @@ class EvidenceEvaluationRules:
             missing.append(
                 "Knowledge-base evidence is missing for expected behavior, policy, "
                 "configuration, deployment, or quality expectations."
+            )
+
+        if self.historical_rca_evidence_required(state):
+            missing.append(
+                "Historical RCA evidence is missing for recurrence or similar-incident context."
             )
 
         if not state.can_replan() and missing:
@@ -229,6 +260,13 @@ class EvidenceEvaluationRules:
                 "or quality expectation mismatch."
             )
 
+        if self.historical_rca_evidence_required(state):
+            return (
+                "Historical RCA evidence is useful before RCA because the incident "
+                "context suggests recurrence or similarity to a prior incident. "
+                "Current logs and code remain the primary proof."
+            )
+
         if (
             EvidenceSourceType.CODE not in self._source_types(state.evidence_items)
             and self._has_structural_relationship_signal(state)
@@ -282,6 +320,22 @@ class EvidenceEvaluationRules:
 
         return self._has_expected_behavior_signal(state)
 
+    def historical_rca_evidence_required(self, state: WorkflowState) -> bool:
+        source_types = self._source_types(state.evidence_items)
+        if EvidenceSourceType.HISTORICAL_RCA in source_types:
+            return False
+
+        if EvidenceSourceType.CODE not in source_types:
+            return False
+
+        if AgentName.HISTORICAL_RCA_INVESTIGATOR not in state.allowed_agent_names:
+            return False
+
+        if not state.can_invoke_agent(AgentName.HISTORICAL_RCA_INVESTIGATOR):
+            return False
+
+        return self._has_historical_rca_signal(state)
+
     def _has_structural_relationship_signal(self, state: WorkflowState) -> bool:
         text = self._structural_signal_text(state)
         normalized = text.lower()
@@ -320,8 +374,18 @@ class EvidenceEvaluationRules:
         return self._state_signal_text(state)
 
     def _has_expected_behavior_signal(self, state: WorkflowState) -> bool:
-        normalized = self._state_signal_text(state).lower()
-        return any(term in normalized for term in EXPECTED_BEHAVIOR_TERMS)
+        return self._has_signal_terms(self._state_signal_text(state), EXPECTED_BEHAVIOR_TERMS)
+
+    def _has_historical_rca_signal(self, state: WorkflowState) -> bool:
+        return self._has_signal_terms(self._state_signal_text(state), HISTORICAL_RCA_TERMS)
+
+    def _has_signal_terms(self, value: str, terms: tuple[str, ...]) -> bool:
+        normalized = value.lower()
+        tokens = set(SIGNAL_TOKEN_PATTERN.findall(normalized))
+        return any(
+            term in normalized if " " in term else term in tokens
+            for term in terms
+        )
 
     def _state_signal_text(self, state: WorkflowState) -> str:
         values = [

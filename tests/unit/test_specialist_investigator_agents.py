@@ -7,6 +7,8 @@ import pytest
 from bug_resolver.agents import (
     CodeInvestigatorAgent,
     CodeInvestigatorInput,
+    HistoricalRCAInvestigatorAgent,
+    HistoricalRCAInvestigatorInput,
     KnowledgeBaseInvestigatorAgent,
     KnowledgeBaseInvestigatorInput,
     LogInvestigatorAgent,
@@ -17,6 +19,7 @@ from bug_resolver.schemas import (
     AgentName,
     CodeContext,
     EvidenceSourceType,
+    HistoricalRCAContext,
     KnowledgeContext,
     LogEntry,
     LogLevel,
@@ -102,6 +105,35 @@ class FakeKnowledgeBaseProvider:
                 section_title="Routing",
                 content="The router returns a structured response.",
                 relevance_score=0.82,
+            )
+        ]
+
+
+class FakeHistoricalRCAProvider:
+    def __init__(self) -> None:
+        self.queries: list[str] | None = None
+        self.current_incident_id: str | None = None
+        self.limit: int | None = None
+
+    async def search_history(
+        self,
+        queries: list[str],
+        *,
+        current_incident_id: str | None = None,
+        limit: int = 5,
+    ) -> list[HistoricalRCAContext]:
+        self.queries = queries
+        self.current_incident_id = current_incident_id
+        self.limit = limit
+        return [
+            HistoricalRCAContext(
+                context_id="historical-INC-OLD",
+                incident_id="INC-OLD",
+                title="Prior duplicate upload incident",
+                root_cause="Prior RCA found duplicate upload handling used filename state.",
+                confidence_score=0.82,
+                content="Similar prior incident involved duplicate uploads.",
+                relevance_score=0.75,
             )
         ]
 
@@ -228,3 +260,29 @@ async def test_knowledge_base_investigator_agent_falls_back_to_decision_reason()
     await agent.run(KnowledgeBaseInvestigatorInput(decision=decision))
 
     assert provider.queries == ["Need more evidence."]
+
+
+@pytest.mark.asyncio
+async def test_historical_rca_investigator_agent_returns_historical_evidence() -> None:
+    provider = FakeHistoricalRCAProvider()
+    agent = HistoricalRCAInvestigatorAgent(provider)
+    decision = make_decision(
+        AgentName.HISTORICAL_RCA_INVESTIGATOR,
+        queries=["similar duplicate upload incident"],
+    )
+
+    evidence = await agent.run(
+        HistoricalRCAInvestigatorInput(
+            incident_id="INC-NEW",
+            decision=decision,
+            limit=2,
+        )
+    )
+
+    assert provider.queries == ["similar duplicate upload incident"]
+    assert provider.current_incident_id == "INC-NEW"
+    assert provider.limit == 2
+    assert len(evidence) == 1
+    assert evidence[0].source_type == EvidenceSourceType.HISTORICAL_RCA
+    assert evidence[0].evidence_id == "historical-INC-OLD"
+    assert evidence[0].metadata["agent_name"] == "historical_rca_investigator_agent"

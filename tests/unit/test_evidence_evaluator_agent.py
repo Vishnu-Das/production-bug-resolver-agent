@@ -93,6 +93,17 @@ def graph_evidence() -> EvidenceItem:
     )
 
 
+def historical_evidence() -> EvidenceItem:
+    return EvidenceItem(
+        evidence_id="historical-INC-OLD",
+        source_type=EvidenceSourceType.HISTORICAL_RCA,
+        source_name="Prior matching RCA",
+        content="Similar prior incident involved the same failure happening again.",
+        relevance_score=0.8,
+        metadata={"historical_context_only": "true"},
+    )
+
+
 @pytest.mark.asyncio
 async def test_evidence_evaluator_requires_retry_when_no_evidence_exists() -> None:
     agent = EvidenceEvaluatorAgent()
@@ -264,6 +275,64 @@ async def test_evidence_evaluator_does_not_require_kb_when_kb_agent_is_unavailab
     assert result.can_write_rca is True
     assert result.retry_required is False
     assert not any("Knowledge-base evidence is missing" in item for item in result.missing_evidence)
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_requests_historical_rca_for_recurrence_signal() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        incident=Incident(
+            incident_id="INC-REPEAT",
+            title="Duplicate records are happening again",
+            description=(
+                "The team suspects this is a repeat incident similar to a previous RCA."
+            ),
+            affected_service="generic_service",
+        ),
+    )
+    state.add_evidence(log_evidence())
+    state.add_evidence(generic_implementation_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is False
+    assert result.retry_required is True
+    assert (
+        "Historical RCA evidence is missing for recurrence or similar-incident context."
+        in result.missing_evidence
+    )
+    assert result.reason == (
+        "Historical RCA evidence is useful before RCA because the incident "
+        "context suggests recurrence or similarity to a prior incident. "
+        "Current logs and code remain the primary proof."
+    )
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_allows_rca_when_historical_rca_exists() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        incident=Incident(
+            incident_id="INC-REPEAT",
+            title="Duplicate records are happening again",
+            description="This looks similar to a previous RCA.",
+            affected_service="generic_service",
+        ),
+    )
+    state.add_evidence(log_evidence())
+    state.add_evidence(generic_implementation_evidence())
+    state.add_evidence(historical_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is True
+    assert result.retry_required is False
+    assert (
+        "Historical RCA evidence is missing for recurrence or similar-incident context."
+        not in result.missing_evidence
+    )
 
 
 @pytest.mark.asyncio

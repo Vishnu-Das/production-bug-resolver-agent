@@ -1,0 +1,16 @@
+{
+  "incident_id": "INC-010",
+  "title": "Duplicate document records appear again after upload",
+  "description": "Users report that duplicate document records and repeated citations are happening again after normal PDF uploads. The on-call note says this looks similar to a previous RCA, but the current incident still needs fresh evidence from logs and code.",
+  "severity": "medium",
+  "status": "new",
+  "affected_service": "conversational_rag",
+  "affected_area": "document upload and ingestion",
+  "reporter": "sample-production-monitor",
+  "metadata": {
+    "environment": "local-sample",
+    "workflow": "document upload",
+    "symptom": "duplicate citations",
+    "recurrence_signal": "similar to previous RCA"
+  }
+}

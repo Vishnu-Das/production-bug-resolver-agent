@@ -112,6 +112,11 @@ class FileReportStore(ReportStore):
         )
         self._add_section(
             lines,
+            "## Historical Findings",
+            self._render_list_lines(report.historical_findings),
+        )
+        self._add_section(
+            lines,
             "## Hypotheses Considered",
             self._render_list_lines(report.hypotheses_considered),
         )

@@ -89,6 +89,13 @@ class RCAFindingRules:
                 return f"{location} shows structural code relationship: {graph_details}"
             return f"{location} shows structural code relationship relevant to the incident."
 
+        if evidence.source_type == EvidenceSourceType.HISTORICAL_RCA:
+            historical_incident_id = evidence.metadata.get("historical_incident_id", "prior")
+            return (
+                f"{location} describes similar prior incident {historical_incident_id}: "
+                f"{self.formatter.shorten(content)}"
+            )
+
         return f"{location} supports the RCA: {self.formatter.shorten(content)}"
 
     def _graph_detail_text(self, evidence: EvidenceItem) -> str:

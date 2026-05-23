@@ -20,6 +20,10 @@ from bug_resolver.agents.log_investigator_agent import (
 )
 from bug_resolver.agents.rca_writer_agent import RCAWriterAgent, RCAWriterOutput
 from bug_resolver.agents.evidence_evaluator_agent import EvidenceEvaluatorAgent
+from bug_resolver.agents.historical_rca_investigator_agent import (
+    HistoricalRCAInvestigatorAgent,
+    HistoricalRCAInvestigatorInput,
+)
 from bug_resolver.agents.solution_recommendation_agent import (
     SolutionRecommendationAgent,
     SolutionRecommendationOutput,
@@ -47,6 +51,8 @@ __all__ = [
     "RCAWriterAgent",
     "RCAWriterOutput",
     "EvidenceEvaluatorAgent",
+    "HistoricalRCAInvestigatorAgent",
+    "HistoricalRCAInvestigatorInput",
     "SolutionRecommendationAgent",
     "SolutionRecommendationOutput",
     "ReportWriterAgent",

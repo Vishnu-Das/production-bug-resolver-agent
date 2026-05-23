@@ -88,6 +88,13 @@ class RCARules:
             max_findings=2,
         )
 
+    def build_historical_findings(self, state: WorkflowState) -> list[str]:
+        return self._selected_findings_for_source(
+            state,
+            EvidenceSourceType.HISTORICAL_RCA,
+            max_findings=2,
+        )
+
     def build_hypotheses_considered(self, state: WorkflowState) -> list[str]:
         if self._has_invalid_summary_strategy(state.evidence_items):
             return [
