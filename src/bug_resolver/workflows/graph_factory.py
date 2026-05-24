@@ -60,9 +60,25 @@ async def build_dynamic_graph_workflow(
             suggested_action="Set OPENAI_API_KEY in .env before running investigations.",
         )
 
-    llm_client = OpenAILLMClient(
+    supervisor_llm_client = OpenAILLMClient(
         api_key=settings.openai_api_key,
-        model=settings.llm_model,
+        model=settings.supervisor_model,
+    )
+    rca_writer_llm_client = OpenAILLMClient(
+        api_key=settings.openai_api_key,
+        model=settings.rca_writer_model,
+    )
+    solution_recommender_llm_client = OpenAILLMClient(
+        api_key=settings.openai_api_key,
+        model=settings.solution_recommender_model,
+    )
+    patch_suggestion_llm_client = OpenAILLMClient(
+        api_key=settings.openai_api_key,
+        model=settings.patch_suggestion_model,
+    )
+    patch_generator_llm_client = OpenAILLMClient(
+        api_key=settings.openai_api_key,
+        model=settings.patch_generator_model,
     )
     embedding_client = OpenAIEmbeddingClient(
         api_key=settings.openai_api_key,
@@ -75,7 +91,7 @@ async def build_dynamic_graph_workflow(
 
     return DynamicBugResolutionGraphWorkflow(
         incident_provider=FileIncidentProvider(settings.incidents_dir),
-        supervisor_agent=SupervisorAgent(llm_client),
+        supervisor_agent=SupervisorAgent(supervisor_llm_client),
         guardrail_engine=GuardrailEngine(),
         log_investigator_agent=LogInvestigatorAgent(FileLogProvider(settings.logs_dir)),
         code_investigator_agent=CodeInvestigatorAgent(
@@ -94,11 +110,15 @@ async def build_dynamic_graph_workflow(
             LocalKnowledgeBaseProvider(settings.knowledge_base_dir)
         ),
         evidence_evaluator_agent=EvidenceEvaluatorAgent(),
-        rca_writer_agent=RCAWriterAgent(llm_client=llm_client),
-        solution_recommendation_agent=SolutionRecommendationAgent(llm_client=llm_client),
-        patch_suggestion_agent=PatchSuggestionAgent(llm_client=llm_client),
+        rca_writer_agent=RCAWriterAgent(llm_client=rca_writer_llm_client),
+        solution_recommendation_agent=SolutionRecommendationAgent(
+            llm_client=solution_recommender_llm_client
+        ),
+        patch_suggestion_agent=PatchSuggestionAgent(
+            llm_client=patch_suggestion_llm_client
+        ),
         patch_generator_agent=PatchGeneratorAgent(
-            llm_client=llm_client,
+            llm_client=patch_generator_llm_client,
             patch_context_provider=LocalFilePatchContextProvider(settings.target_repo_path),
         ),
         report_writer_agent=ReportWriterAgent(FileReportStore(settings.reports_dir)),

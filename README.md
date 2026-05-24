@@ -131,6 +131,13 @@ OPENAI_API_KEY=...
 LANGSMITH_TRACING=false
 LANGSMITH_API_KEY=
 LANGSMITH_PROJECT=production-bug-resolver-agent
+LLM_MODEL=gpt-4o-mini
+SUPERVISOR_LLM_MODEL=
+RCA_WRITER_LLM_MODEL=
+SOLUTION_RECOMMENDER_LLM_MODEL=
+PATCH_SUGGESTION_LLM_MODEL=
+PATCH_GENERATOR_LLM_MODEL=
+EMBEDDING_MODEL=text-embedding-3-small
 TARGET_REPO_PATH=C:\path\to\target\repo
 ```
 
@@ -145,6 +152,18 @@ LANGSMITH_PROJECT=production-bug-resolver-agent
 The app also accepts the legacy LangChain names `LANGCHAIN_TRACING_V2` and
 `LANGCHAIN_API_KEY`. Values from `.env` are exported into the process
 environment at runtime so LangSmith decorators can see them.
+
+`LLM_MODEL` is the default OpenAI chat model for every LLM-backed agent. Set a
+role-specific model only when you want that part of the workflow to use a
+different model:
+
+- `SUPERVISOR_LLM_MODEL`
+- `RCA_WRITER_LLM_MODEL`
+- `SOLUTION_RECOMMENDER_LLM_MODEL`
+- `PATCH_SUGGESTION_LLM_MODEL`
+- `PATCH_GENERATOR_LLM_MODEL`
+
+`EMBEDDING_MODEL` controls code-index and code-query embeddings separately.
 
 Install dependencies:
 

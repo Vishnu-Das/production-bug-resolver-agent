@@ -43,6 +43,33 @@ def test_settings_loads_langsmith_aliases() -> None:
     assert settings.langsmith_project == "bug-resolver-dev"
 
 
+def test_settings_resolves_role_specific_llm_models() -> None:
+    settings = AppSettings(
+        LLM_MODEL="gpt-default",
+        SUPERVISOR_LLM_MODEL="gpt-supervisor",
+        RCA_WRITER_LLM_MODEL="gpt-rca",
+        SOLUTION_RECOMMENDER_LLM_MODEL="gpt-solution",
+        PATCH_SUGGESTION_LLM_MODEL="gpt-patch-plan",
+        PATCH_GENERATOR_LLM_MODEL="gpt-patch-diff",
+    )
+
+    assert settings.supervisor_model == "gpt-supervisor"
+    assert settings.rca_writer_model == "gpt-rca"
+    assert settings.solution_recommender_model == "gpt-solution"
+    assert settings.patch_suggestion_model == "gpt-patch-plan"
+    assert settings.patch_generator_model == "gpt-patch-diff"
+
+
+def test_settings_falls_back_to_default_llm_model_for_unset_roles() -> None:
+    settings = AppSettings(LLM_MODEL="gpt-default")
+
+    assert settings.supervisor_model == "gpt-default"
+    assert settings.rca_writer_model == "gpt-default"
+    assert settings.solution_recommender_model == "gpt-default"
+    assert settings.patch_suggestion_model == "gpt-default"
+    assert settings.patch_generator_model == "gpt-default"
+
+
 def test_configure_langsmith_tracing_exports_process_env(monkeypatch) -> None:
     for name in (
         "LANGSMITH_TRACING",
