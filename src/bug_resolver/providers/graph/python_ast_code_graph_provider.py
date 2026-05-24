@@ -13,6 +13,10 @@ from bug_resolver.providers.graph.python_ast_symbol_extractor import PythonASTSy
 from bug_resolver.providers.graph.symbol_record import SymbolRecord
 from bug_resolver.retrieval.code_file_loader import CodeFileLoader
 from bug_resolver.schemas import CodeGraphContext
+from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
+
+
+logger = get_logger(__name__)
 
 
 class PythonASTCodeGraphProvider(CodeGraphProvider):
@@ -41,6 +45,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
         self._ranking_rules = ranking_rules or CodeGraphRankingRules()
         self._symbols: list[SymbolRecord] | None = None
 
+    @traceable(name="code_graph.search", run_type="retriever")
     async def search_graph(
         self,
         queries: list[str],
@@ -50,6 +55,8 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
         if not queries:
             return []
 
+        logger.info("code graph search started query_count=%s limit=%s", len(queries), limit)
+        log_debug_payload(logger, "code graph search queries", payload=queries)
         symbols = self._load_symbols()
         query_text = " ".join(queries)
         query_tokens = self._ranking_rules.query_tokens(query_text)
@@ -60,7 +67,7 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
             (self._ranking_rules.score_symbol(symbol, query_tokens, query_text), symbol)
             for symbol in symbols
         ]
-        top_symbols = [
+        ranked_symbols = [
             symbol
             for score, symbol in sorted(
                 scored_symbols,
@@ -74,9 +81,13 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
                 reverse=True,
             )
             if score > 0
-        ][:limit]
+        ]
+        top_symbols = self._ranking_rules.prefer_primary_symbols(
+            ranked_symbols,
+            query_tokens,
+        )[:limit]
 
-        return [
+        contexts = [
             self._to_context(
                 symbol=symbol,
                 query=query_text,
@@ -88,13 +99,37 @@ class PythonASTCodeGraphProvider(CodeGraphProvider):
             )
             for symbol in top_symbols
         ]
+        logger.info(
+            "code graph search finished symbols=%s returned=%s",
+            len(symbols),
+            len(contexts),
+        )
+        log_debug_payload(
+            logger,
+            "code graph returned contexts",
+            payload=[
+                {
+                    "context_id": context.context_id,
+                    "file_path": context.relative_path,
+                    "symbol": context.qualified_symbol,
+                    "score": context.relevance_score,
+                    "calls": context.calls,
+                    "called_by": context.called_by,
+                    "config_keys": context.config_keys,
+                }
+                for context in contexts
+            ],
+        )
+        return contexts
 
     def _load_symbols(self) -> list[SymbolRecord]:
         if self._symbols is None:
+            logger.info("building code graph symbols")
             self._symbols = self._symbol_extractor.extract_symbols(
                 self._file_loader.load_files()
             )
             self._relationship_builder.attach_relationships(self._symbols)
+            logger.info("built code graph symbols count=%s", len(self._symbols))
         return self._symbols
 
     def _to_context(

@@ -13,6 +13,7 @@ from bug_resolver.rules.solution_rules import SolutionRules
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas import RCAReport, SolutionRecommendation
 from bug_resolver.utils.ids import new_recommendation_id
+from bug_resolver.utils.observability import get_logger
 
 
 ANALYZE_ONLY_FORBIDDEN_PHRASES = (
@@ -33,6 +34,7 @@ EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
     r"evidence-[A-Za-z0-9_./\\:-]+)\b",
     re.IGNORECASE,
 )
+logger = get_logger(__name__)
 
 
 class SolutionRecommendationFallback(Exception):
@@ -77,9 +79,16 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
         self._prompt_builder = prompt_builder or SolutionPromptBuilder()
 
     async def _run(self, input_data: RCAReport) -> SolutionRecommendation:
+        logger.info(
+            "solution writer started incident_id=%s rca_report_id=%s evidence_count=%s",
+            input_data.incident_id,
+            input_data.report_id,
+            len(input_data.evidence_ids),
+        )
         deterministic_recommendation = self._build_deterministic_recommendation(input_data)
 
         if self._llm_client is None:
+            logger.info("solution writer using fallback reason=llm_client_not_configured")
             return self._with_fallback_metadata(
                 deterministic_recommendation,
                 reason="llm_client_not_configured",
@@ -92,23 +101,32 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
                 system_prompt=self._build_system_prompt(),
             )
         except Exception:
+            logger.exception("solution writer llm call failed")
             return self._with_fallback_metadata(
                 deterministic_recommendation,
                 reason="llm_call_failed",
             )
 
         try:
-            return self._build_recommendation_from_llm_output(
+            recommendation = self._build_recommendation_from_llm_output(
                 rca_report=input_data,
                 output=llm_output,
                 fallback_recommendation=deterministic_recommendation,
             )
+            logger.info(
+                "solution writer accepted llm output recommendation_id=%s evidence_count=%s",
+                recommendation.recommendation_id,
+                len(recommendation.evidence_ids),
+            )
+            return recommendation
         except SolutionRecommendationFallback as error:
+            logger.warning("solution writer using fallback reason=%s", error.reason)
             return self._with_fallback_metadata(
                 deterministic_recommendation,
                 reason=error.reason,
             )
         except Exception:
+            logger.exception("solution writer failed while validating llm output")
             return self._with_fallback_metadata(
                 deterministic_recommendation,
                 reason="llm_call_failed",

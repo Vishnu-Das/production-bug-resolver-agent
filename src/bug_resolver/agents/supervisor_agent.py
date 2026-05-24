@@ -11,6 +11,10 @@ from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas.orchestration import AgentDecision, AgentName
 from bug_resolver.schemas.workflow_state import WorkflowState
 from bug_resolver.utils.ids import new_agent_decision_id
+from bug_resolver.utils.observability import get_logger, log_debug_payload
+
+
+logger = get_logger(__name__)
 
 
 class SupervisorRoutingOutput(StrictBaseModel):
@@ -42,13 +46,20 @@ class SupervisorAgent(BaseAgent[WorkflowState, AgentDecision]):
         self._prompt_builder = prompt_builder or SupervisorPromptBuilder()
 
     async def _run(self, input_data: WorkflowState) -> AgentDecision:
+        logger.info(
+            "supervisor routing started incident_id=%s evidence_count=%s step_count=%s",
+            input_data.incident.incident_id,
+            len(input_data.evidence_items),
+            len(input_data.trace.steps),
+        )
         routing_output = await self._llm_client.generate_structured(
             self._build_prompt(input_data),
             SupervisorRoutingOutput,
             system_prompt=self._build_system_prompt(),
         )
+        log_debug_payload(logger, "supervisor routing output", payload=routing_output)
 
-        return AgentDecision(
+        decision = AgentDecision(
             decision_id=new_agent_decision_id(),
             next_agent=routing_output.next_agent,
             reason=routing_output.reason,
@@ -57,6 +68,14 @@ class SupervisorAgent(BaseAgent[WorkflowState, AgentDecision]):
             should_continue=routing_output.should_continue,
             metadata={},
         )
+        logger.info(
+            "supervisor routing decision decision_id=%s next_agent=%s query_count=%s should_continue=%s",
+            decision.decision_id,
+            decision.next_agent.value,
+            len(decision.queries),
+            decision.should_continue,
+        )
+        return decision
 
     def _build_system_prompt(self) -> str:
         return self._prompt_builder.build_system_prompt()

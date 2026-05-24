@@ -8,6 +8,10 @@ from bug_resolver.embeddings.base import EmbeddingClient
 from bug_resolver.retrieval.code_chunker import CodeChunk
 from bug_resolver.retrieval.code_file_loader import CodeFile, CodeFileLoader
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore
+from bug_resolver.utils.observability import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class CodeChunker(Protocol):
@@ -33,6 +37,7 @@ class CodeIndexer:
     async def build_index(self) -> FAISSVectorStore:
         code_files = self.file_loader.load_files()
         chunks = self.chunker.chunk_files(code_files)
+        logger.info("code index build loaded files=%s chunks=%s", len(code_files), len(chunks))
 
         if not chunks:
             raise ValueError("No code chunks found to index")
@@ -50,6 +55,7 @@ class CodeIndexer:
             vectors=vectors,
             metadata=[self._chunk_to_metadata(chunk) for chunk in chunks],
         )
+        logger.info("code index build finished vectors=%s dimension=%s", len(vectors), dimension)
 
         return vector_store
 

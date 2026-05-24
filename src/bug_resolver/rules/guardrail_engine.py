@@ -13,6 +13,10 @@ from bug_resolver.schemas import (
     WorkflowState,
 )
 from bug_resolver.utils.ids import new_guardrail_id
+from bug_resolver.utils.observability import get_logger
+
+
+logger = get_logger(__name__)
 
 
 class GuardrailEngine:
@@ -41,6 +45,14 @@ class GuardrailEngine:
         state: WorkflowState,
         decision: AgentDecision,
     ) -> GuardrailDecision:
+        logger.info(
+            "guardrail validation started incident_id=%s decision_id=%s next_agent=%s evidence_count=%s step_count=%s",
+            state.incident.incident_id,
+            decision.decision_id,
+            decision.next_agent.value,
+            len(state.evidence_items),
+            len(state.trace.steps),
+        )
         violated_rules: list[str] = []
 
         if decision.next_agent not in state.allowed_agent_names:
@@ -54,6 +66,8 @@ class GuardrailEngine:
             in {
                 AgentName.EVIDENCE_EVALUATOR,
                 AgentName.HISTORICAL_RCA_INVESTIGATOR,
+                AgentName.PATCH_GENERATOR,
+                AgentName.PATCH_SUGGESTER,
                 AgentName.RCA_WRITER,
                 AgentName.SOLUTION_RECOMMENDER,
                 AgentName.REPORT_WRITER,
@@ -91,6 +105,20 @@ class GuardrailEngine:
             if state.solution_recommendation is None:
                 violated_rules.append("report_requires_solution")
 
+        if decision.next_agent == AgentName.PATCH_SUGGESTER:
+            if state.rca_report is None:
+                violated_rules.append("patch_suggestion_requires_rca")
+            if state.solution_recommendation is None:
+                violated_rules.append("patch_suggestion_requires_solution")
+
+        if decision.next_agent == AgentName.PATCH_GENERATOR:
+            if state.rca_report is None:
+                violated_rules.append("patch_generation_requires_rca")
+            if state.solution_recommendation is None:
+                violated_rules.append("patch_generation_requires_solution")
+            if state.patch_suggestion is None:
+                violated_rules.append("patch_generation_requires_patch_suggestion")
+
         if decision.next_agent == AgentName.FINISH:
             if not self._routing_rules.can_finish(state):
                 violated_rules.append("finish_requires_report_or_low_confidence")
@@ -99,7 +127,7 @@ class GuardrailEngine:
             violated_rules.append("graph_investigator_requires_code_or_structural_signal")
 
         if violated_rules:
-            return GuardrailDecision(
+            guardrail_decision = GuardrailDecision(
                 guardrail_id=new_guardrail_id(),
                 allowed=False,
                 reason=self._routing_rules.blocked_reason(violated_rules),
@@ -109,9 +137,27 @@ class GuardrailEngine:
                 ),
                 violated_rules=violated_rules,
             )
+            logger.warning(
+                "guardrail blocked decision_id=%s next_agent=%s violated=%s fallback=%s",
+                decision.decision_id,
+                decision.next_agent.value,
+                violated_rules,
+                (
+                    guardrail_decision.fallback_next_agent.value
+                    if guardrail_decision.fallback_next_agent
+                    else None
+                ),
+            )
+            return guardrail_decision
 
-        return GuardrailDecision(
+        guardrail_decision = GuardrailDecision(
             guardrail_id=new_guardrail_id(),
             allowed=True,
             reason=f"Routing to {decision.next_agent.value} is allowed.",
         )
+        logger.info(
+            "guardrail allowed decision_id=%s next_agent=%s",
+            decision.decision_id,
+            decision.next_agent.value,
+        )
+        return guardrail_decision

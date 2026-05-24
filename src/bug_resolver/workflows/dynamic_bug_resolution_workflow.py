@@ -14,6 +14,10 @@ from bug_resolver.agents import (
     KnowledgeBaseInvestigatorInput,
     LogInvestigatorAgent,
     LogInvestigatorInput,
+    PatchGeneratorAgent,
+    PatchGeneratorInput,
+    PatchSuggestionAgent,
+    PatchSuggestionInput,
     RCAWriterAgent,
     ReportWriterAgent,
     ReportWriterInput,
@@ -30,7 +34,11 @@ from bug_resolver.schemas import (
     WorkflowState,
 )
 from bug_resolver.utils.ids import new_agent_decision_id
+from bug_resolver.utils.observability import get_logger, traceable
 from bug_resolver.workflows.workflow_execution_recorder import WorkflowExecutionRecorder
+
+
+logger = get_logger(__name__)
 
 
 class DynamicBugResolutionWorkflow:
@@ -55,6 +63,8 @@ class DynamicBugResolutionWorkflow:
         rca_writer_agent: RCAWriterAgent,
         solution_recommendation_agent: SolutionRecommendationAgent,
         report_writer_agent: ReportWriterAgent,
+        patch_suggestion_agent: PatchSuggestionAgent | None = None,
+        patch_generator_agent: PatchGeneratorAgent | None = None,
         code_graph_investigator_agent: CodeGraphInvestigatorAgent | None = None,
         historical_rca_investigator_agent: HistoricalRCAInvestigatorAgent | None = None,
         max_steps: int = 12,
@@ -62,6 +72,8 @@ class DynamicBugResolutionWorkflow:
         max_agent_invocations_per_agent: int = 3,
         confidence_threshold: float = 0.75,
         minimum_evidence_count_before_rca: int = 2,
+        include_patch_plan: bool = False,
+        include_patch_diff: bool = False,
     ) -> None:
         self._incident_provider = incident_provider
         self._supervisor_agent = supervisor_agent
@@ -74,15 +86,21 @@ class DynamicBugResolutionWorkflow:
         self._evidence_evaluator_agent = evidence_evaluator_agent
         self._rca_writer_agent = rca_writer_agent
         self._solution_recommendation_agent = solution_recommendation_agent
+        self._patch_suggestion_agent = patch_suggestion_agent
+        self._patch_generator_agent = patch_generator_agent
         self._report_writer_agent = report_writer_agent
         self._max_steps = max_steps
         self._max_replans = max_replans
         self._max_agent_invocations_per_agent = max_agent_invocations_per_agent
         self._confidence_threshold = confidence_threshold
         self._minimum_evidence_count_before_rca = minimum_evidence_count_before_rca
+        self._include_patch_plan = include_patch_plan or include_patch_diff
+        self._include_patch_diff = include_patch_diff
         self._execution_recorder = WorkflowExecutionRecorder()
 
+    @traceable(name="workflow.manual.run", run_type="chain")
     async def run(self, incident_id: str) -> WorkflowState:
+        logger.info("manual workflow started incident_id=%s", incident_id)
         incident = await self._incident_provider.get_incident(incident_id)
         state = WorkflowState(
             incident=incident,
@@ -98,6 +116,12 @@ class DynamicBugResolutionWorkflow:
             while state.can_take_step():
                 decision = await self._supervisor_agent.run(state)
                 state.record_decision(decision)
+                logger.info(
+                    "manual workflow decision incident_id=%s decision_id=%s next_agent=%s",
+                    incident_id,
+                    decision.decision_id,
+                    decision.next_agent.value,
+                )
 
                 guardrail_decision = self._guardrail_engine.validate_decision(
                     state=state,
@@ -154,8 +178,16 @@ class DynamicBugResolutionWorkflow:
 
             state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
             state.mark_low_confidence()
+            logger.info(
+                "manual workflow finished incident_id=%s status=%s evidence_count=%s steps=%s",
+                incident_id,
+                state.investigation_status.value,
+                len(state.evidence_items),
+                len(state.trace.steps),
+            )
             return state
         except Exception as exc:
+            logger.exception("manual workflow failed incident_id=%s", incident_id)
             state.add_error(str(exc))
             return state
 
@@ -272,6 +304,74 @@ class DynamicBugResolutionWorkflow:
             )
             return
 
+        if decision.next_agent == AgentName.PATCH_SUGGESTER:
+            if state.rca_report is None:
+                raise ValueError("patch suggestion requires RCA report")
+            if state.solution_recommendation is None:
+                raise ValueError("patch suggestion requires solution recommendation")
+            if self._patch_suggestion_agent is None:
+                self._record_blocked_unsupported_agent(state, decision)
+                return
+
+            state.patch_suggestion = await self._patch_suggestion_agent.run(
+                PatchSuggestionInput(
+                    rca_report=state.rca_report,
+                    solution_recommendation=state.solution_recommendation,
+                )
+            )
+            self._record_successful_agent_run(
+                state=state,
+                decision=decision,
+                evidence_ids=state.patch_suggestion.evidence_ids,
+                output_summary=state.patch_suggestion.summary,
+            )
+            return
+
+        if decision.next_agent == AgentName.PATCH_GENERATOR:
+            if state.rca_report is None:
+                raise ValueError("patch generation requires RCA report")
+            if state.solution_recommendation is None:
+                raise ValueError("patch generation requires solution recommendation")
+            if state.patch_suggestion is None:
+                raise ValueError("patch generation requires patch suggestion")
+            if self._patch_generator_agent is None:
+                self._record_blocked_unsupported_agent(state, decision)
+                return
+
+            generation_result = await self._patch_generator_agent.run(
+                PatchGeneratorInput(
+                    rca_report=state.rca_report,
+                    solution_recommendation=state.solution_recommendation,
+                    affected_files=state.patch_suggestion.affected_files,
+                    evidence_ids=state.patch_suggestion.evidence_ids,
+                )
+            )
+            state.patch_suggestion = state.patch_suggestion.model_copy(
+                update={
+                    "file_patches": generation_result.file_patches,
+                    "test_patches": generation_result.test_patches,
+                    "open_questions": self._merge_strings(
+                        state.patch_suggestion.open_questions,
+                        generation_result.open_questions,
+                    ),
+                    "warnings": self._merge_strings(
+                        state.patch_suggestion.warnings,
+                        generation_result.warnings,
+                    ),
+                }
+            )
+            self._record_successful_agent_run(
+                state=state,
+                decision=decision,
+                evidence_ids=state.patch_suggestion.evidence_ids,
+                output_summary=(
+                    "Generated patch diffs."
+                    if generation_result.generated_diff
+                    else "Patch diff generation skipped."
+                ),
+            )
+            return
+
         if decision.next_agent == AgentName.REPORT_WRITER:
             if state.rca_report is None:
                 raise ValueError("report writing requires RCA report")
@@ -279,9 +379,11 @@ class DynamicBugResolutionWorkflow:
                 ReportWriterInput(
                     report=state.rca_report,
                     solution=state.solution_recommendation,
+                    patch_suggestion=state.patch_suggestion,
                 )
             )
             state.final_report_path = written_paths[0]
+            state.report_artifact_paths = written_paths
             state.investigation_status = InvestigationStatus.COMPLETED
             self._record_successful_agent_run(
                 state=state,
@@ -395,6 +497,42 @@ class DynamicBugResolutionWorkflow:
             state.record_decision(solution_decision)
             await self._execute_decision(state=state, decision=solution_decision)
 
+        if (
+            self._include_patch_plan
+            and state.patch_suggestion is None
+            and state.rca_report is not None
+            and state.solution_recommendation is not None
+        ):
+            patch_decision = AgentDecision(
+                decision_id=new_agent_decision_id(),
+                next_agent=AgentName.PATCH_SUGGESTER,
+                reason="Optional patch suggestion requested; generate analyze-only patch plan.",
+                queries=[],
+                expected_evidence=[],
+                should_continue=True,
+                metadata={"forced_by_workflow": "true"},
+            )
+            state.record_decision(patch_decision)
+            await self._execute_decision(state=state, decision=patch_decision)
+
+        if (
+            self._include_patch_diff
+            and state.patch_suggestion is not None
+            and not state.patch_suggestion.file_patches
+            and not state.patch_suggestion.test_patches
+        ):
+            patch_generator_decision = AgentDecision(
+                decision_id=new_agent_decision_id(),
+                next_agent=AgentName.PATCH_GENERATOR,
+                reason="Optional patch diff requested; generate analyze-only unified diffs.",
+                queries=[],
+                expected_evidence=[],
+                should_continue=True,
+                metadata={"forced_by_workflow": "true"},
+            )
+            state.record_decision(patch_generator_decision)
+            await self._execute_decision(state=state, decision=patch_generator_decision)
+
         if state.final_report_path is None:
             report_decision = AgentDecision(
                 decision_id=new_agent_decision_id(),
@@ -409,3 +547,15 @@ class DynamicBugResolutionWorkflow:
             await self._execute_decision(state=state, decision=report_decision)
 
         return state.investigation_status == InvestigationStatus.COMPLETED
+
+    def _merge_strings(self, *groups: list[str]) -> list[str]:
+        merged: list[str] = []
+        seen: set[str] = set()
+        for group in groups:
+            for value in group:
+                normalized = value.strip()
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                merged.append(normalized)
+        return merged

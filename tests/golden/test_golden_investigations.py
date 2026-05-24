@@ -27,6 +27,14 @@ def assert_report_files_exist(report_dir: Path, incident_id: str) -> None:
     assert (incident_report_dir / "solution.json").exists()
 
 
+def assert_patch_files_exist(report_dir: Path, incident_id: str) -> None:
+    """Assert optional patch-plan artifacts were persisted for an incident."""
+    incident_report_dir = report_dir / "incidents" / incident_id
+
+    assert (incident_report_dir / "patch.md").exists()
+    assert (incident_report_dir / "patch.json").exists()
+
+
 def report_json(report_dir: Path, incident_id: str) -> dict:
     """Load generated RCA JSON for broad signal assertions."""
     return json.loads(
@@ -39,6 +47,15 @@ def report_json(report_dir: Path, incident_id: str) -> dict:
 def source_types(state) -> set[EvidenceSourceType]:
     """Return collected evidence source types."""
     return {evidence.source_type for evidence in state.evidence_items}
+
+
+def patch_json(report_dir: Path, incident_id: str) -> dict:
+    """Load generated patch JSON for broad signal assertions."""
+    return json.loads(
+        (report_dir / "incidents" / incident_id / "patch.json").read_text(
+            encoding="utf-8"
+        )
+    )
 
 
 @pytest.mark.asyncio
@@ -128,6 +145,128 @@ async def test_inc_007_upload_dedup_golden_investigation(tmp_path: Path) -> None
         for step in state.trace.steps
     )
     assert any(step.agent_name == AgentName.GRAPH_INVESTIGATOR for step in state.trace.steps)
+
+
+@pytest.mark.asyncio
+async def test_inc_007_owner_discovery_prefers_upload_source_over_noisy_tests(
+    tmp_path: Path,
+) -> None:
+    report_dir = tmp_path / "reports"
+    supervisor = GoldenSupervisorAgent(
+        [
+            decision("golden-007-owner-log", AgentName.LOG_INVESTIGATOR, ["INC-007 logs"]),
+            decision(
+                "golden-007-owner-kb",
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+                ["upload ingestion content hash deduplication expected behavior"],
+            ),
+            decision(
+                "golden-007-owner-code",
+                AgentName.CODE_INVESTIGATOR,
+                [
+                    (
+                        "upload ingestion content_hash filename dedupe_key "
+                        "duplicate_content_detected processed_uploads"
+                    )
+                ],
+            ),
+            decision(
+                "golden-007-owner-graph",
+                AgentName.GRAPH_INVESTIGATOR,
+                ["which upload request path calls ingestion and deduplication"],
+            ),
+        ]
+    )
+    workflow = build_golden_graph_workflow(
+        supervisor=supervisor,
+        report_dir=report_dir,
+        rank_code_contexts=True,
+        include_patch_plan=True,
+        code_contexts=[
+            code_context(
+                context_id="tests/services/test_upload_service.py:test_duplicate_upload",
+                file_path="tests/services/test_upload_service.py",
+                function_name="test_duplicate_upload",
+                relevance_score=1.0,
+                snippet=(
+                    "def test_duplicate_upload(): assert duplicate_content_detected "
+                    "and processed_uploads contains filename"
+                ),
+            ),
+            code_context(
+                context_id="tests/routing/test_retrieval_router.py:test_upload_route",
+                file_path="tests/routing/test_retrieval_router.py",
+                function_name="test_upload_route",
+                relevance_score=0.98,
+                snippet=(
+                    "router rerank summary test fixture mentions upload ingestion "
+                    "without owning duplicate content behavior"
+                ),
+            ),
+            code_context(
+                context_id="src/routing/retrieval_router.py:route_query",
+                file_path="src/routing/retrieval_router.py",
+                function_name="route_query",
+                relevance_score=0.95,
+                snippet=(
+                    "route_query selects summary or retrieval route and does not "
+                    "handle upload content_hash duplicate detection."
+                ),
+            ),
+            code_context(
+                context_id="src/services/upload_service.py:handle_file_upload",
+                file_path="src/services/upload_service.py",
+                function_name="handle_file_upload",
+                relevance_score=0.72,
+                snippet=(
+                    "def handle_file_upload(file_bytes, filename): "
+                    "content_hash = compute_content_hash(file_bytes); "
+                    "dedupe_key = filename; "
+                    "if dedupe_key in processed_uploads: "
+                    "duplicate_content_detected = True"
+                ),
+            ),
+        ],
+        graph_contexts=[
+            graph_context(
+                context_id="src/ui/chat.py:handle_upload",
+                file_path="src/ui/chat.py",
+                relative_path="src/ui/chat.py",
+                symbol_name="handle_upload",
+                qualified_symbol="handle_upload",
+                calls=["handle_file_upload"],
+                called_by=["render_upload_widget"],
+                content=(
+                    "handle_upload is graph-only supporting context for the upload "
+                    "request path and calls handle_file_upload."
+                ),
+            )
+        ],
+    )
+
+    state = await workflow.run("INC-007")
+    generated_report = report_json(report_dir, "INC-007")
+    generated_patch = patch_json(report_dir, "INC-007")
+    code_evidence_ids = [
+        evidence.evidence_id
+        for evidence in state.evidence_items
+        if evidence.source_type == EvidenceSourceType.CODE
+    ]
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert_report_files_exist(report_dir, "INC-007")
+    assert_patch_files_exist(report_dir, "INC-007")
+    assert "evidence-src/services/upload_service.py:handle_file_upload" in code_evidence_ids
+    assert not any(evidence_id.startswith("evidence-tests/") for evidence_id in code_evidence_ids)
+    assert generated_patch["affected_files"] == ["src/services/upload_service.py"]
+    assert generated_patch["metadata"]["supporting_context_files"] == "src/ui/chat.py"
+    assert all(
+        not file_path.startswith("tests/")
+        for file_path in generated_patch["affected_files"]
+    )
+    assert "src/services/upload_service.py:handle_file_upload" in " ".join(
+        generated_report["evidence_ids"]
+    )
 
 
 @pytest.mark.asyncio

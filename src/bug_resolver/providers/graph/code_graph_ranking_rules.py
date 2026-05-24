@@ -74,3 +74,26 @@ class CodeGraphRankingRules:
         )
 
         return score
+
+    def prefer_primary_symbols(
+        self,
+        ranked_symbols: list[SymbolRecord],
+        query_tokens: set[str],
+    ) -> list[SymbolRecord]:
+        """Drop support symbols when primary implementation symbols are available."""
+        if self._query_mentions_support_surface(query_tokens):
+            return ranked_symbols
+
+        primary_symbols = [
+            symbol
+            for symbol in ranked_symbols
+            if not self._path_rules.is_support_path(symbol.relative_path)
+        ]
+
+        return primary_symbols or ranked_symbols
+
+    def _query_mentions_support_surface(self, query_tokens: set[str]) -> bool:
+        return any(
+            query_tokens & role.query_terms
+            for role in self._path_rules.support_roles
+        )

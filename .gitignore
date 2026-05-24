@@ -46,6 +46,7 @@ htmlcov/
 
 # Logs
 *.log
+/logs/
 
 # Local generated storage
 storage/

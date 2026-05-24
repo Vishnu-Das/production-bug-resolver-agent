@@ -10,6 +10,10 @@ from bug_resolver.rules.code_query_rules import CodeQueryRules
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas.evidence import EvidenceItem
 from bug_resolver.schemas.orchestration import AgentDecision
+from bug_resolver.utils.observability import get_logger, log_debug_payload
+
+
+logger = get_logger(__name__)
 
 
 class CodeInvestigatorInput(StrictBaseModel):
@@ -37,6 +41,13 @@ class CodeInvestigatorAgent(BaseAgent[CodeInvestigatorInput, list[EvidenceItem]]
 
     async def _run(self, input_data: CodeInvestigatorInput) -> list[EvidenceItem]:
         queries = self._queries_from_input(input_data)
+        logger.info(
+            "code investigator search decision_id=%s query_count=%s limit=%s",
+            input_data.decision.decision_id,
+            len(queries),
+            input_data.limit,
+        )
+        log_debug_payload(logger, "code investigator queries", payload=queries)
         contexts = await self._code_context_provider.search_code(
             queries,
             limit=input_data.limit,
@@ -47,13 +58,20 @@ class CodeInvestigatorAgent(BaseAgent[CodeInvestigatorInput, list[EvidenceItem]]
             evidence.metadata["agent_name"] = self.name
             evidence.metadata["decision_id"] = input_data.decision.decision_id
 
+        logger.info(
+            "code investigator evidence decision_id=%s count=%s ids=%s",
+            input_data.decision.decision_id,
+            len(evidence_items),
+            [evidence.evidence_id for evidence in evidence_items],
+        )
         return evidence_items
 
     def _queries_from_decision(self, decision: AgentDecision) -> list[str]:
-        return self._code_query_rules.enrich_queries(decision)
+        return self._code_query_rules.enrich_queries(decision, mode="implementation")
 
     def _queries_from_input(self, input_data: CodeInvestigatorInput) -> list[str]:
         return self._code_query_rules.enrich_queries(
             input_data.decision,
             evidence_items=input_data.evidence_items,
+            mode="implementation",
         )

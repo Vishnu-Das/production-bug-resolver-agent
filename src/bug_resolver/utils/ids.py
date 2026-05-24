@@ -108,3 +108,16 @@ def new_recommendation_id(prefix: str = "SOL") -> str:
     date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
     random_part = uuid4().hex[:8].upper()
     return f"{prefix}-{date_part}-{random_part}"
+
+
+def new_patch_suggestion_id(prefix: str = "PATCH") -> str:
+    """
+    Generate a readable patch suggestion id.
+
+    Example:
+        PATCH-20260518-8F3A91C2
+    """
+
+    date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
+    random_part = uuid4().hex[:8].upper()
+    return f"{prefix}-{date_part}-{random_part}"

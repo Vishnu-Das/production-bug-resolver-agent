@@ -93,6 +93,40 @@ def graph_evidence() -> EvidenceItem:
     )
 
 
+def graph_upload_evidence() -> EvidenceItem:
+    return EvidenceItem(
+        evidence_id="graph-src/ingest.py:ingest_single_document",
+        source_type=EvidenceSourceType.GRAPH,
+        source_name="src/ingest.py",
+        file_path="src/ingest.py",
+        line_start=10,
+        line_end=30,
+        content=(
+            "src/ingest.py:ingest_single_document is called by handle_file_upload "
+            "and imported by src/services/upload_service.py."
+        ),
+        relevance_score=0.9,
+        metadata={
+            "qualified_symbol": "ingest_single_document",
+            "called_by": "handle_file_upload",
+            "imported_by": "src/services/upload_service.py",
+        },
+    )
+
+
+def support_test_code_evidence() -> EvidenceItem:
+    return EvidenceItem(
+        evidence_id="evidence-tests/rag/test_service.py:test_upload_behavior",
+        source_type=EvidenceSourceType.CODE,
+        source_name="tests/rag/test_service.py",
+        file_path="tests/rag/test_service.py",
+        line_start=1,
+        line_end=20,
+        content="def test_upload_behavior(): ...",
+        relevance_score=0.9,
+    )
+
+
 def historical_evidence() -> EvidenceItem:
     return EvidenceItem(
         evidence_id="historical-INC-OLD",
@@ -458,6 +492,82 @@ async def test_evidence_evaluator_allows_rca_when_structural_graph_evidence_exis
     assert result.can_write_rca is True
     assert result.retry_required is False
     assert "Structural graph evidence is missing." not in result.missing_evidence
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_requests_code_for_graph_discovered_source_when_code_is_only_tests() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        incident=Incident(
+            incident_id="INC-UPLOAD",
+            title="Duplicate uploads create duplicate records",
+            description="Users see duplicate documents after upload.",
+            affected_service="conversational_rag",
+        ),
+    )
+    state.add_evidence(log_evidence())
+    state.add_evidence(support_test_code_evidence())
+    state.add_evidence(graph_upload_evidence())
+    state.add_evidence(knowledge_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is False
+    assert result.retry_required is True
+    assert (
+        "Implementation code evidence is missing for graph-discovered source files."
+        in result.missing_evidence
+    )
+    joined_queries = "\n".join(result.improved_code_queries)
+    assert "src/ingest.py" in joined_queries
+    assert "handle_file_upload" in joined_queries
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_requests_owner_when_code_evidence_is_only_tests() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        incident=Incident(
+            incident_id="INC-UPLOAD",
+            title="Duplicate uploads create duplicate records",
+            description="Users see duplicate documents after upload ingestion.",
+            affected_service="conversational_rag",
+        ),
+    )
+    state.add_evidence(log_evidence())
+    state.add_evidence(support_test_code_evidence())
+    state.add_evidence(knowledge_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is False
+    assert result.retry_required is True
+    assert (
+        "Implementation owner source evidence is missing; current code evidence "
+        "is limited to tests or supporting context."
+        in result.missing_evidence
+    )
+    assert result.improved_code_queries != []
+
+
+@pytest.mark.asyncio
+async def test_evidence_evaluator_does_not_request_graph_follow_up_when_primary_code_exists() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(confidence_threshold=0.75)
+    state.add_evidence(log_evidence())
+    state.add_evidence(generic_implementation_evidence())
+    state.add_evidence(graph_upload_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is True
+    assert result.retry_required is False
+    assert not any(
+        "graph-discovered source files" in missing
+        for missing in result.missing_evidence
+    )
 
 
 @pytest.mark.asyncio

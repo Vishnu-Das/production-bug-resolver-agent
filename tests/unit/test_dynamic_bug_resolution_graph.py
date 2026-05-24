@@ -13,6 +13,8 @@ from bug_resolver.agents import (
     HistoricalRCAInvestigatorAgent,
     KnowledgeBaseInvestigatorAgent,
     LogInvestigatorAgent,
+    PatchGeneratorAgent,
+    PatchSuggestionAgent,
     RCAWriterAgent,
     ReportWriterAgent,
     SolutionRecommendationAgent,
@@ -26,12 +28,15 @@ from bug_resolver.schemas import (
     CodeGraphContext,
     EvidenceEvaluationResult,
     EvidenceSourceType,
+    FilePatch,
     HistoricalRCAContext,
     Incident,
     InvestigationStatus,
     KnowledgeContext,
     LogEntry,
     LogLevel,
+    PatchSuggestion,
+    PatchGenerationResult,
     RCAReport,
     SolutionRecommendation,
     WorkflowState,
@@ -168,7 +173,7 @@ class FakeCodeContextProvider:
     ) -> list[CodeContext]:
         return [
             CodeContext(
-                context_id="code-1",
+                context_id="src/rag/router.py:route_query",
                 file_path="src/rag/router.py",
                 function_name="route_query",
                 line_start=40,
@@ -264,6 +269,41 @@ class FakeHistoricalRCAProvider:
         ]
 
 
+class FakePatchContextProvider:
+    """Return exact source text for patch generation tests."""
+
+    async def read_file(self, file_path: str) -> str | None:
+        if file_path == "src/rag/router.py":
+            return "def route_query():\n    return response['output']\n"
+        return None
+
+
+class FakePatchLLMClient:
+    """Return a stable human-reviewable diff suggestion."""
+
+    async def generate_text(self, prompt: str, *, system_prompt: str | None = None) -> str:
+        return "unused"
+
+    async def generate_structured(self, prompt, output_schema, *, system_prompt=None):
+        return PatchGenerationResult(
+            file_patches=[
+                FilePatch(
+                    file_path="src/rag/router.py",
+                    unified_diff=(
+                        "--- a/src/rag/router.py\n"
+                        "+++ b/src/rag/router.py\n"
+                        "@@\n"
+                        "-    return response['output']\n"
+                        "+    return response.get('output')\n"
+                    ),
+                    reason="Guard the missing output key.",
+                    evidence_ids=["evidence-src/rag/router.py:route_query"],
+                    confidence_score=0.7,
+                )
+            ]
+        )
+
+
 class FakeReportStore:
     """Pretend to persist generated reports and return a stable path."""
 
@@ -272,8 +312,14 @@ class FakeReportStore:
         report: RCAReport,
         *,
         solution: SolutionRecommendation | None = None,
+        patch_suggestion: PatchSuggestion | None = None,
     ) -> list[Path]:
-        return [Path(f"reports/incidents/{report.incident_id}/rca.md")]
+        paths = [Path(f"reports/incidents/{report.incident_id}/rca.md")]
+        if solution is not None:
+            paths.append(Path(f"reports/incidents/{report.incident_id}/solution.md"))
+        if patch_suggestion is not None:
+            paths.append(Path(f"reports/incidents/{report.incident_id}/patch.md"))
+        return paths
 
     async def get_report(self, incident_id: str) -> RCAReport | None:
         return None
@@ -316,6 +362,8 @@ def make_graph_workflow(
     historical_rca_provider=None,
     max_steps: int = 12,
     max_replans: int = 2,
+    include_patch_plan: bool = False,
+    include_patch_diff: bool = False,
 ) -> DynamicBugResolutionGraphWorkflow:
     """Create the graph workflow with deterministic local test doubles."""
     return DynamicBugResolutionGraphWorkflow(
@@ -334,10 +382,17 @@ def make_graph_workflow(
         evidence_evaluator_agent=evidence_evaluator_agent or EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(),
         solution_recommendation_agent=SolutionRecommendationAgent(),
+        patch_suggestion_agent=PatchSuggestionAgent(),
+        patch_generator_agent=PatchGeneratorAgent(
+            llm_client=FakePatchLLMClient(),
+            patch_context_provider=FakePatchContextProvider(),
+        ),
         report_writer_agent=ReportWriterAgent(FakeReportStore()),
         max_steps=max_steps,
         max_replans=max_replans,
         minimum_evidence_count_before_rca=2,
+        include_patch_plan=include_patch_plan,
+        include_patch_diff=include_patch_diff,
     )
 
 
@@ -359,6 +414,10 @@ async def test_graph_workflow_completes_rca_solution_and_report() -> None:
     assert state.rca_report is not None
     assert state.solution_recommendation is not None
     assert state.final_report_path == Path("reports/incidents/INC-001/rca.md")
+    assert state.report_artifact_paths == [
+        Path("reports/incidents/INC-001/rca.md"),
+        Path("reports/incidents/INC-001/solution.md"),
+    ]
     assert step_agents[-3:] == [
         AgentName.RCA_WRITER,
         AgentName.SOLUTION_RECOMMENDER,
@@ -606,5 +665,63 @@ async def test_graph_workflow_routes_to_final_writers_when_evaluation_can_write_
     assert step_agents[-3:] == [
         AgentName.RCA_WRITER,
         AgentName.SOLUTION_RECOMMENDER,
+        AgentName.REPORT_WRITER,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_can_generate_optional_patch_plan() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+        ]
+    )
+    workflow = make_graph_workflow(supervisor, include_patch_plan=True)
+
+    state = await workflow.run("INC-001")
+    step_agents = [step.agent_name for step in state.trace.steps]
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert state.patch_suggestion is not None
+    assert state.patch_suggestion.human_approval_required is True
+    assert state.patch_suggestion.analyze_only is True
+    assert state.patch_suggestion.target_repo_modified is False
+    assert state.report_artifact_paths == [
+        Path("reports/incidents/INC-001/rca.md"),
+        Path("reports/incidents/INC-001/solution.md"),
+        Path("reports/incidents/INC-001/patch.md"),
+    ]
+    assert step_agents[-4:] == [
+        AgentName.RCA_WRITER,
+        AgentName.SOLUTION_RECOMMENDER,
+        AgentName.PATCH_SUGGESTER,
+        AgentName.REPORT_WRITER,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_can_generate_optional_patch_diff() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+        ]
+    )
+    workflow = make_graph_workflow(supervisor, include_patch_diff=True)
+
+    state = await workflow.run("INC-001")
+    step_agents = [step.agent_name for step in state.trace.steps]
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert state.patch_suggestion is not None
+    assert state.patch_suggestion.file_patches
+    assert state.patch_suggestion.file_patches[0].file_path == "src/rag/router.py"
+    assert state.patch_suggestion.target_repo_modified is False
+    assert step_agents[-5:] == [
+        AgentName.RCA_WRITER,
+        AgentName.SOLUTION_RECOMMENDER,
+        AgentName.PATCH_SUGGESTER,
+        AgentName.PATCH_GENERATOR,
         AgentName.REPORT_WRITER,
     ]

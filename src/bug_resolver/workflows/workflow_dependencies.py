@@ -10,6 +10,10 @@ from bug_resolver.retrieval.code_file_loader import CodeFileLoader
 from bug_resolver.retrieval.code_indexer import CodeIndexer
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore
 from bug_resolver.retrieval.python_ast_code_chunker import PythonASTCodeChunker
+from bug_resolver.utils.observability import get_logger
+
+
+logger = get_logger(__name__)
 
 
 async def load_or_build_code_index(
@@ -22,12 +26,18 @@ async def load_or_build_code_index(
     metadata_path = settings.faiss_index_dir / "code_metadata.json"
 
     if index_path.exists() and metadata_path.exists():
+        logger.info("loading existing code index index_path=%s metadata_path=%s", index_path, metadata_path)
         return FAISSVectorStore.load(
             index_path=index_path,
             metadata_path=metadata_path,
         )
 
     _ensure_path_exists(settings.target_repo_path, "target repository")
+    logger.info(
+        "building code index target_repo_path=%s index_path=%s",
+        settings.target_repo_path,
+        index_path,
+    )
 
     indexer = CodeIndexer(
         file_loader=CodeFileLoader(settings.target_repo_path),
@@ -36,6 +46,7 @@ async def load_or_build_code_index(
     )
     vector_store = await indexer.build_index()
     vector_store.save(index_path=index_path, metadata_path=metadata_path)
+    logger.info("saved code index index_path=%s metadata_path=%s", index_path, metadata_path)
     return vector_store
 
 

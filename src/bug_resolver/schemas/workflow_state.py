@@ -22,6 +22,7 @@ from bug_resolver.schemas.orchestration import (
 )
 from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.reports import ReportSaveResult
+from bug_resolver.schemas.patch_suggestion import PatchSuggestion
 from bug_resolver.schemas.solution import SolutionRecommendation
 
 
@@ -35,8 +36,10 @@ def _default_allowed_agent_names() -> list[AgentName]:
         AgentName.EVIDENCE_EVALUATOR,
         AgentName.RCA_WRITER,
         AgentName.SOLUTION_RECOMMENDER,
+        AgentName.PATCH_SUGGESTER,
         AgentName.REPORT_WRITER,
         AgentName.FINISH,
+        AgentName.PATCH_GENERATOR,
     ]
 
 
@@ -51,8 +54,10 @@ class WorkflowState(StrictBaseModel):
     evidence_evaluation: EvidenceEvaluationResult | None = None
     rca_report: RCAReport | None = None
     solution_recommendation: SolutionRecommendation | None = None
+    patch_suggestion: PatchSuggestion | None = None
     report_save_result: ReportSaveResult | None = None
     final_report_path: Path | None = None
+    report_artifact_paths: list[Path] = Field(default_factory=list)
 
     current_decision: AgentDecision | None = None
     trace: InvestigationTrace = Field(default_factory=InvestigationTrace)
