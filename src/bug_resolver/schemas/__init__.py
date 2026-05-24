@@ -11,6 +11,7 @@ from bug_resolver.schemas.common import (
 )
 from bug_resolver.schemas.evaluation import EvidenceEvaluationResult
 from bug_resolver.schemas.evidence import EvidenceItem
+from bug_resolver.schemas.errors import WorkflowErrorInfo
 from bug_resolver.schemas.hypothesis import Hypothesis
 from bug_resolver.schemas.historical_rca import HistoricalRCAContext
 from bug_resolver.schemas.incident import Incident
@@ -72,6 +73,7 @@ __all__ = [
     "ToolCallRequest",
     "ToolCallResult",
     "WorkflowState",
+    "WorkflowErrorInfo",
     "ReportSaveResult",
     "IncidentIntakeRequest",
 ]

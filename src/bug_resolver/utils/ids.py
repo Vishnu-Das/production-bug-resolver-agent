@@ -97,6 +97,19 @@ def new_guardrail_id(prefix: str = "GRD") -> str:
     return f"{prefix}-{date_part}-{random_part}"
 
 
+def new_error_id(prefix: str = "ERR") -> str:
+    """
+    Generate a readable workflow error id.
+
+    Example:
+        ERR-20260518-8F3A91C2
+    """
+
+    date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
+    random_part = uuid4().hex[:8].upper()
+    return f"{prefix}-{date_part}-{random_part}"
+
+
 def new_recommendation_id(prefix: str = "SOL") -> str:
     """
     Generate a readable solution recommendation id.

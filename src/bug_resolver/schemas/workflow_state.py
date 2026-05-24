@@ -10,6 +10,7 @@ from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas.evidence import EvidenceItem
 from bug_resolver.schemas.evaluation import EvidenceEvaluationResult
 from bug_resolver.schemas.incident import Incident
+from bug_resolver.schemas.errors import WorkflowErrorInfo
 from bug_resolver.schemas.orchestration import (
     AgentDecision,
     AgentExecutionRecord,
@@ -24,6 +25,16 @@ from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.reports import ReportSaveResult
 from bug_resolver.schemas.patch_suggestion import PatchSuggestion
 from bug_resolver.schemas.solution import SolutionRecommendation
+from bug_resolver.utils.ids import new_error_id
+
+
+class _ErrorLikeProtocol:
+    code: str
+    message: str
+    component: str
+    recoverable: bool
+    suggested_action: str | None
+    context: dict[str, str]
 
 
 def _default_allowed_agent_names() -> list[AgentName]:
@@ -73,6 +84,7 @@ class WorkflowState(StrictBaseModel):
 
     low_confidence: bool = False
     errors: list[str] = Field(default_factory=list)
+    error_events: list[WorkflowErrorInfo] = Field(default_factory=list)
 
     def can_replan(self) -> bool:
         return self.replan_count < self.max_replans
@@ -119,6 +131,65 @@ class WorkflowState(StrictBaseModel):
         self.low_confidence = True
         self.investigation_status = InvestigationStatus.LOW_CONFIDENCE
 
-    def add_error(self, error: str) -> None:
-        self.errors.append(error)
-        self.investigation_status = InvestigationStatus.FAILED
+    def add_error(
+        self,
+        error: str | WorkflowErrorInfo | _ErrorLikeProtocol,
+        *,
+        recoverable: bool | None = None,
+        component: str | None = None,
+        suggested_action: str | None = None,
+        context: dict[str, str] | None = None,
+    ) -> None:
+        error_info = self._to_error_info(
+            error,
+            recoverable=recoverable,
+            component=component,
+            suggested_action=suggested_action,
+            context=context,
+        )
+        self.error_events.append(error_info)
+        self.errors.append(error_info.message)
+        if not error_info.recoverable:
+            self.investigation_status = InvestigationStatus.FAILED
+
+    def _to_error_info(
+        self,
+        error: str | WorkflowErrorInfo | _ErrorLikeProtocol,
+        *,
+        recoverable: bool | None,
+        component: str | None,
+        suggested_action: str | None,
+        context: dict[str, str] | None,
+    ) -> WorkflowErrorInfo:
+        if isinstance(error, WorkflowErrorInfo):
+            return error
+
+        if isinstance(error, str):
+            return WorkflowErrorInfo(
+                error_id=new_error_id(),
+                code="workflow_error",
+                message=error,
+                component=component or "workflow",
+                recoverable=False if recoverable is None else recoverable,
+                suggested_action=suggested_action,
+                context=context or {},
+            )
+
+        merged_context = {
+            **getattr(error, "context", {}),
+            **(context or {}),
+        }
+        return WorkflowErrorInfo(
+            error_id=new_error_id(),
+            code=getattr(error, "code", "workflow_error"),
+            message=getattr(error, "message", str(error)),
+            component=component or getattr(error, "component", "workflow"),
+            recoverable=(
+                getattr(error, "recoverable", False)
+                if recoverable is None
+                else recoverable
+            ),
+            suggested_action=suggested_action
+            or getattr(error, "suggested_action", None),
+            context=merged_context,
+        )

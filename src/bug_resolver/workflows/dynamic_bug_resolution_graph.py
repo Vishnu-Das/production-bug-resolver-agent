@@ -29,6 +29,7 @@ from bug_resolver.agents import (
     SolutionRecommendationAgent,
     SupervisorAgent,
 )
+from bug_resolver.errors import normalize_error
 from bug_resolver.providers.incident import IncidentProvider
 from bug_resolver.rules import GuardrailEngine
 from bug_resolver.schemas import (
@@ -207,13 +208,21 @@ class DynamicBugResolutionGraphWorkflow:
                 "finish": "finish",
             },
         )
-        graph.add_edge("rca_writer", "solution_recommender")
+        graph.add_conditional_edges(
+            "rca_writer",
+            self._route_after_rca_writer,
+            {
+                "solution_recommender": "solution_recommender",
+                "finish": "finish",
+            },
+        )
         graph.add_conditional_edges(
             "solution_recommender",
             self._route_after_solution_recommendation,
             {
                 "patch_suggester": "patch_suggester",
                 "report_writer": "report_writer",
+                "finish": "finish",
             },
         )
         graph.add_conditional_edges(
@@ -224,7 +233,14 @@ class DynamicBugResolutionGraphWorkflow:
                 "report_writer": "report_writer",
             },
         )
-        graph.add_edge("patch_generator", "report_writer")
+        graph.add_conditional_edges(
+            "patch_generator",
+            self._route_after_patch_generation,
+            {
+                "report_writer": "report_writer",
+                "finish": "finish",
+            },
+        )
         graph.add_edge("report_writer", "finish")
         graph.add_edge("finish", END)
 
@@ -310,28 +326,34 @@ class DynamicBugResolutionGraphWorkflow:
     async def _log_investigator(self, graph_state: DynamicGraphState) -> DynamicGraphState:
         state = self._state(graph_state)
         decision = self._current_decision(state)
-        evidence_items = await self._log_investigator_agent.run(
-            LogInvestigatorInput(
-                incident_id=state.incident.incident_id,
-                decision=decision,
+        try:
+            evidence_items = await self._log_investigator_agent.run(
+                LogInvestigatorInput(
+                    incident_id=state.incident.incident_id,
+                    decision=decision,
+                )
             )
-        )
-        self._record_successful_evidence_run(state, decision, evidence_items)
-        graph_state.next_route = "evidence_evaluator"
+            self._record_successful_evidence_run(state, decision, evidence_items)
+            graph_state.next_route = "evidence_evaluator"
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
         return graph_state
 
     async def _code_investigator(self, graph_state: DynamicGraphState) -> DynamicGraphState:
         state = self._state(graph_state)
         decision = self._current_decision(state)
-        evidence_items = await self._code_investigator_agent.run(
-            CodeInvestigatorInput(
-                decision=decision,
-                evidence_items=state.evidence_items,
-                limit=5,
+        try:
+            evidence_items = await self._code_investigator_agent.run(
+                CodeInvestigatorInput(
+                    decision=decision,
+                    evidence_items=state.evidence_items,
+                    limit=5,
+                )
             )
-        )
-        self._record_successful_evidence_run(state, decision, evidence_items)
-        graph_state.next_route = "evidence_evaluator"
+            self._record_successful_evidence_run(state, decision, evidence_items)
+            graph_state.next_route = "evidence_evaluator"
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
         return graph_state
 
     async def _graph_investigator(self, graph_state: DynamicGraphState) -> DynamicGraphState:
@@ -342,15 +364,18 @@ class DynamicBugResolutionGraphWorkflow:
             graph_state.next_route = "evidence_evaluator"
             return graph_state
 
-        evidence_items = await self._code_graph_investigator_agent.run(
-            CodeGraphInvestigatorInput(
-                decision=decision,
-                evidence_items=state.evidence_items,
-                limit=5,
+        try:
+            evidence_items = await self._code_graph_investigator_agent.run(
+                CodeGraphInvestigatorInput(
+                    decision=decision,
+                    evidence_items=state.evidence_items,
+                    limit=5,
+                )
             )
-        )
-        self._record_successful_evidence_run(state, decision, evidence_items)
-        graph_state.next_route = "evidence_evaluator"
+            self._record_successful_evidence_run(state, decision, evidence_items)
+            graph_state.next_route = "evidence_evaluator"
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
         return graph_state
 
     async def _historical_rca_investigator(
@@ -364,15 +389,18 @@ class DynamicBugResolutionGraphWorkflow:
             graph_state.next_route = "evidence_evaluator"
             return graph_state
 
-        evidence_items = await self._historical_rca_investigator_agent.run(
-            HistoricalRCAInvestigatorInput(
-                incident_id=state.incident.incident_id,
-                decision=decision,
-                limit=5,
+        try:
+            evidence_items = await self._historical_rca_investigator_agent.run(
+                HistoricalRCAInvestigatorInput(
+                    incident_id=state.incident.incident_id,
+                    decision=decision,
+                    limit=5,
+                )
             )
-        )
-        self._record_successful_evidence_run(state, decision, evidence_items)
-        graph_state.next_route = "evidence_evaluator"
+            self._record_successful_evidence_run(state, decision, evidence_items)
+            graph_state.next_route = "evidence_evaluator"
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
         return graph_state
 
     async def _knowledge_base_investigator(
@@ -381,14 +409,17 @@ class DynamicBugResolutionGraphWorkflow:
     ) -> DynamicGraphState:
         state = self._state(graph_state)
         decision = self._current_decision(state)
-        evidence_items = await self._knowledge_base_investigator_agent.run(
-            KnowledgeBaseInvestigatorInput(
-                decision=decision,
-                limit=5,
+        try:
+            evidence_items = await self._knowledge_base_investigator_agent.run(
+                KnowledgeBaseInvestigatorInput(
+                    decision=decision,
+                    limit=5,
+                )
             )
-        )
-        self._record_successful_evidence_run(state, decision, evidence_items)
-        graph_state.next_route = "evidence_evaluator"
+            self._record_successful_evidence_run(state, decision, evidence_items)
+            graph_state.next_route = "evidence_evaluator"
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
         return graph_state
 
     async def _evidence_evaluator(self, graph_state: DynamicGraphState) -> DynamicGraphState:
@@ -410,7 +441,11 @@ class DynamicBugResolutionGraphWorkflow:
             graph_state.next_route = "finish"
             return graph_state
 
-        evaluation = await self._evidence_evaluator_agent.run(state)
+        try:
+            evaluation = await self._evidence_evaluator_agent.run(state)
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
+            return graph_state
         state.evidence_evaluation = evaluation
         if evaluation.retry_required:
             if state.can_replan():
@@ -436,7 +471,11 @@ class DynamicBugResolutionGraphWorkflow:
             agent_name=AgentName.RCA_WRITER,
             reason="Evidence evaluation says RCA can be written.",
         )
-        state.rca_report = await self._rca_writer_agent.run(state)
+        try:
+            state.rca_report = await self._rca_writer_agent.run(state)
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
+            return graph_state
         self._record_successful_agent_run(
             state=state,
             decision=decision,
@@ -455,9 +494,13 @@ class DynamicBugResolutionGraphWorkflow:
             agent_name=AgentName.SOLUTION_RECOMMENDER,
             reason="RCA report is ready; generate solution recommendation.",
         )
-        state.solution_recommendation = await self._solution_recommendation_agent.run(
-            state.rca_report
-        )
+        try:
+            state.solution_recommendation = await self._solution_recommendation_agent.run(
+                state.rca_report
+            )
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
+            return graph_state
         self._record_successful_agent_run(
             state=state,
             decision=decision,
@@ -486,12 +529,22 @@ class DynamicBugResolutionGraphWorkflow:
             graph_state.next_route = "report_writer"
             return graph_state
 
-        state.patch_suggestion = await self._patch_suggestion_agent.run(
-            PatchSuggestionInput(
-                rca_report=state.rca_report,
-                solution_recommendation=state.solution_recommendation,
+        try:
+            state.patch_suggestion = await self._patch_suggestion_agent.run(
+                PatchSuggestionInput(
+                    rca_report=state.rca_report,
+                    solution_recommendation=state.solution_recommendation,
+                )
             )
-        )
+        except Exception as exc:
+            self._handle_node_error(
+                graph_state,
+                state,
+                decision,
+                exc,
+                recoverable_route="report_writer",
+            )
+            return graph_state
         self._record_successful_agent_run(
             state=state,
             decision=decision,
@@ -522,14 +575,24 @@ class DynamicBugResolutionGraphWorkflow:
             graph_state.next_route = "report_writer"
             return graph_state
 
-        generation_result = await self._patch_generator_agent.run(
-            PatchGeneratorInput(
-                rca_report=state.rca_report,
-                solution_recommendation=state.solution_recommendation,
-                affected_files=state.patch_suggestion.affected_files,
-                evidence_ids=state.patch_suggestion.evidence_ids,
+        try:
+            generation_result = await self._patch_generator_agent.run(
+                PatchGeneratorInput(
+                    rca_report=state.rca_report,
+                    solution_recommendation=state.solution_recommendation,
+                    affected_files=state.patch_suggestion.affected_files,
+                    evidence_ids=state.patch_suggestion.evidence_ids,
+                )
             )
-        )
+        except Exception as exc:
+            self._handle_node_error(
+                graph_state,
+                state,
+                decision,
+                exc,
+                recoverable_route="report_writer",
+            )
+            return graph_state
         state.patch_suggestion = state.patch_suggestion.model_copy(
             update={
                 "file_patches": generation_result.file_patches,
@@ -567,13 +630,17 @@ class DynamicBugResolutionGraphWorkflow:
             reason="RCA and solution are ready; save final report.",
             should_continue=False,
         )
-        written_paths = await self._report_writer_agent.run(
+        try:
+            written_paths = await self._report_writer_agent.run(
                 ReportWriterInput(
                     report=state.rca_report,
                     solution=state.solution_recommendation,
                     patch_suggestion=state.patch_suggestion,
                 )
-        )
+            )
+        except Exception as exc:
+            self._handle_node_error(graph_state, state, decision, exc)
+            return graph_state
         state.final_report_path = written_paths[0]
         state.report_artifact_paths = written_paths
         state.investigation_status = InvestigationStatus.COMPLETED
@@ -594,6 +661,9 @@ class DynamicBugResolutionGraphWorkflow:
 
     def _route_after_evidence_evaluation(self, graph_state: DynamicGraphState) -> GraphRoute:
         state = self._state(graph_state)
+        if state.investigation_status == InvestigationStatus.FAILED:
+            return "finish"
+
         evaluation = state.evidence_evaluation
 
         if evaluation is not None and evaluation.can_write_rca:
@@ -606,11 +676,20 @@ class DynamicBugResolutionGraphWorkflow:
         state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
         return "finish"
 
+    def _route_after_rca_writer(self, graph_state: DynamicGraphState) -> GraphRoute:
+        state = self._state(graph_state)
+        if state.investigation_status == InvestigationStatus.FAILED:
+            return "finish"
+        return "solution_recommender"
+
     def _route_after_solution_recommendation(
         self,
         graph_state: DynamicGraphState,
     ) -> GraphRoute:
         state = self._state(graph_state)
+        if state.investigation_status == InvestigationStatus.FAILED:
+            return "finish"
+
         if (
             self._include_patch_plan
             and state.patch_suggestion is None
@@ -623,6 +702,9 @@ class DynamicBugResolutionGraphWorkflow:
 
     def _route_after_patch_suggestion(self, graph_state: DynamicGraphState) -> GraphRoute:
         state = self._state(graph_state)
+        if state.investigation_status == InvestigationStatus.FAILED:
+            return "finish"
+
         if (
             self._include_patch_diff
             and state.patch_suggestion is not None
@@ -631,6 +713,12 @@ class DynamicBugResolutionGraphWorkflow:
         ):
             return "patch_generator"
 
+        return "report_writer"
+
+    def _route_after_patch_generation(self, graph_state: DynamicGraphState) -> GraphRoute:
+        state = self._state(graph_state)
+        if state.investigation_status == InvestigationStatus.FAILED:
+            return "finish"
         return "report_writer"
 
     def _can_retry_for_structural_graph_evidence(self, state: WorkflowState) -> bool:
@@ -731,6 +819,46 @@ class DynamicBugResolutionGraphWorkflow:
         decision: AgentDecision,
     ) -> None:
         self._execution_recorder.record_blocked_unsupported_agent(state, decision)
+
+    def _handle_node_error(
+        self,
+        graph_state: DynamicGraphState,
+        state: WorkflowState,
+        decision: AgentDecision,
+        error: Exception,
+        *,
+        recoverable_route: GraphRoute = "evidence_evaluator",
+    ) -> None:
+        recoverable = self._is_recoverable_agent_failure(decision.next_agent)
+        normalized_error = normalize_error(
+            error,
+            component=decision.next_agent.value,
+            recoverable=recoverable,
+            context={
+                "incident_id": state.incident.incident_id,
+                "decision_id": decision.decision_id,
+                "agent": decision.next_agent.value,
+            },
+        )
+        state.add_error(normalized_error)
+        self._execution_recorder.record_failed_agent_run(
+            state=state,
+            decision=decision,
+            error_message=normalized_error.user_message,
+            recoverable=normalized_error.recoverable,
+        )
+        graph_state.next_route = recoverable_route if normalized_error.recoverable else "finish"
+
+    def _is_recoverable_agent_failure(self, agent_name: AgentName) -> bool:
+        return agent_name in {
+            AgentName.LOG_INVESTIGATOR,
+            AgentName.CODE_INVESTIGATOR,
+            AgentName.GRAPH_INVESTIGATOR,
+            AgentName.HISTORICAL_RCA_INVESTIGATOR,
+            AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+            AgentName.PATCH_SUGGESTER,
+            AgentName.PATCH_GENERATOR,
+        }
 
     def _route_for_agent(self, agent_name: AgentName) -> GraphRoute:
         route_by_agent: dict[AgentName, GraphRoute] = {

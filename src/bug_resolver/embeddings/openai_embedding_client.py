@@ -2,6 +2,7 @@
 
 from openai import AsyncOpenAI
 
+from bug_resolver.errors import EmbeddingGenerationError
 from bug_resolver.embeddings.base import EmbeddingClient
 from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
 
@@ -45,10 +46,17 @@ class OpenAIEmbeddingClient(EmbeddingClient):
         )
         log_debug_payload(logger, "embedding input texts", payload=cleaned_texts)
 
-        response = await self.client.embeddings.create(
-            model=self.model,
-            input=cleaned_texts,
-        )
+        try:
+            response = await self.client.embeddings.create(
+                model=self.model,
+                input=cleaned_texts,
+            )
+        except Exception as exc:
+            raise EmbeddingGenerationError(
+                "OpenAI embedding generation failed.",
+                component="openai_embedding_client",
+                context={"model": self.model, "text_count": len(cleaned_texts)},
+            ) from exc
 
         embeddings = [item.embedding for item in response.data]
         logger.info(

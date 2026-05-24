@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from bug_resolver.errors import BugResolverError
 from bug_resolver.config.settings import get_settings
 from bug_resolver.utils.observability import (
     configure_langsmith_tracing,
@@ -19,7 +20,7 @@ from bug_resolver.utils.observability import (
 )
 from bug_resolver.workflows import build_dynamic_workflow
 from bug_resolver.workflows.graph_factory import build_dynamic_graph_workflow
-from bug_resolver.schemas import AgentName
+from bug_resolver.schemas import AgentName, InvestigationStatus
 
 app = typer.Typer(
     name="bug-resolver",
@@ -115,9 +116,10 @@ def investigate(
         )
     except Exception as exc:
         logger.exception("investigation command failed incident_id=%s workflow=%s", incident_id, workflow.value)
+        message = _exception_message(exc)
         console.print(
             Panel(
-                f"[bold red]Investigation failed[/bold red]\n\n{exc}",
+                f"[bold red]Investigation failed[/bold red]\n\n{message}",
                 title="[bold red]Error[/bold red]",
                 border_style="red",
                 box=box.ASCII,
@@ -140,8 +142,14 @@ def investigate(
     elif state.final_report_path is not None:
         _print_report_paths([str(state.final_report_path)])
 
-    if state.errors:
+    if state.error_events:
+        _print_error_events(state.error_events)
+    elif state.errors:
         _print_errors(state.errors)
+
+    if state.investigation_status == InvestigationStatus.FAILED or any(
+        not error.recoverable for error in state.error_events
+    ):
         raise typer.Exit(code=1)
 
     if state.low_confidence:
@@ -163,7 +171,7 @@ def _print_investigation_summary(
     status: str,
     evidence_count: int,
     step_count: int,
-) -> None:
+    ) -> None:
     """Print a compact investigation summary panel."""
     status_style = _status_style(status)
 
@@ -282,6 +290,40 @@ def _print_errors(errors: list[str]) -> None:
             padding=(1, 2),
         )
     )
+
+
+def _print_error_events(errors: list[Any]) -> None:
+    """Print structured workflow errors as a Rich panel."""
+    console.print()
+    rendered_errors = []
+    for error in errors:
+        severity = "warning" if error.recoverable else "fatal"
+        details = [
+            f"- [{severity}] {error.component}: {error.message}",
+        ]
+        if error.suggested_action:
+            details.append(f"  next: {error.suggested_action}")
+        rendered_errors.append("\n".join(details))
+
+    console.print(
+        Panel(
+            "\n".join(rendered_errors),
+            title="[bold red]Errors and Warnings[/bold red]",
+            border_style="red",
+            box=box.ASCII,
+            padding=(1, 2),
+        )
+    )
+
+
+def _exception_message(exc: Exception) -> str:
+    if isinstance(exc, BugResolverError):
+        lines = [exc.user_message]
+        if exc.suggested_action:
+            lines.append(f"Next: {exc.suggested_action}")
+        return "\n".join(lines)
+
+    return str(exc)
 
 
 def _print_low_confidence_warning() -> None:

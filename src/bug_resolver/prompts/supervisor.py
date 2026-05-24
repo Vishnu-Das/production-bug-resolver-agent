@@ -88,6 +88,7 @@ class SupervisorPromptBuilder:
         evidence_summary = self._format_evidence_summary(state)
         previous_decisions = self._format_previous_decisions(state)
         evaluation_summary = self._format_evaluation_summary(state)
+        error_summary = self._format_error_summary(state)
         allowed_agents = ", ".join(agent.value for agent in state.allowed_agent_names)
 
         return (
@@ -105,6 +106,7 @@ class SupervisorPromptBuilder:
             f"Allowed agents: {allowed_agents}\n\n"
             f"Evidence summary:\n{evidence_summary}\n\n"
             f"Evidence evaluation:\n{evaluation_summary}\n\n"
+            f"Provider or workflow errors:\n{error_summary}\n\n"
             f"Previous supervisor decisions:\n{previous_decisions}\n\n"
             "Return the best next agent, a concise reason, useful queries or "
             "instructions for that agent, expected evidence, and whether the "
@@ -145,6 +147,18 @@ class SupervisorPromptBuilder:
             f"- confidence={evaluation.confidence_score}; "
             f"retry_required={evaluation.retry_required}; "
             f"missing_evidence={missing_evidence}; reason={evaluation.reason}"
+        )
+
+    def _format_error_summary(self, state: WorkflowState) -> str:
+        if not state.error_events:
+            return "- No provider or workflow errors recorded."
+
+        return "\n".join(
+            (
+                f"- {error.error_id} [{error.code}] {error.component}: "
+                f"{error.message}; recoverable={error.recoverable}"
+            )
+            for error in state.error_events[-5:]
         )
     
     def _format_evidence_location(self, evidence) -> str:

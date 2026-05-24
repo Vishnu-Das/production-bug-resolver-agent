@@ -26,6 +26,7 @@ from bug_resolver.agents import (
 )
 from bug_resolver.providers.incident import IncidentProvider
 from bug_resolver.rules import GuardrailEngine
+from bug_resolver.errors import normalize_error
 from bug_resolver.schemas import (
     AgentDecision,
     AgentName,
@@ -155,10 +156,12 @@ class DynamicBugResolutionWorkflow:
                             metadata={"fallback_for": decision.decision_id},
                         )
                         state.record_decision(fallback_decision)
-                        await self._execute_decision(
+                        await self._execute_decision_safely(
                             state=state,
                             decision=fallback_decision,
                         )
+                        if state.investigation_status == InvestigationStatus.FAILED:
+                            return state
                         if state.investigation_status == InvestigationStatus.COMPLETED:
                             return state
                         if await self._finalize_if_ready(state):
@@ -169,8 +172,10 @@ class DynamicBugResolutionWorkflow:
                     state.investigation_status = InvestigationStatus.COMPLETED
                     return state
 
-                await self._execute_decision(state=state, decision=decision)
+                await self._execute_decision_safely(state=state, decision=decision)
 
+                if state.investigation_status == InvestigationStatus.FAILED:
+                    return state
                 if state.investigation_status == InvestigationStatus.COMPLETED:
                     return state
                 if await self._finalize_if_ready(state):
@@ -188,8 +193,42 @@ class DynamicBugResolutionWorkflow:
             return state
         except Exception as exc:
             logger.exception("manual workflow failed incident_id=%s", incident_id)
-            state.add_error(str(exc))
+            state.add_error(
+                normalize_error(
+                    exc,
+                    component="workflow.manual",
+                    context={"incident_id": incident_id},
+                )
+            )
             return state
+
+    async def _execute_decision_safely(
+        self,
+        *,
+        state: WorkflowState,
+        decision: AgentDecision,
+    ) -> None:
+        try:
+            await self._execute_decision(state=state, decision=decision)
+        except Exception as exc:
+            recoverable = self._is_recoverable_agent_failure(decision.next_agent)
+            error = normalize_error(
+                exc,
+                component=decision.next_agent.value,
+                recoverable=recoverable,
+                context={
+                    "incident_id": state.incident.incident_id,
+                    "decision_id": decision.decision_id,
+                    "agent": decision.next_agent.value,
+                },
+            )
+            state.add_error(error)
+            self._execution_recorder.record_failed_agent_run(
+                state=state,
+                decision=decision,
+                error_message=error.user_message,
+                recoverable=error.recoverable,
+            )
 
     async def _execute_decision(
         self,
@@ -456,7 +495,7 @@ class DynamicBugResolutionWorkflow:
             )
             return
 
-        await self._execute_decision(state=state, decision=decision)
+        await self._execute_decision_safely(state=state, decision=decision)
 
     async def _finalize_if_ready(self, state: WorkflowState) -> bool:
         """Run deterministic finalization path once evidence is sufficient.
@@ -482,7 +521,9 @@ class DynamicBugResolutionWorkflow:
                 metadata={"forced_by_workflow": "true"},
             )
             state.record_decision(rca_decision)
-            await self._execute_decision(state=state, decision=rca_decision)
+            await self._execute_decision_safely(state=state, decision=rca_decision)
+            if state.investigation_status == InvestigationStatus.FAILED:
+                return False
 
         if state.solution_recommendation is None:
             solution_decision = AgentDecision(
@@ -495,7 +536,12 @@ class DynamicBugResolutionWorkflow:
                 metadata={"forced_by_workflow": "true"},
             )
             state.record_decision(solution_decision)
-            await self._execute_decision(state=state, decision=solution_decision)
+            await self._execute_decision_safely(
+                state=state,
+                decision=solution_decision,
+            )
+            if state.investigation_status == InvestigationStatus.FAILED:
+                return False
 
         if (
             self._include_patch_plan
@@ -513,7 +559,9 @@ class DynamicBugResolutionWorkflow:
                 metadata={"forced_by_workflow": "true"},
             )
             state.record_decision(patch_decision)
-            await self._execute_decision(state=state, decision=patch_decision)
+            await self._execute_decision_safely(state=state, decision=patch_decision)
+            if state.investigation_status == InvestigationStatus.FAILED:
+                return False
 
         if (
             self._include_patch_diff
@@ -531,7 +579,12 @@ class DynamicBugResolutionWorkflow:
                 metadata={"forced_by_workflow": "true"},
             )
             state.record_decision(patch_generator_decision)
-            await self._execute_decision(state=state, decision=patch_generator_decision)
+            await self._execute_decision_safely(
+                state=state,
+                decision=patch_generator_decision,
+            )
+            if state.investigation_status == InvestigationStatus.FAILED:
+                return False
 
         if state.final_report_path is None:
             report_decision = AgentDecision(
@@ -544,9 +597,20 @@ class DynamicBugResolutionWorkflow:
                 metadata={"forced_by_workflow": "true"},
             )
             state.record_decision(report_decision)
-            await self._execute_decision(state=state, decision=report_decision)
+            await self._execute_decision_safely(state=state, decision=report_decision)
 
         return state.investigation_status == InvestigationStatus.COMPLETED
+
+    def _is_recoverable_agent_failure(self, agent_name: AgentName) -> bool:
+        return agent_name in {
+            AgentName.LOG_INVESTIGATOR,
+            AgentName.CODE_INVESTIGATOR,
+            AgentName.GRAPH_INVESTIGATOR,
+            AgentName.HISTORICAL_RCA_INVESTIGATOR,
+            AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+            AgentName.PATCH_SUGGESTER,
+            AgentName.PATCH_GENERATOR,
+        }
 
     def _merge_strings(self, *groups: list[str]) -> list[str]:
         merged: list[str] = []

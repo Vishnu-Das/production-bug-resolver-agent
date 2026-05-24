@@ -246,6 +246,18 @@ class FakeKnowledgeBaseProvider:
         ]
 
 
+class FailingKnowledgeBaseProvider:
+    """Raise a provider-like failure to test graceful workflow recovery."""
+
+    async def search_knowledge(
+        self,
+        queries: list[str],
+        *,
+        limit: int = 5,
+    ) -> list[KnowledgeContext]:
+        raise RuntimeError("knowledge provider unavailable")
+
+
 class FakeHistoricalRCAProvider:
     """Return one similar prior RCA context."""
 
@@ -424,6 +436,39 @@ async def test_graph_workflow_completes_rca_solution_and_report() -> None:
         AgentName.REPORT_WRITER,
     ]
     assert supervisor.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_records_recoverable_provider_error_and_continues() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.KNOWLEDGE_BASE_INVESTIGATOR, ["docs"]),
+            decision("decision-3", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        knowledge_base_provider=FailingKnowledgeBaseProvider(),
+        max_replans=3,
+    )
+
+    state = await workflow.run("INC-001")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert state.error_events
+    assert state.error_events[0].component == AgentName.KNOWLEDGE_BASE_INVESTIGATOR.value
+    assert state.error_events[0].recoverable is True
+    assert "knowledge provider unavailable" in state.error_events[0].message
+    assert any(
+        step.agent_name == AgentName.KNOWLEDGE_BASE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.FAILED
+        for step in state.trace.steps
+    )
+    assert any(
+        evidence.source_type == EvidenceSourceType.CODE
+        for evidence in state.evidence_items
+    )
 
 
 @pytest.mark.asyncio
