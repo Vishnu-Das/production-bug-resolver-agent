@@ -113,6 +113,46 @@ class WorkflowExecutionRecorder:
             )
         )
 
+    def record_failed_agent_run(
+        self,
+        *,
+        state: WorkflowState,
+        decision: AgentDecision,
+        error_message: str,
+        recoverable: bool,
+    ) -> None:
+        execution = AgentExecutionRecord(
+            execution_id=new_agent_execution_id(),
+            agent_name=decision.next_agent,
+            status=AgentRunStatus.FAILED,
+            decision_id=decision.decision_id,
+            error=error_message,
+            output_summary=(
+                "Recoverable agent failure; workflow may continue."
+                if recoverable
+                else "Fatal agent failure; workflow stopped."
+            ),
+        )
+        state.record_agent_execution(execution)
+        logger.error(
+            "workflow step failed incident_id=%s agent=%s decision_id=%s recoverable=%s error=%s",
+            state.incident.incident_id,
+            decision.next_agent.value,
+            decision.decision_id,
+            recoverable,
+            error_message,
+        )
+        state.add_investigation_step(
+            InvestigationStep(
+                step_number=state.trace.next_step_number(),
+                agent_name=decision.next_agent,
+                run_status=AgentRunStatus.FAILED,
+                decision_id=decision.decision_id,
+                execution_id=execution.execution_id,
+                notes=[error_message],
+            )
+        )
+
     def record_blocked_unsupported_agent(
         self,
         state: WorkflowState,

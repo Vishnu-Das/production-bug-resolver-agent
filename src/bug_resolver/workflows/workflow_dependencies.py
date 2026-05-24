@@ -6,6 +6,7 @@ from pathlib import Path
 
 from bug_resolver.config.settings import AppSettings
 from bug_resolver.embeddings.openai_embedding_client import OpenAIEmbeddingClient
+from bug_resolver.errors import ConfigurationError, RetrievalError
 from bug_resolver.retrieval.code_file_loader import CodeFileLoader
 from bug_resolver.retrieval.code_indexer import CodeIndexer
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore
@@ -27,10 +28,20 @@ async def load_or_build_code_index(
 
     if index_path.exists() and metadata_path.exists():
         logger.info("loading existing code index index_path=%s metadata_path=%s", index_path, metadata_path)
-        return FAISSVectorStore.load(
-            index_path=index_path,
-            metadata_path=metadata_path,
-        )
+        try:
+            return FAISSVectorStore.load(
+                index_path=index_path,
+                metadata_path=metadata_path,
+            )
+        except Exception as exc:
+            raise RetrievalError(
+                "Failed to load existing FAISS code index.",
+                component="code_index",
+                context={
+                    "index_path": index_path,
+                    "metadata_path": metadata_path,
+                },
+            ) from exc
 
     _ensure_path_exists(settings.target_repo_path, "target repository")
     logger.info(
@@ -44,12 +55,26 @@ async def load_or_build_code_index(
         chunker=PythonASTCodeChunker(),
         embedding_client=embedding_client,
     )
-    vector_store = await indexer.build_index()
-    vector_store.save(index_path=index_path, metadata_path=metadata_path)
+    try:
+        vector_store = await indexer.build_index()
+        vector_store.save(index_path=index_path, metadata_path=metadata_path)
+    except Exception as exc:
+        raise RetrievalError(
+            "Failed to build or save FAISS code index.",
+            component="code_index",
+            context={
+                "target_repo_path": settings.target_repo_path,
+                "index_path": index_path,
+            },
+        ) from exc
     logger.info("saved code index index_path=%s metadata_path=%s", index_path, metadata_path)
     return vector_store
 
 
 def _ensure_path_exists(path: Path, label: str) -> None:
     if not path.exists():
-        raise FileNotFoundError(f"Configured {label} path does not exist: {path}")
+        raise ConfigurationError(
+            f"Configured {label} path does not exist: {path}",
+            component="settings",
+            context={"path": path, "label": label},
+        )

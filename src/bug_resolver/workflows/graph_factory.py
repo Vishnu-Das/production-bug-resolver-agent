@@ -18,6 +18,7 @@ from bug_resolver.agents import (
 )
 from bug_resolver.config.settings import AppSettings
 from bug_resolver.embeddings.openai_embedding_client import OpenAIEmbeddingClient
+from bug_resolver.errors import ConfigurationError
 from bug_resolver.llm.openai_llm_client import OpenAILLMClient
 from bug_resolver.providers.code.faiss_code_context_provider import (
     FAISSCodeContextProvider,
@@ -53,7 +54,11 @@ async def build_dynamic_graph_workflow(
         endpoint=settings.langsmith_endpoint,
     )
     if not settings.openai_api_key:
-        raise ValueError("OPENAI_API_KEY is required to run investigations.")
+        raise ConfigurationError(
+            "OPENAI_API_KEY is required to run investigations.",
+            component="settings",
+            suggested_action="Set OPENAI_API_KEY in .env before running investigations.",
+        )
 
     llm_client = OpenAILLMClient(
         api_key=settings.openai_api_key,

@@ -84,11 +84,23 @@ class PatchGeneratorAgent(BaseAgent[PatchGeneratorInput, PatchGenerationResult])
             evidence_ids=input_data.evidence_ids,
             file_contents=readable_files,
         )
-        result = await self._llm_client.generate_structured(
-            prompt,
-            PatchGenerationResult,
-            system_prompt=self._prompt_builder.build_system_prompt(),
-        )
+        try:
+            result = await self._llm_client.generate_structured(
+                prompt,
+                PatchGenerationResult,
+                system_prompt=self._prompt_builder.build_system_prompt(),
+            )
+        except Exception:
+            logger.exception("patch generation skipped llm failure")
+            return PatchGenerationResult(
+                generated_diff=False,
+                warnings=[
+                    "Patch generation skipped because the LLM provider failed."
+                ],
+                open_questions=[
+                    "Should a developer prepare the diff manually from the patch plan?"
+                ],
+            )
         allowed_files = self._rules.allowed_patch_files(
             affected_files=authorized_files,
             readable_files=readable_files,

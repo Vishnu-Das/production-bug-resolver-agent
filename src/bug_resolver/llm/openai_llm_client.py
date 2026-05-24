@@ -2,6 +2,7 @@
 
 from openai import AsyncOpenAI
 
+from bug_resolver.errors import LLMGenerationError
 from bug_resolver.llm.base import LLMClient, StructuredOutputT
 from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
 
@@ -37,10 +38,17 @@ class OpenAILLMClient(LLMClient):
         logger.info("llm text generation started model=%s prompt_chars=%s", self.model, len(prompt))
         log_debug_payload(logger, "llm text prompt", payload=prompt)
 
-        response = await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+            )
+        except Exception as exc:
+            raise LLMGenerationError(
+                "OpenAI text generation failed.",
+                component="openai_llm_client",
+                context={"model": self.model},
+            ) from exc
 
         content = response.choices[0].message.content
 
@@ -75,11 +83,21 @@ class OpenAILLMClient(LLMClient):
         )
         log_debug_payload(logger, "llm structured prompt", payload=prompt)
 
-        response = await self.client.beta.chat.completions.parse(
-            model=self.model,
-            messages=messages,
-            response_format=output_schema,
-        )
+        try:
+            response = await self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=messages,
+                response_format=output_schema,
+            )
+        except Exception as exc:
+            raise LLMGenerationError(
+                "OpenAI structured generation failed.",
+                component="openai_llm_client",
+                context={
+                    "model": self.model,
+                    "schema": output_schema.__name__,
+                },
+            ) from exc
 
         parsed = response.choices[0].message.parsed
 

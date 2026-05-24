@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from bug_resolver.errors import ReportWriteError
 from bug_resolver.providers.reports.base import ReportStore
 from bug_resolver.schemas.patch_suggestion import FilePatch, PatchSuggestion
 from bug_resolver.schemas.rca import RCAReport
@@ -21,6 +22,29 @@ class FileReportStore(ReportStore):
 
     @traceable(name="report_store.save", run_type="chain")
     async def save_report(
+        self,
+        report: RCAReport,
+        *,
+        solution: SolutionRecommendation | None = None,
+        patch_suggestion: PatchSuggestion | None = None,
+    ) -> list[Path]:
+        try:
+            return self._save_report(
+                report,
+                solution=solution,
+                patch_suggestion=patch_suggestion,
+            )
+        except OSError as exc:
+            raise ReportWriteError(
+                "Failed to write report artifacts.",
+                component="file_report_store",
+                context={
+                    "incident_id": report.incident_id,
+                    "reports_dir": self.reports_dir,
+                },
+            ) from exc
+
+    def _save_report(
         self,
         report: RCAReport,
         *,
