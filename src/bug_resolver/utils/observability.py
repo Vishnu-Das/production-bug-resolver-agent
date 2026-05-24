@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import logging
 import os
+import json
 from collections.abc import Callable
 from functools import wraps
+from pathlib import Path
 from typing import Any, TypeVar, cast
 
 
@@ -17,11 +19,43 @@ except Exception:  # pragma: no cover - optional dependency behavior.
 
 FuncT = TypeVar("FuncT", bound=Callable[..., Any])
 
-LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-def configure_logging(*, debug: bool = False, log_level: str | None = None) -> None:
-    """Configure application logging for CLI runs."""
+class ReadableLogFormatter(logging.Formatter):
+    """Human-friendly formatter with spacing and aligned metadata."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        timestamp = self.formatTime(record, DATE_FORMAT)
+        logger_name = self._short_logger_name(record.name)
+        header = f"{timestamp} | {record.levelname:<7} | {logger_name}"
+        message = self._indent_message(record.getMessage())
+
+        rendered = f"\n{header}\n  {message}"
+
+        if record.exc_info:
+            rendered = f"{rendered}\n{self._indent_message(self.formatException(record.exc_info))}"
+
+        if record.stack_info:
+            rendered = f"{rendered}\n{self._indent_message(record.stack_info)}"
+
+        return rendered
+
+    def _indent_message(self, message: str) -> str:
+        return "\n  ".join(message.splitlines())
+
+    def _short_logger_name(self, logger_name: str) -> str:
+        return logger_name.removeprefix("bug_resolver.")
+
+
+def configure_logging(
+    *,
+    debug: bool = False,
+    log_level: str | None = None,
+    log_dir: str | Path = "logs",
+    log_file_name: str = "bug-resolver.log",
+) -> Path:
+    """Configure UTF-8 file logging for CLI runs and return the log path."""
     configured_level = log_level or os.getenv("LOG_LEVEL")
     if configured_level:
         level = logging.getLevelName(configured_level.upper())
@@ -30,15 +64,68 @@ def configure_logging(*, debug: bool = False, log_level: str | None = None) -> N
     else:
         level = logging.DEBUG if debug else logging.INFO
 
-    logging.basicConfig(
-        level=level,
-        format=LOG_FORMAT,
-        force=True,
-    )
+    log_path = Path(log_dir) / log_file_name
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        handler.close()
+    root_logger.handlers.clear()
+    root_logger.setLevel(level)
+
+    file_handler = logging.FileHandler(log_path, encoding="utf-8", mode="a")
+    file_handler.setLevel(level)
+    file_handler.setFormatter(ReadableLogFormatter())
+    root_logger.addHandler(file_handler)
 
     logging.getLogger("httpx").setLevel(logging.WARNING if not debug else logging.INFO)
     logging.getLogger("openai").setLevel(logging.WARNING if not debug else logging.INFO)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    return log_path
+
+
+def configure_langsmith_tracing(
+    *,
+    enabled: bool,
+    api_key: str = "",
+    project: str = "",
+    endpoint: str = "",
+) -> bool:
+    """Export LangSmith settings from AppSettings into process env.
+
+    Pydantic reads .env values into AppSettings, but LangSmith checks os.environ.
+    This bridge lets local .env configuration activate tracing for decorated runs.
+    """
+    if not enabled:
+        return _env_flag_enabled("LANGSMITH_TRACING") or _env_flag_enabled(
+            "LANGCHAIN_TRACING_V2"
+        )
+
+    os.environ["LANGSMITH_TRACING"] = "true"
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+
+    if api_key:
+        os.environ["LANGSMITH_API_KEY"] = api_key
+        os.environ["LANGCHAIN_API_KEY"] = api_key
+
+    if project:
+        os.environ["LANGSMITH_PROJECT"] = project
+
+    if endpoint:
+        os.environ["LANGSMITH_ENDPOINT"] = endpoint
+
+    logger = get_logger(__name__)
+    logger.info(
+        "langsmith tracing configured enabled=true project=%s endpoint_configured=%s api_key_configured=%s",
+        os.getenv("LANGSMITH_PROJECT", ""),
+        bool(os.getenv("LANGSMITH_ENDPOINT")),
+        bool(os.getenv("LANGSMITH_API_KEY")),
+    )
+    return True
+
+
+def _env_flag_enabled(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -69,6 +156,27 @@ def truncate(value: object, *, max_length: int = 500) -> str:
     return f"{text[: max_length - 3]}..."
 
 
+def truncate_multiline(value: str, *, max_length: int = 1200) -> str:
+    """Return readable text with line breaks preserved and bounded length."""
+    if len(value) <= max_length:
+        return value
+    return f"{value[: max_length - 3]}..."
+
+
+def format_debug_payload(payload: object, *, max_length: int = 1200) -> str:
+    """Render structured debug payloads in a readable bounded format."""
+    value = payload
+    if hasattr(payload, "model_dump"):
+        value = payload.model_dump(mode="json")  # type: ignore[attr-defined]
+
+    try:
+        rendered = json.dumps(value, indent=2, default=str)
+    except TypeError:
+        rendered = str(value)
+
+    return truncate_multiline(rendered, max_length=max_length)
+
+
 def log_debug_payload(
     logger: logging.Logger,
     message: str,
@@ -78,7 +186,11 @@ def log_debug_payload(
 ) -> None:
     """Log verbose payload only when DEBUG logging is enabled."""
     if logger.isEnabledFor(logging.DEBUG):
-        logger.debug("%s %s", message, truncate(payload, max_length=max_length))
+        logger.debug(
+            "%s\n%s",
+            message,
+            format_debug_payload(payload, max_length=max_length),
+        )
 
 
 def log_async_call(name: str) -> Callable[[FuncT], FuncT]:

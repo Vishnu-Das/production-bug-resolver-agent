@@ -1,4 +1,4 @@
-"""Typer CLI entrypoint for running analyze-only bug investigations."""
+﻿"""Typer CLI entrypoint for running analyze-only bug investigations."""
 
 import asyncio
 from enum import StrEnum
@@ -12,7 +12,11 @@ from rich.table import Table
 from rich.text import Text
 
 from bug_resolver.config.settings import get_settings
-from bug_resolver.utils.observability import configure_logging, get_logger
+from bug_resolver.utils.observability import (
+    configure_langsmith_tracing,
+    configure_logging,
+    get_logger,
+)
 from bug_resolver.workflows import build_dynamic_workflow
 from bug_resolver.workflows.graph_factory import build_dynamic_graph_workflow
 from bug_resolver.schemas import AgentName
@@ -23,7 +27,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-console = Console()
+console = Console(emoji=False)
 logger = get_logger(__name__)
 
 
@@ -78,14 +82,25 @@ def investigate(
 ) -> None:
     """Run a dynamic supervisor-led bug investigation for an incident."""
     settings = get_settings()
-    configure_logging(debug=debug or settings.debug, log_level=settings.log_level)
+    log_path = configure_logging(
+        debug=debug or settings.debug,
+        log_level=settings.log_level,
+        log_dir=settings.runtime_logs_dir,
+    )
+    configure_langsmith_tracing(
+        enabled=settings.langsmith_tracing,
+        api_key=settings.langsmith_api_key,
+        project=settings.langsmith_project,
+        endpoint=settings.langsmith_endpoint,
+    )
     logger.info(
-        "investigation command started incident_id=%s workflow=%s patch_plan=%s patch_diff=%s debug=%s",
+        "investigation command started incident_id=%s workflow=%s patch_plan=%s patch_diff=%s debug=%s log_path=%s",
         incident_id,
         workflow.value,
         include_patch_plan or include_patch_diff,
         include_patch_diff,
         debug or settings.debug,
+        log_path,
     )
     console.print("[bold cyan]Starting dynamic investigation[/bold cyan]\n")
 
@@ -105,7 +120,7 @@ def investigate(
                 f"[bold red]Investigation failed[/bold red]\n\n{exc}",
                 title="[bold red]Error[/bold red]",
                 border_style="red",
-                box=box.ROUNDED,
+                box=box.ASCII,
             )
         )
         raise typer.Exit(code=1) from exc
@@ -156,16 +171,16 @@ def _print_investigation_summary(
         Panel(
             "\n".join(
                 [
-                    f"📌 [bold]Incident:[/bold] {incident_id}",
-                    f"⚙️  [bold]Workflow:[/bold] {workflow}",
-                    f"📊 [bold]Status:[/bold] [{status_style}]{status}[/{status_style}]",
-                    f"🧾 [bold]Evidence:[/bold] {evidence_count} items",
-                    f"🪜 [bold]Steps:[/bold] {step_count}",
+                    f"[bold]Incident:[/bold] {incident_id}",
+                    f"[bold]Workflow:[/bold] {workflow}",
+                    f"[bold]Status:[/bold] [{status_style}]{status}[/{status_style}]",
+                    f"[bold]Evidence:[/bold] {evidence_count} items",
+                    f"[bold]Steps:[/bold] {step_count}",
                 ]
             ),
             title="[bold cyan]Production Bug Resolver[/bold cyan]",
             border_style="cyan",
-            box=box.ROUNDED,
+            box=box.ASCII,
             padding=(0, 2),
         )
     )
@@ -185,7 +200,7 @@ def _print_trace(state: Any) -> None:
         show_header=True,
         header_style="bold cyan",
         border_style="cyan",
-        box=box.ROUNDED,
+        box=box.ASCII,
         row_styles=["none", "none"],
         pad_edge=True,
     )
@@ -217,7 +232,7 @@ def _print_trace(state: Any) -> None:
             _agent_label(step.agent_name.value),
             _run_status_label(step.run_status.value),
             _step_output_summary(step),
-            "\n".join(notes) if notes else Text("—", style="dim"),
+            "\n".join(notes) if notes else Text("-", style="dim"),
         )
 
     console.print()
@@ -229,11 +244,11 @@ def _print_report_path(report_path: str) -> None:
     console.print()
     console.print(
         Panel(
-            f"[bold green]✅ Report written successfully[/bold green]\n\n"
+            f"[bold green]Report written successfully[/bold green]\n\n"
             f"[white]{report_path}[/white]",
             title="[bold green]Output[/bold green]",
             border_style="green",
-            box=box.ROUNDED,
+            box=box.ASCII,
             padding=(1, 2),
         )
     )
@@ -249,7 +264,7 @@ def _print_report_paths(report_paths: list[str]) -> None:
             f"{rendered_paths}",
             title="[bold green]Output[/bold green]",
             border_style="green",
-            box=box.ROUNDED,
+            box=box.ASCII,
             padding=(1, 2),
         )
     )
@@ -263,7 +278,7 @@ def _print_errors(errors: list[str]) -> None:
             "\n".join(f"- {error}" for error in errors),
             title="[bold red]Errors[/bold red]",
             border_style="red",
-            box=box.ROUNDED,
+            box=box.ASCII,
             padding=(1, 2),
         )
     )
@@ -277,7 +292,7 @@ def _print_low_confidence_warning() -> None:
             "[yellow]Investigation completed with low confidence.[/yellow]",
             title="[bold yellow]Low Confidence[/bold yellow]",
             border_style="yellow",
-            box=box.ROUNDED,
+            box=box.ASCII,
             padding=(1, 2),
         )
     )
@@ -316,7 +331,7 @@ def _run_status_label(status: str) -> Text:
     normalized = status.lower()
 
     if normalized == "succeeded":
-        return Text(" ✓ SUCCESS ", style="bold black on green")
+        return Text(" SUCCESS ", style="bold black on green")
     if normalized == "blocked":
         return Text(" BLOCKED ", style="bold black on yellow")
     if normalized == "failed":
@@ -325,6 +340,7 @@ def _run_status_label(status: str) -> Text:
         return Text(" SKIPPED ", style="bold white on bright_black")
 
     return Text(f" {status.upper()} ", style="white")
+
 
 def _step_output_summary(step: Any) -> Text | str:
     """Return a compact output summary for an investigation step."""
@@ -343,7 +359,7 @@ def _step_output_summary(step: Any) -> Text | str:
     if step.agent_name == AgentName.REPORT_WRITER:
         return Text("report saved", style="green")
 
-    return Text("—", style="dim")
+    return Text("-", style="dim")
 
 
 def _compact_evidence_ids(evidence_ids: list[str], *, limit: int = 3) -> str:

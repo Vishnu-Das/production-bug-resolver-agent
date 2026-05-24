@@ -215,6 +215,37 @@ async def test_patch_generator_skips_graph_only_upload_routing_targets() -> None
 
 
 @pytest.mark.asyncio
+async def test_patch_generator_skips_when_only_graph_and_test_evidence_exists() -> None:
+    llm_client = FakeLLMClient(PatchGenerationResult())
+    agent = PatchGeneratorAgent(
+        patch_context_provider=FakePatchContextProvider(
+            {
+                "src/services/upload_service.py": "def upload(): pass\n",
+                "tests/test_upload.py": "def test_upload(): pass\n",
+            }
+        ),
+        llm_client=llm_client,
+    )
+
+    result = await agent.run(
+        PatchGeneratorInput(
+            rca_report=build_upload_rca_report(),
+            solution_recommendation=build_upload_solution(),
+            affected_files=["src/services/upload_service.py", "tests/test_upload.py"],
+            evidence_ids=[
+                "graph-src/services/upload_service.py:upload",
+                "evidence-tests/test_upload.py:test_upload",
+            ],
+        )
+    )
+
+    assert result.generated_diff is False
+    assert result.file_patches == []
+    assert "no safe code-backed affected files" in result.warnings[0]
+    assert llm_client.prompt == ""
+
+
+@pytest.mark.asyncio
 async def test_patch_generator_rejects_upload_patch_to_routing_even_if_code_backed() -> None:
     llm_client = FakeLLMClient(
         PatchGenerationResult(

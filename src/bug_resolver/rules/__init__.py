@@ -5,7 +5,7 @@ from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.rules.code_context_ranking_rules import CodeContextRankingRules
 from bug_resolver.rules.evidence_selection_rules import EvidenceSelectionRules
 from bug_resolver.rules.evidence_formatting_rules import EvidenceFormattingRules
-from bug_resolver.rules.code_query_rules import CodeQueryRules
+from bug_resolver.rules.code_query_rules import CodeQueryPacket, CodeQueryRules, CodeSearchPlan
 from bug_resolver.rules.rca_evidence_selection_rules import RCAEvidenceSelectionRules
 from bug_resolver.rules.rca_finding_rules import RCAFindingRules
 from bug_resolver.rules.rca_rules import RCARules
@@ -23,9 +23,11 @@ __all__ = [
     "LogAnalysisRules",
     "CodeEvidencePathRules",
     "CodeContextRankingRules",
+    "CodeQueryPacket",
     "EvidenceSelectionRules",
     "EvidenceFormattingRules",
     "CodeQueryRules",
+    "CodeSearchPlan",
     "RCAEvidenceSelectionRules",
     "RCAFindingRules",
     "RCARules",

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,10 +22,24 @@ class AppSettings(BaseSettings):
     app_name: str = "Production Bug Resolver Agent"
     debug: bool = Field(default=False, alias="DEBUG")
     log_level: str | None = Field(default=None, alias="LOG_LEVEL")
+    runtime_logs_dir: Path = Field(default=Path("logs"), alias="RUNTIME_LOGS_DIR")
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
     embedding_model: str = Field(default="text-embedding-3-small", alias="EMBEDDING_MODEL")
+    langsmith_tracing: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("LANGSMITH_TRACING", "LANGCHAIN_TRACING_V2"),
+    )
+    langsmith_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
+    )
+    langsmith_project: str = Field(
+        default="production-bug-resolver-agent",
+        alias="LANGSMITH_PROJECT",
+    )
+    langsmith_endpoint: str = Field(default="", alias="LANGSMITH_ENDPOINT")
 
     target_repo_path: Path = Field(default=Path("sample_data/target_repos/conversational_rag"))
     incidents_dir: Path = Field(default=Path("sample_data/incidents"))

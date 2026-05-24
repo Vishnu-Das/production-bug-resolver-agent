@@ -10,6 +10,7 @@ from bug_resolver.agents import (
     EvidenceEvaluatorAgent,
     KnowledgeBaseInvestigatorAgent,
     LogInvestigatorAgent,
+    PatchSuggestionAgent,
     RCAWriterAgent,
     ReportWriterAgent,
     SolutionRecommendationAgent,
@@ -21,6 +22,7 @@ from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
 from bug_resolver.providers.logs.file_log_provider import FileLogProvider
 from bug_resolver.providers.reports.file_report_store import FileReportStore
 from bug_resolver.rules import GuardrailEngine
+from bug_resolver.rules.code_context_ranking_rules import CodeContextRankingRules
 from bug_resolver.schemas import (
     AgentDecision,
     AgentName,
@@ -80,6 +82,29 @@ class GoldenCodeContextProvider:
         return self.contexts[:limit]
 
 
+class RankedGoldenCodeContextProvider:
+    """Return production-ranked golden code contexts from a noisy candidate set."""
+
+    def __init__(self, contexts: list[CodeContext]) -> None:
+        self.contexts = contexts
+        self.queries_seen: list[list[str]] = []
+        self.ranking_rules = CodeContextRankingRules()
+
+    async def search_code(
+        self,
+        queries: list[str],
+        *,
+        limit: int = 5,
+    ) -> list[CodeContext]:
+        self.queries_seen.append(queries)
+        return self.ranking_rules.rank_contexts(
+            self.contexts,
+            queries=queries,
+            limit=limit,
+            mode="implementation",
+        )
+
+
 class GoldenCodeGraphProvider:
     """Return incident-specific structural graph contexts."""
 
@@ -121,8 +146,15 @@ def build_golden_graph_workflow(
     code_contexts: list[CodeContext],
     graph_contexts: list[CodeGraphContext],
     report_dir: Path,
+    rank_code_contexts: bool = False,
+    include_patch_plan: bool = False,
 ) -> DynamicBugResolutionGraphWorkflow:
     """Build the graph workflow using real sample data and deterministic providers."""
+    code_context_provider = (
+        RankedGoldenCodeContextProvider(code_contexts)
+        if rank_code_contexts
+        else GoldenCodeContextProvider(code_contexts)
+    )
     return DynamicBugResolutionGraphWorkflow(
         incident_provider=FileIncidentProvider(SAMPLE_DATA_DIR / "incidents"),
         supervisor_agent=supervisor,  # type: ignore[arg-type]
@@ -131,7 +163,7 @@ def build_golden_graph_workflow(
             FileLogProvider(SAMPLE_DATA_DIR / "logs")
         ),
         code_investigator_agent=CodeInvestigatorAgent(
-            GoldenCodeContextProvider(code_contexts)
+            code_context_provider
         ),
         code_graph_investigator_agent=CodeGraphInvestigatorAgent(
             GoldenCodeGraphProvider(graph_contexts)
@@ -142,10 +174,12 @@ def build_golden_graph_workflow(
         evidence_evaluator_agent=EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(),
         solution_recommendation_agent=SolutionRecommendationAgent(),
+        patch_suggestion_agent=PatchSuggestionAgent() if include_patch_plan else None,
         report_writer_agent=ReportWriterAgent(FileReportStore(report_dir)),
         max_steps=12,
         max_replans=3,
         minimum_evidence_count_before_rca=2,
+        include_patch_plan=include_patch_plan,
     )
 
 

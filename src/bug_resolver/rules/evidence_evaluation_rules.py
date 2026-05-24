@@ -132,6 +132,9 @@ class EvidenceEvaluationRules:
         if self.graph_discovered_code_evidence_required(state):
             return False
 
+        if self.implementation_owner_evidence_required(state):
+            return False
+
         if self.knowledge_base_evidence_required(state):
             return False
 
@@ -152,6 +155,9 @@ class EvidenceEvaluationRules:
             return True
 
         if self.graph_discovered_code_evidence_required(state):
+            return True
+
+        if self.implementation_owner_evidence_required(state):
             return True
 
         if self.knowledge_base_evidence_required(state):
@@ -202,6 +208,12 @@ class EvidenceEvaluationRules:
                 "Implementation code evidence is missing for graph-discovered source files."
             )
 
+        if self.implementation_owner_evidence_required(state):
+            missing.append(
+                "Implementation owner source evidence is missing; current code evidence "
+                "is limited to tests or supporting context."
+            )
+
         if self.knowledge_base_evidence_required(state):
             missing.append(
                 "Knowledge-base evidence is missing for expected behavior, policy, "
@@ -226,6 +238,7 @@ class EvidenceEvaluationRules:
         if (
             EvidenceSourceType.CODE in self._source_types(state.evidence_items)
             and not self.graph_discovered_code_evidence_required(state)
+            and not self.implementation_owner_evidence_required(state)
         ):
             return []
 
@@ -292,6 +305,13 @@ class EvidenceEvaluationRules:
                 "files before RCA or patch generation. Graph evidence can identify "
                 "relationships, but exact code evidence is needed for implementation "
                 "ownership."
+            )
+
+        if self.implementation_owner_evidence_required(state):
+            return (
+                "Implementation owner source evidence is needed before RCA or patch "
+                "generation because tests, graph relationships, or support context do "
+                "not prove which production file owns the behavior."
             )
 
         if self.knowledge_base_evidence_required(state):
@@ -364,6 +384,26 @@ class EvidenceEvaluationRules:
             return False
 
         return bool(self._graph_source_paths(state) - code_paths)
+
+    def implementation_owner_evidence_required(self, state: WorkflowState) -> bool:
+        source_types = self._source_types(state.evidence_items)
+        if EvidenceSourceType.CODE not in source_types:
+            return False
+
+        if AgentName.CODE_INVESTIGATOR not in state.allowed_agent_names:
+            return False
+
+        if not state.can_invoke_agent(AgentName.CODE_INVESTIGATOR):
+            return False
+
+        code_paths = self._code_evidence_paths(state)
+        if not code_paths:
+            return False
+
+        implementation_paths = {
+            path for path in code_paths if not self._code_path_rules.is_support_path(path)
+        }
+        return not implementation_paths
 
     def knowledge_base_evidence_required(self, state: WorkflowState) -> bool:
         source_types = self._source_types(state.evidence_items)

@@ -525,6 +525,34 @@ async def test_evidence_evaluator_requests_code_for_graph_discovered_source_when
 
 
 @pytest.mark.asyncio
+async def test_evidence_evaluator_requests_owner_when_code_evidence_is_only_tests() -> None:
+    agent = EvidenceEvaluatorAgent()
+    state = make_state(
+        confidence_threshold=0.75,
+        incident=Incident(
+            incident_id="INC-UPLOAD",
+            title="Duplicate uploads create duplicate records",
+            description="Users see duplicate documents after upload ingestion.",
+            affected_service="conversational_rag",
+        ),
+    )
+    state.add_evidence(log_evidence())
+    state.add_evidence(support_test_code_evidence())
+    state.add_evidence(knowledge_evidence())
+
+    result = await agent.run(state)
+
+    assert result.can_write_rca is False
+    assert result.retry_required is True
+    assert (
+        "Implementation owner source evidence is missing; current code evidence "
+        "is limited to tests or supporting context."
+        in result.missing_evidence
+    )
+    assert result.improved_code_queries != []
+
+
+@pytest.mark.asyncio
 async def test_evidence_evaluator_does_not_request_graph_follow_up_when_primary_code_exists() -> None:
     agent = EvidenceEvaluatorAgent()
     state = make_state(confidence_threshold=0.75)

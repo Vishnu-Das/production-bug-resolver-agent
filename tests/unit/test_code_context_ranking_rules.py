@@ -47,6 +47,41 @@ def test_test_file_is_not_penalized_when_query_mentions_pytest() -> None:
     assert [context.context_id for context in ranked] == ["test", "impl"]
 
 
+def test_tests_rank_first_in_test_mode() -> None:
+    ranker = CodeContextRankingRules()
+    contexts = [
+        make_context("impl", "src/rag/service.py", score=0.95),
+        make_context("test", "tests/rag/test_service.py", score=0.82),
+    ]
+
+    ranked = ranker.rank_contexts(
+        contexts,
+        queries=["pytest upload regression"],
+        limit=2,
+        mode="test",
+    )
+
+    assert [context.context_id for context in ranked] == ["test", "impl"]
+
+
+def test_config_files_rank_first_in_config_mode() -> None:
+    ranker = CodeContextRankingRules()
+    contexts = [
+        make_context("impl", "src/settings_loader.py", score=0.95),
+        make_context("env", ".env.example", score=0.65),
+        make_context("pyproject", "pyproject.toml", score=0.60),
+    ]
+
+    ranked = ranker.rank_contexts(
+        contexts,
+        queries=["RERANKING_MODEL_NAME config"],
+        limit=3,
+        mode="config",
+    )
+
+    assert [context.context_id for context in ranked][:2] == ["env", "pyproject"]
+
+
 def test_query_substring_does_not_count_as_test_query() -> None:
     ranker = CodeContextRankingRules()
     contexts = [
@@ -55,6 +90,38 @@ def test_query_substring_does_not_count_as_test_query() -> None:
     ]
 
     ranked = ranker.rank_contexts(contexts, queries=["retrieval contest failure"], limit=2)
+
+    assert [context.context_id for context in ranked] == ["impl"]
+
+
+def test_explicit_implementation_mode_keeps_tests_downranked_for_dirty_query() -> None:
+    ranker = CodeContextRankingRules()
+    contexts = [
+        make_context(
+            "test",
+            "tests/rag/test_service.py",
+            score=1.0,
+            snippet="mock_retrieval_strategy.retrieve.assert_called_once_with()",
+        ),
+        make_context(
+            "impl",
+            "src/services/upload_service.py",
+            score=0.60,
+            snippet="content_hash = compute_hash(file_bytes); processed_uploads.add(filename)",
+        ),
+    ]
+
+    ranked = ranker.rank_contexts(
+        contexts,
+        queries=[
+            (
+                "upload content_hash processed_uploads "
+                "test_stream_response assert_called_once_with"
+            )
+        ],
+        limit=2,
+        mode="implementation",
+    )
 
     assert [context.context_id for context in ranked] == ["impl"]
 

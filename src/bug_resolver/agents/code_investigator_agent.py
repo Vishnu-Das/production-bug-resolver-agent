@@ -67,10 +67,11 @@ class CodeInvestigatorAgent(BaseAgent[CodeInvestigatorInput, list[EvidenceItem]]
         return evidence_items
 
     def _queries_from_decision(self, decision: AgentDecision) -> list[str]:
-        return self._code_query_rules.enrich_queries(decision)
+        return self._code_query_rules.enrich_queries(decision, mode="implementation")
 
     def _queries_from_input(self, input_data: CodeInvestigatorInput) -> list[str]:
         return self._code_query_rules.enrich_queries(
             input_data.decision,
             evidence_items=input_data.evidence_items,
+            mode="implementation",
         )

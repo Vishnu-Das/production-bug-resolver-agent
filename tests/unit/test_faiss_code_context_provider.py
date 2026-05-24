@@ -147,6 +147,35 @@ def build_vector_store_with_deep_implementation_match() -> FAISSVectorStore:
     return store
 
 
+def build_vector_store_for_bm25_frequency() -> FAISSVectorStore:
+    store = FAISSVectorStore(dimension=3)
+    store.add(
+        vectors=[
+            [0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ],
+        metadata=[
+            {
+                "item_id": "src/services/generic.py:handler",
+                "file_path": "/repo/src/services/generic.py",
+                "snippet": "def handler(): upload once",
+                "line_start": 1,
+                "line_end": 10,
+                "function_name": "handler",
+            },
+            {
+                "item_id": "src/services/upload.py:handle_upload",
+                "file_path": "/repo/src/services/upload.py",
+                "snippet": "def handle_upload(): upload upload upload content_hash",
+                "line_start": 1,
+                "line_end": 10,
+                "function_name": "handle_upload",
+            },
+        ],
+    )
+    return store
+
+
 @pytest.mark.asyncio
 async def test_faiss_code_context_provider_returns_matching_context():
     provider = FAISSCodeContextProvider(
@@ -268,4 +297,32 @@ async def test_faiss_code_context_provider_retrieves_deeper_primary_implementati
 
     assert [result.context_id for result in results] == [
         "src/services/upload_service.py:handle_file_upload"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_faiss_code_context_provider_exact_lexical_match_beats_noisy_semantic_test():
+    provider = FAISSCodeContextProvider(
+        vector_store=build_vector_store_with_deep_implementation_match(),
+        embedding_client=FakeEmbeddingClient(),
+    )
+
+    results = await provider.search_code(["processed_uploads content_hash"], limit=1)
+
+    assert [result.context_id for result in results] == [
+        "src/services/upload_service.py:handle_file_upload"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_faiss_code_context_provider_bm25_lexical_search_uses_term_frequency():
+    provider = FAISSCodeContextProvider(
+        vector_store=build_vector_store_for_bm25_frequency(),
+        embedding_client=FakeEmbeddingClient(),
+    )
+
+    results = await provider.search_code(["upload"], limit=1)
+
+    assert [result.context_id for result in results] == [
+        "src/services/upload.py:handle_upload"
     ]

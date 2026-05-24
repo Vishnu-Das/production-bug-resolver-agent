@@ -70,4 +70,5 @@ class CodeGraphInvestigatorAgent(
         return self._code_query_rules.enrich_queries(
             input_data.decision,
             evidence_items=input_data.evidence_items,
+            mode="implementation",
         )

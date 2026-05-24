@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import re
+from collections import Counter
+from dataclasses import dataclass
+from math import log
 from typing import Any
 
 from bug_resolver.embeddings.base import EmbeddingClient
@@ -13,6 +17,18 @@ from bug_resolver.utils.observability import get_logger, log_debug_payload, trac
 
 
 logger = get_logger(__name__)
+
+
+@dataclass(frozen=True)
+class BM25Document:
+    """Tokenized lexical-search document backed by vector-store metadata."""
+
+    metadata: dict[str, Any]
+    tokens: tuple[str, ...]
+    token_counts: Counter[str]
+    source_text: str
+    path_text: str
+    symbol_text: str
 
 
 class FAISSCodeContextProvider(CodeContextProvider):
@@ -27,6 +43,7 @@ class FAISSCodeContextProvider(CodeContextProvider):
         self.vector_store = vector_store
         self.embedding_client = embedding_client
         self.ranking_rules = ranking_rules or CodeContextRankingRules()
+        self._bm25_documents: list[BM25Document] | None = None
 
     @traceable(name="code_context.search", run_type="retriever")
     async def search_code(
@@ -62,10 +79,13 @@ class FAISSCodeContextProvider(CodeContextProvider):
                 query_vector=query_vector,
                 limit=per_query_limit,
             )
+            lexical_results = self._lexical_search(query, limit=per_query_limit)
+            search_results = self._merge_search_results(search_results, lexical_results)
             logger.debug(
-                "code vector search returned query=%s candidate_count=%s",
+                "code search returned query=%s candidate_count=%s lexical_count=%s",
                 query[:120],
                 len(search_results),
+                len(lexical_results),
             )
 
             for search_result in search_results:
@@ -93,6 +113,7 @@ class FAISSCodeContextProvider(CodeContextProvider):
             list(contexts_by_id.values()),
             queries=cleaned_queries,
             limit=limit,
+            mode="implementation",
         )
         logger.info(
             "code search finished unique_candidates=%s returned=%s",
@@ -116,6 +137,218 @@ class FAISSCodeContextProvider(CodeContextProvider):
             ],
         )
         return ranked_contexts
+
+    def _lexical_search(
+        self,
+        query: str,
+        *,
+        limit: int,
+    ) -> list[VectorSearchResult]:
+        query_tokens = self._tokenize_for_bm25(query)
+        exact_identifiers = self._exact_identifiers(query)
+        if not query_tokens and not exact_identifiers:
+            return []
+
+        documents = self._get_bm25_documents()
+        if not documents:
+            return []
+
+        bm25_scores = self._bm25_scores(query_tokens=query_tokens, documents=documents)
+        max_bm25_score = max(bm25_scores, default=0.0)
+        scored_results: list[VectorSearchResult] = []
+
+        for document, bm25_score in zip(documents, bm25_scores, strict=True):
+            score = self._normalized_bm25_score(
+                bm25_score=bm25_score,
+                max_bm25_score=max_bm25_score,
+            )
+            score += self._exact_identifier_boost(
+                document=document,
+                exact_identifiers=exact_identifiers,
+            )
+            if score <= 0:
+                continue
+
+            scored_results.append(
+                VectorSearchResult(
+                    item_id=str(document.metadata["item_id"]),
+                    score=min(score, 1.0),
+                    metadata=document.metadata,
+                )
+            )
+
+        scored_results.sort(key=lambda result: (-result.score, result.item_id))
+        return scored_results[:limit]
+
+    def _get_bm25_documents(self) -> list[BM25Document]:
+        if self._bm25_documents is None:
+            self._bm25_documents = [
+                self._to_bm25_document(metadata)
+                for metadata in self.vector_store.metadata_by_position
+            ]
+
+        return self._bm25_documents
+
+    def _to_bm25_document(self, metadata: dict[str, Any]) -> BM25Document:
+        path_text = str(
+            metadata.get("file_path")
+            or metadata.get("relative_path")
+            or ""
+        )
+        snippet = str(metadata.get("snippet") or "")
+        symbol_text = " ".join(
+            str(metadata.get(key) or "")
+            for key in ("class_name", "function_name", "qualified_symbol")
+        )
+        metadata_text = self._metadata_text(metadata.get("metadata"))
+        source_text = " ".join(
+            [
+                path_text,
+                path_text,
+                symbol_text,
+                symbol_text,
+                symbol_text,
+                metadata_text,
+                snippet,
+            ]
+        )
+        tokens = tuple(self._tokenize_for_bm25(source_text))
+
+        return BM25Document(
+            metadata=metadata,
+            tokens=tokens,
+            token_counts=Counter(tokens),
+            source_text=source_text,
+            path_text=path_text,
+            symbol_text=symbol_text,
+        )
+
+    def _bm25_scores(
+        self,
+        *,
+        query_tokens: list[str],
+        documents: list[BM25Document],
+    ) -> list[float]:
+        document_count = len(documents)
+        average_document_length = sum(len(document.tokens) for document in documents) / max(
+            document_count,
+            1,
+        )
+        document_frequency = Counter(
+            token
+            for token in set(query_tokens)
+            for document in documents
+            if token in document.token_counts
+        )
+        k1 = 1.5
+        b = 0.75
+        scores: list[float] = []
+
+        for document in documents:
+            document_length = len(document.tokens)
+            score = 0.0
+            for query_token in query_tokens:
+                term_frequency = document.token_counts.get(query_token, 0)
+                if term_frequency == 0:
+                    continue
+
+                matching_documents = document_frequency[query_token]
+                idf = log(
+                    1
+                    + (document_count - matching_documents + 0.5)
+                    / (matching_documents + 0.5)
+                )
+                denominator = term_frequency + k1 * (
+                    1 - b + b * document_length / max(average_document_length, 1)
+                )
+                score += idf * (term_frequency * (k1 + 1)) / denominator
+
+            scores.append(score)
+
+        return scores
+
+    def _normalized_bm25_score(
+        self,
+        *,
+        bm25_score: float,
+        max_bm25_score: float,
+    ) -> float:
+        if bm25_score <= 0 or max_bm25_score <= 0:
+            return 0.0
+
+        return (bm25_score / max_bm25_score) * 0.85
+
+    def _exact_identifier_boost(
+        self,
+        *,
+        document: BM25Document,
+        exact_identifiers: set[str],
+    ) -> float:
+        boost = 0.0
+        source_text_lower = document.source_text.lower()
+        path_text_lower = document.path_text.lower()
+        symbol_text_lower = document.symbol_text.lower()
+        for identifier in exact_identifiers:
+            identifier_lower = identifier.lower()
+            if identifier_lower in source_text_lower:
+                boost += 0.20
+                if identifier_lower in path_text_lower:
+                    boost += 0.10
+                if identifier_lower in symbol_text_lower:
+                    boost += 0.15
+
+        return boost
+
+    def _tokenize_for_bm25(self, value: str) -> list[str]:
+        tokens = re.findall(r"[a-z0-9_]+", value.lower())
+        split_tokens = [
+            part
+            for token in tokens
+            for part in token.split("_")
+            if part
+        ]
+        return tokens + split_tokens
+
+    def _merge_search_results(
+        self,
+        semantic_results: list[VectorSearchResult],
+        lexical_results: list[VectorSearchResult],
+    ) -> list[VectorSearchResult]:
+        results_by_id: dict[str, VectorSearchResult] = {}
+
+        for result in [*semantic_results, *lexical_results]:
+            existing = results_by_id.get(result.item_id)
+            if existing is None or result.score > existing.score:
+                results_by_id[result.item_id] = result
+
+        return sorted(
+            results_by_id.values(),
+            key=lambda result: (-result.score, result.item_id),
+        )
+
+    def _exact_identifiers(self, value: str) -> set[str]:
+        identifiers = set(re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", value))
+        identifiers.update(
+            token
+            for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", value)
+            if "_" in token
+        )
+        identifiers.update(
+            re.findall(
+                r"\b[A-Za-z0-9_./\\-]+\.(?:py|toml|json|yaml|yml|env|ini|cfg)\b",
+                value,
+            )
+        )
+        identifiers.update(
+            re.findall(r"\b[A-Z][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\b", value)
+        )
+        return identifiers
+
+    def _metadata_text(self, metadata: object) -> str:
+        if isinstance(metadata, dict):
+            return " ".join(str(value) for value in metadata.values())
+
+        return str(metadata or "")
 
     def _is_deprecated_path(self, file_path: object) -> bool:
         if file_path is None:

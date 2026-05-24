@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from pathlib import PurePosixPath
+from typing import Literal
 
 from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.schemas.code_context import CodeContext
@@ -63,6 +64,8 @@ CONFIG_EXTENSIONS = {
     ".md",
 }
 
+CodeContextMode = Literal["implementation", "test", "config", "all"]
+
 
 class CodeContextRankingRules:
     """Rank FAISS code results for RCA-oriented implementation evidence."""
@@ -75,21 +78,31 @@ class CodeContextRankingRules:
         contexts: list[CodeContext],
         queries: list[str],
         limit: int,
+        mode: CodeContextMode | None = None,
     ) -> list[CodeContext]:
         if limit <= 0:
             raise ValueError("limit must be greater than 0")
 
         query_text = " ".join(queries).lower()
         query_tokens = self.path_rules.tokens(query_text)
+        allow_support_surface = mode is None
+        effective_mode = self._effective_mode(mode, query_text)
         ranked_contexts = sorted(
             contexts,
-            key=lambda context: self._sort_key(context, query_text, query_tokens),
+            key=lambda context: self._sort_key(
+                context,
+                query_text,
+                query_tokens,
+                effective_mode,
+            ),
         )
 
         ranked_contexts = self._prefer_primary_contexts(
             ranked_contexts,
             query_text,
             query_tokens,
+            effective_mode,
+            allow_support_surface,
         )
 
         deduplicated_contexts: list[CodeContext] = []
@@ -110,9 +123,10 @@ class CodeContextRankingRules:
         context: CodeContext,
         query_text: str,
         query_tokens: set[str],
+        mode: CodeContextMode,
     ) -> tuple[float, str, int, str]:
         return (
-            -self._ranking_score(context, query_text, query_tokens),
+            -self._ranking_score(context, query_text, query_tokens, mode),
             self._normalized_path(context),
             context.line_start or 0,
             context.context_id,
@@ -123,22 +137,31 @@ class CodeContextRankingRules:
         context: CodeContext,
         query_text: str,
         query_tokens: set[str],
+        mode: CodeContextMode,
     ) -> float:
         score = context.relevance_score or 0.0
         path = self._normalized_path(context)
 
-        if self._is_source_file(path) and not self.path_rules.is_support_path(path):
-            score += 0.15
+        if mode == "implementation":
+            score += self._implementation_path_adjustment(path)
+        elif mode == "test":
+            score += self._test_path_adjustment(path)
+        elif mode == "config":
+            score += self._config_path_adjustment(path)
+        elif self._is_source_file(path) and not self.path_rules.is_support_path(path):
+            score += 0.10
 
         score += self._lexical_overlap_score(context, query_tokens)
-        score += self.path_rules.support_adjustment(
-            path,
-            query_tokens,
-            penalty=-1.0,
-            mention_bonus=0.12,
-        )
 
-        if self._is_config_file(path):
+        if mode == "implementation":
+            score += self.path_rules.support_adjustment(
+                path,
+                query_tokens,
+                penalty=-1.0,
+                mention_bonus=0.12,
+            )
+
+        if mode != "config" and self._is_config_file(path):
             if self._query_mentions(query_text, CONFIG_QUERY_TERMS):
                 score += 0.05
             else:
@@ -185,8 +208,13 @@ class CodeContextRankingRules:
         ranked_contexts: list[CodeContext],
         query_text: str,
         query_tokens: set[str],
+        mode: CodeContextMode,
+        allow_support_surface: bool,
     ) -> list[CodeContext]:
-        if self._query_mentions_support_surface(query_tokens):
+        if mode in {"test", "config", "all"}:
+            return ranked_contexts
+
+        if allow_support_surface and self._query_mentions_support_surface(query_tokens):
             return ranked_contexts
 
         primary_contexts = [
@@ -209,6 +237,41 @@ class CodeContextRankingRules:
         if self._is_init_file(path) and not self._query_mentions(query_text, INIT_QUERY_TERMS):
             return False
         return True
+
+    def _implementation_path_adjustment(self, path: str) -> float:
+        score = 0.0
+        if path.startswith(("src/", "app/", "services/", "lib/")):
+            score += 0.35
+        elif "/src/" in path or "/app/" in path or "/services/" in path or "/lib/" in path:
+            score += 0.25
+        elif self._is_source_file(path) and not self.path_rules.is_support_path(path):
+            score += 0.15
+
+        if path.startswith(("tests/", "test/", "eval/", "examples/", "notebooks/")):
+            score -= 1.25
+        elif any(
+            marker in path
+            for marker in ("/tests/", "/test/", "/eval/", "/examples/", "/notebooks/")
+        ):
+            score -= 1.0
+
+        return score
+
+    def _test_path_adjustment(self, path: str) -> float:
+        if self._is_test_path(path):
+            return 0.60
+        if self._is_source_file(path) and not self.path_rules.is_support_path(path):
+            return 0.05
+        return -0.10
+
+    def _config_path_adjustment(self, path: str) -> float:
+        if self._is_config_file(path):
+            return 0.70
+        if self._is_source_file(path):
+            return -0.20
+        if self._is_config_directory(path):
+            return 0.70
+        return 0.0
 
     def _overlaps_existing_context(
         self,
@@ -245,7 +308,32 @@ class CodeContextRankingRules:
         path_obj = PurePosixPath(path)
         return (
             path_obj.suffix in CONFIG_EXTENSIONS
-            or path_obj.name in {"dockerfile", ".env", ".env.example"}
+            or path_obj.name in {
+                "dockerfile",
+                ".env",
+                ".env.example",
+                "docker-compose.yml",
+                "requirements.txt",
+                "pyproject.toml",
+                "readme.md",
+            }
+        )
+
+    def _is_config_directory(self, path: str) -> bool:
+        normalized = f"/{path.strip('/')}/"
+        return any(
+            marker in normalized
+            for marker in ("/config/", "/configs/", "/settings/", "/docs/")
+        )
+
+    def _is_test_path(self, path: str) -> bool:
+        path_obj = PurePosixPath(path)
+        return (
+            path.startswith(("tests/", "test/"))
+            or "/tests/" in path
+            or "/test/" in path
+            or path_obj.name.startswith("test_")
+            or path_obj.name.endswith("_test.py")
         )
 
     def _is_init_file(self, path: str) -> bool:
@@ -260,3 +348,20 @@ class CodeContextRankingRules:
             query_tokens & role.query_terms
             for role in self.path_rules.support_roles
         )
+
+    def _effective_mode(
+        self,
+        mode: CodeContextMode | None,
+        query_text: str,
+    ) -> CodeContextMode:
+        if mode is not None:
+            return mode
+
+        if self._query_mentions(query_text, TEST_QUERY_TERMS):
+            return "test"
+
+        explicit_config_terms = CONFIG_QUERY_TERMS - {"config", "configuration"}
+        if self._query_mentions(query_text, explicit_config_terms):
+            return "config"
+
+        return "implementation"

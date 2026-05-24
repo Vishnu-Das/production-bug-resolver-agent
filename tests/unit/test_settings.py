@@ -1,5 +1,6 @@
 """Tests for CLI commands and settings-driven workflow execution."""
 
+import os
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -15,6 +16,7 @@ from bug_resolver.schemas import (
     InvestigationStep,
     WorkflowState,
 )
+from bug_resolver.utils.observability import configure_langsmith_tracing
 
 runner = CliRunner()
 
@@ -27,6 +29,45 @@ def test_settings_loads_historical_rca_dir(tmp_path: Path) -> None:
 
     assert settings.historical_rca_dir == tmp_path / "history"
     assert settings.max_investigation_steps == 18
+
+
+def test_settings_loads_langsmith_aliases() -> None:
+    settings = AppSettings(
+        LANGCHAIN_TRACING_V2="true",
+        LANGCHAIN_API_KEY="test-langsmith-key",
+        LANGSMITH_PROJECT="bug-resolver-dev",
+    )
+
+    assert settings.langsmith_tracing is True
+    assert settings.langsmith_api_key == "test-langsmith-key"
+    assert settings.langsmith_project == "bug-resolver-dev"
+
+
+def test_configure_langsmith_tracing_exports_process_env(monkeypatch) -> None:
+    for name in (
+        "LANGSMITH_TRACING",
+        "LANGCHAIN_TRACING_V2",
+        "LANGSMITH_API_KEY",
+        "LANGCHAIN_API_KEY",
+        "LANGSMITH_PROJECT",
+        "LANGSMITH_ENDPOINT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    configured = configure_langsmith_tracing(
+        enabled=True,
+        api_key="test-key",
+        project="bug-resolver-dev",
+        endpoint="https://example.langsmith.test",
+    )
+
+    assert configured is True
+    assert os.getenv("LANGSMITH_TRACING") == "true"
+    assert os.getenv("LANGCHAIN_TRACING_V2") == "true"
+    assert os.getenv("LANGSMITH_API_KEY") == "test-key"
+    assert os.getenv("LANGCHAIN_API_KEY") == "test-key"
+    assert os.getenv("LANGSMITH_PROJECT") == "bug-resolver-dev"
+    assert os.getenv("LANGSMITH_ENDPOINT") == "https://example.langsmith.test"
 
 
 def test_version_command() -> None:

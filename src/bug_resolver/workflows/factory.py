@@ -32,6 +32,7 @@ from bug_resolver.providers.logs.file_log_provider import FileLogProvider
 from bug_resolver.providers.patches import LocalFilePatchContextProvider
 from bug_resolver.providers.reports.file_report_store import FileReportStore
 from bug_resolver.rules import GuardrailEngine
+from bug_resolver.utils.observability import configure_langsmith_tracing
 from bug_resolver.workflows.dynamic_bug_resolution_workflow import (
     DynamicBugResolutionWorkflow,
 )
@@ -45,6 +46,12 @@ async def build_dynamic_workflow(
     include_patch_diff: bool = False,
 ) -> DynamicBugResolutionWorkflow:
     """Build the fully wired dynamic workflow for CLI investigations."""
+    configure_langsmith_tracing(
+        enabled=settings.langsmith_tracing,
+        api_key=settings.langsmith_api_key,
+        project=settings.langsmith_project,
+        endpoint=settings.langsmith_endpoint,
+    )
     if not settings.openai_api_key:
         raise ValueError("OPENAI_API_KEY is required to run investigations.")
 
@@ -84,7 +91,7 @@ async def build_dynamic_workflow(
         evidence_evaluator_agent=EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(llm_client=llm_client),
         solution_recommendation_agent=SolutionRecommendationAgent(llm_client=llm_client),
-        patch_suggestion_agent=PatchSuggestionAgent(),
+        patch_suggestion_agent=PatchSuggestionAgent(llm_client=llm_client),
         patch_generator_agent=PatchGeneratorAgent(
             llm_client=llm_client,
             patch_context_provider=LocalFilePatchContextProvider(settings.target_repo_path),

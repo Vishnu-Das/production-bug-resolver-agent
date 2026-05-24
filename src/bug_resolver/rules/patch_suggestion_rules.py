@@ -41,6 +41,11 @@ class PatchSuggestionRules:
                 "patch_suggestion_writer": "deterministic",
                 "analyze_only": "true",
                 "target_repo_modified": "false",
+                "supporting_context_files": ", ".join(
+                    self.supporting_context_files(
+                        [*rca_report.evidence_ids, *solution.evidence_ids]
+                    )
+                ),
             },
         )
 
@@ -53,9 +58,24 @@ class PatchSuggestionRules:
     def affected_files(self, evidence_ids: list[str]) -> list[str]:
         paths: list[str] = []
         for evidence_id in evidence_ids:
-            path = self._path_from_evidence_id(evidence_id)
+            path = self._path_from_evidence_id(
+                evidence_id,
+                allow_graph=False,
+            )
             if path is not None:
                 paths.append(path)
+        return self.unique(paths)
+
+    def supporting_context_files(self, evidence_ids: list[str]) -> list[str]:
+        paths: list[str] = []
+        for evidence_id in evidence_ids:
+            path = self._path_from_evidence_id(
+                evidence_id,
+                allow_graph=True,
+            )
+            if path is None or path in self.affected_files(evidence_ids):
+                continue
+            paths.append(path)
         return self.unique(paths)
 
     def behavior_changes(
@@ -100,11 +120,16 @@ class PatchSuggestionRules:
     def open_questions(self, rca_report: RCAReport) -> list[str]:
         return self.unique(rca_report.open_questions)
 
-    def _path_from_evidence_id(self, evidence_id: str) -> str | None:
+    def _path_from_evidence_id(
+        self,
+        evidence_id: str,
+        *,
+        allow_graph: bool,
+    ) -> str | None:
         normalized = evidence_id.replace("\\", "/")
         if normalized.startswith("evidence-"):
             normalized = normalized.removeprefix("evidence-")
-        elif normalized.startswith("graph-"):
+        elif allow_graph and normalized.startswith("graph-"):
             normalized = normalized.removeprefix("graph-")
         else:
             return None
