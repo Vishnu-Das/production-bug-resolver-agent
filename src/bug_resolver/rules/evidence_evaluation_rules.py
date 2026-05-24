@@ -7,27 +7,11 @@ import re
 from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 from bug_resolver.schemas.orchestration import AgentName
-
-
-STRUCTURAL_RELATIONSHIP_TERMS = (
-    "structural_hint",
-    "caller chain",
-    "call chain",
-    "callers",
-    "callees",
-    "called_by",
-    "called by",
-    "config reader",
-    "config-read relationship",
-    "reads config",
-    "which function reads",
-    "which request path calls",
-    "request path calls function",
-    "imports",
-    "imported_by",
-    "imported by",
-    "ownership",
-    "class/function relationship",
+from bug_resolver.signals.evidence_evaluation_signals import (
+    EXPECTED_BEHAVIOR_TERMS,
+    HISTORICAL_RCA_TERMS,
+    STRUCTURAL_RELATIONSHIP_LANGUAGE_TERMS,
+    STRUCTURAL_RELATIONSHIP_TERMS,
 )
 
 PYTHON_PATH_PATTERN = re.compile(r"\b(?:src|tests|eval|app|services)/[A-Za-z0-9_./-]+\.py\b")
@@ -35,57 +19,6 @@ SYMBOL_REFERENCE_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za
 FUNCTION_CALL_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\(\)")
 CONFIG_KEY_PATTERN = re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b")
 SIGNAL_TOKEN_PATTERN = re.compile(r"[a-z0-9_]+")
-
-EXPECTED_BEHAVIOR_TERMS = (
-    "expected behavior",
-    "expected result",
-    "actual result",
-    "intended behavior",
-    "behavior mismatch",
-    "wrong result",
-    "incorrect result",
-    "quality degraded",
-    "quality regression",
-    "should",
-    "must",
-    "policy",
-    "design",
-    "spec",
-    "specification",
-    "requirement",
-    "no exception",
-    "no error",
-    "still returns",
-    "successful response",
-    "after deployment",
-    "deployment behavior",
-    "configuration policy",
-    "config policy",
-    "silent fallback",
-    "fallback behavior",
-    "what should happen",
-    "which strategy should",
-)
-
-HISTORICAL_RCA_TERMS = (
-    "again",
-    "recurring",
-    "recurrence",
-    "regression",
-    "similar incident",
-    "similar issue",
-    "seen before",
-    "happened before",
-    "previous incident",
-    "previous rca",
-    "past incident",
-    "known issue",
-    "same failure",
-    "same problem",
-    "repeat incident",
-    "repeated incident",
-)
-
 
 class EvidenceEvaluationRules:
     """
@@ -446,16 +379,7 @@ class EvidenceEvaluationRules:
 
         has_relationship_language = any(
             term in normalized
-            for term in (
-                "call",
-                "calls",
-                "called",
-                "reader",
-                "reads",
-                "relationship",
-                "import",
-                "ownership",
-            )
+            for term in STRUCTURAL_RELATIONSHIP_LANGUAGE_TERMS
         )
 
         if not has_relationship_language:

@@ -43,6 +43,40 @@ def test_settings_loads_langsmith_aliases() -> None:
     assert settings.langsmith_project == "bug-resolver-dev"
 
 
+def test_settings_resolves_role_specific_llm_models() -> None:
+    settings = AppSettings(
+        LLM_MODEL="default-model",
+        SUPERVISOR_LLM_MODEL="supervisor-model",
+        RCA_WRITER_LLM_MODEL="rca-model",
+        SOLUTION_RECOMMENDER_LLM_MODEL="solution-model",
+        PATCH_SUGGESTION_LLM_MODEL="patch-plan-model",
+        PATCH_GENERATOR_LLM_MODEL="patch-diff-model",
+    )
+
+    assert settings.supervisor_model == "supervisor-model"
+    assert settings.rca_writer_model == "rca-model"
+    assert settings.solution_recommender_model == "solution-model"
+    assert settings.patch_suggestion_model == "patch-plan-model"
+    assert settings.patch_generator_model == "patch-diff-model"
+
+
+def test_settings_falls_back_to_default_llm_model_for_unset_roles() -> None:
+    settings = AppSettings(
+        LLM_MODEL="default-model",
+        SUPERVISOR_LLM_MODEL="",
+        RCA_WRITER_LLM_MODEL="",
+        SOLUTION_RECOMMENDER_LLM_MODEL="",
+        PATCH_SUGGESTION_LLM_MODEL="",
+        PATCH_GENERATOR_LLM_MODEL="",
+    )
+
+    assert settings.supervisor_model == "default-model"
+    assert settings.rca_writer_model == "default-model"
+    assert settings.solution_recommender_model == "default-model"
+    assert settings.patch_suggestion_model == "default-model"
+    assert settings.patch_generator_model == "default-model"
+
+
 def test_configure_langsmith_tracing_exports_process_env(monkeypatch) -> None:
     for name in (
         "LANGSMITH_TRACING",

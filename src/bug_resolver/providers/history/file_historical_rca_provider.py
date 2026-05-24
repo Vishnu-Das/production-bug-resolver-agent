@@ -9,34 +9,12 @@ from typing import Any
 
 from bug_resolver.providers.history.base import HistoricalRCAProvider
 from bug_resolver.schemas import HistoricalRCAContext
+from bug_resolver.signals.history_signals import HISTORICAL_SEARCH_STOPWORDS
 from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
 
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9_]+")
 logger = get_logger(__name__)
-STOPWORDS = frozenset(
-    {
-        "a",
-        "after",
-        "and",
-        "are",
-        "as",
-        "by",
-        "for",
-        "from",
-        "in",
-        "is",
-        "it",
-        "of",
-        "on",
-        "or",
-        "the",
-        "this",
-        "to",
-        "with",
-        "users",
-    }
-)
 
 
 class FileHistoricalRCAProvider(HistoricalRCAProvider):
@@ -192,4 +170,4 @@ class FileHistoricalRCAProvider(HistoricalRCAProvider):
             for token_part in token.split("_")
             if token_part
         }
-        return (raw_tokens | split_tokens) - STOPWORDS
+        return (raw_tokens | split_tokens) - HISTORICAL_SEARCH_STOPWORDS

@@ -263,6 +263,46 @@ async def test_file_report_store_saves_patch_markdown_when_patch_plan_is_provide
 
 
 @pytest.mark.asyncio
+async def test_file_report_store_normalizes_markdown_punctuation(tmp_path):
+    report = RCAReport(
+        report_id="RCA-011",
+        incident_id="INC-011",
+        title="Punctuation RCA",
+        incident_summary="A user\u2019s upload failed during the retry\u2014then recovered.",
+        root_cause="Root cause used \u201csmart quotes\u201d.",
+        technical_explanation="Retries were delayed\u2026 then recovered.",
+        confidence_score=0.9,
+        confidence_reason="Enough evidence exists.",
+    )
+    patch_suggestion = PatchSuggestion(
+        suggestion_id="PATCH-011",
+        incident_id="INC-011",
+        rca_report_id="RCA-011",
+        solution_recommendation_id="SOL-011",
+        summary="When an upload\u2019s hash exists\u2014skip ingestion.",
+        confidence_score=0.8,
+    )
+
+    store = FileReportStore(reports_dir=tmp_path)
+
+    await store.save_report(report, patch_suggestion=patch_suggestion)
+
+    rca_markdown = (tmp_path / "incidents" / "INC-011" / "rca.md").read_text(
+        encoding="utf-8"
+    )
+    patch_markdown = (tmp_path / "incidents" / "INC-011" / "patch.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "user's upload failed during the retry-then recovered" in rca_markdown
+    assert 'Root cause used "smart quotes".' in rca_markdown
+    assert "Retries were delayed... then recovered." in rca_markdown
+    assert "upload's hash exists-skip ingestion" in patch_markdown
+    assert "\u2019" not in rca_markdown
+    assert "\u2014" not in patch_markdown
+
+
+@pytest.mark.asyncio
 async def test_file_report_store_displays_symbol_evidence_ids(tmp_path):
     report = RCAReport(
         report_id="RCA-005",

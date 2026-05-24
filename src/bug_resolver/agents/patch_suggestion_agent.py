@@ -9,22 +9,11 @@ from bug_resolver.llm.base import LLMClient
 from bug_resolver.rules.patch_suggestion_rules import PatchSuggestionRules
 from bug_resolver.schemas import PatchSuggestion, RCAReport, SolutionRecommendation
 from bug_resolver.schemas.common import StrictBaseModel
+from bug_resolver.signals.llm_output_signals import PATCH_SUGGESTION_FORBIDDEN_PHRASES
 from bug_resolver.utils.observability import get_logger
 
 
 logger = get_logger(__name__)
-
-FORBIDDEN_ANALYZE_ONLY_PHRASES = (
-    "i fixed",
-    "we fixed",
-    "has been fixed",
-    "was fixed",
-    "is fixed",
-    "deployed",
-    "committed",
-    "created a pull request",
-    "opened a pull request",
-)
 
 
 class PatchSuggestionInput(StrictBaseModel):
@@ -164,7 +153,7 @@ class PatchSuggestionAgent(BaseAgent[PatchSuggestionInput, PatchSuggestion]):
                 *output.warnings,
             ]
         ).lower()
-        return any(phrase in combined_text for phrase in FORBIDDEN_ANALYZE_ONLY_PHRASES)
+        return any(phrase in combined_text for phrase in PATCH_SUGGESTION_FORBIDDEN_PHRASES)
 
     def _build_system_prompt(self) -> str:
         return (

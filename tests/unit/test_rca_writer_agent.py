@@ -116,6 +116,21 @@ def add_graph_evidence(state: WorkflowState) -> None:
     )
 
 
+def add_supporting_code_evidence(state: WorkflowState) -> None:
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-code-support",
+            source_type=EvidenceSourceType.CODE,
+            source_name="C:\\Users\\vishn\\repo\\src\\rag\\retrieval\\fusion\\strategy.py",
+            file_path="C:\\Users\\vishn\\repo\\src\\rag\\retrieval\\fusion\\strategy.py",
+            line_start=19,
+            line_end=40,
+            content="def deduplicate_retrieved_docs(...): deduplicate retrieved documents",
+            relevance_score=0.5,
+        )
+    )
+
+
 @pytest.mark.asyncio
 async def test_rca_writer_agent_generates_report_from_dynamic_evidence() -> None:
     state = make_state()
@@ -240,6 +255,48 @@ async def test_rca_writer_agent_preserves_code_evidence_when_llm_code_findings_e
     assert result.metadata["rca_writer"] == "llm"
     assert result.metadata["fallback_used"] == "false"
     assert result.evidence_ids == ["ev-log-1", "ev-kb-1", "ev-code-1"]
+
+
+@pytest.mark.asyncio
+async def test_rca_writer_agent_accepts_collected_evidence_not_in_deterministic_selection() -> None:
+    state = make_state()
+    add_evidence(state)
+    add_supporting_code_evidence(state)
+    state.evidence_evaluation = await EvidenceEvaluatorAgent().run(state)
+    llm = FakeRCAWriterLLM(
+        RCAWriterOutput(
+            title="LLM RCA for duplicate retrieval context",
+            incident_summary="The summary route failed for users.",
+            impact="Users saw failed summary responses.",
+            symptoms=["500 during summary flow"],
+            log_findings=["Log evidence shows TypeError in route_query."],
+            code_findings=[
+                "src/rag/router.py:40-45 shows router output access.",
+                "src/rag/retrieval/fusion/strategy.py:19-40 is supporting retrieval context.",
+            ],
+            knowledge_base_findings=["README describes structured router output."],
+            hypotheses_considered=["H1: Router output contract mismatch."],
+            selected_hypothesis_id="H1",
+            root_cause="Router output contract mismatch caused the failure.",
+            technical_explanation=(
+                "The log, owner code, and supporting retrieval context agree."
+            ),
+            evidence_ids=["ev-log-1", "ev-code-1", "ev-code-support"],
+            confidence_score=0.78,
+            confidence_reason="Log and collected code evidence agree.",
+            immediate_fix="Normalize router response shape before access.",
+            long_term_prevention="Add structured router response validation.",
+            tests_to_add=["Add regression test for malformed router output."],
+            open_questions=[],
+            low_confidence_warning=None,
+        )
+    )
+
+    result = await RCAWriterAgent(llm_client=llm).run(state)
+
+    assert result.metadata["rca_writer"] == "llm"
+    assert result.metadata["fallback_used"] == "false"
+    assert result.evidence_ids == ["ev-log-1", "ev-code-1", "ev-code-support"]
 
 
 @pytest.mark.asyncio

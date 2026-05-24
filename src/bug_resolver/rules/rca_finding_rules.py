@@ -5,6 +5,11 @@ from __future__ import annotations
 from bug_resolver.rules.evidence_formatting_rules import EvidenceFormattingRules
 from bug_resolver.rules.evidence_selection_rules import EvidenceSelectionRules
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType
+from bug_resolver.signals.rca_finding_signals import (
+    NOISY_GRAPH_SUFFIXES,
+    NOISY_GRAPH_VALUES,
+    PATH_SUMMARY_SIGNALS,
+)
 
 
 class RCAFindingRules:
@@ -150,47 +155,14 @@ class RCAFindingRules:
         exclude_prefixes: tuple[str, ...] = (),
         exclude_uppercase_names: bool = False,
     ) -> list[str]:
-        noisy_values = {
-            "dict",
-            "float",
-            "int",
-            "len",
-            "list",
-            "round",
-            "set",
-            "str",
-            "time.perf_counter",
-            "traceable",
-            "zip",
-            "doc.metadata.get",
-            "logger.debug",
-            "logger.error",
-            "logger.info",
-            "logger.warning",
-            "ranked_documents.sort",
-            "reranker_model.predict",
-            "scored_docs.sort",
-            "st.error",
-            "st.warning",
-        }
-        noisy_suffixes = (
-            ".append",
-            ".extend",
-            ".get",
-            ".items",
-            ".keys",
-            ".predict",
-            ".sort",
-            ".values",
-        )
         values: list[str] = []
 
         for raw_item in value.split(","):
             item = raw_item.strip()
             normalized = item.lower()
-            if not item or normalized in noisy_values:
+            if not item or normalized in NOISY_GRAPH_VALUES:
                 continue
-            if any(normalized.endswith(suffix) for suffix in noisy_suffixes):
+            if any(normalized.endswith(suffix) for suffix in NOISY_GRAPH_SUFFIXES):
                 continue
             if exclude_uppercase_names and item[:1].isupper() and "." not in item:
                 continue
@@ -204,59 +176,8 @@ class RCAFindingRules:
         normalized_path = path.lower()
         path_tokens = self.evidence_selection_rules.tokens(normalized_path)
 
-        if "retrieval" in path_tokens and "factory" in path_tokens:
-            return (
-                f"{location} maps configured retrieval strategy names to concrete "
-                "retrieval strategy implementations and rejects unsupported values."
-            )
-        if "service" in path_tokens and "rag" in path_tokens:
-            return (
-                f"{location} resolves the retrieval strategy, retrieves documents, "
-                "reranks results, and builds the final RAG response path."
-            )
-        if "routing" in path_tokens and "llm" in path_tokens:
-            return (
-                f"{location} invokes the LLM router and validates that the returned "
-                "strategy is one of the supported retrieval strategy values."
-            )
-        if "routing" in path_tokens and "rule" in path_tokens and "based" in path_tokens:
-            return (
-                f"{location} maps document-level summary queries to the supported "
-                "`parent_child` retrieval strategy."
-            )
-        if "cache" in path_tokens:
-            return (
-                f"{location} defines cache reset behavior for RAG retrievers and "
-                "cached retrieval results."
-            )
-        if "upload" in path_tokens:
-            return (
-                f"{location} computes upload content state but still gates duplicate "
-                "handling through filename-based Streamlit session state before ingestion."
-            )
-        if path_tokens & {"reranker", "reranking", "rerank"}:
-            return (
-                f"{location} loads the cross-encoder reranker and defines fallback "
-                "behavior for scoring and ordering retrieved documents."
-            )
-        if "pipeline" in path_tokens:
-            return (
-                f"{location} deduplicates retrieved documents and sends them through "
-                "reranking before answer context is built."
-            )
-        if path_tokens & {"ingest", "ingestion"}:
-            return (
-                f"{location} coordinates document ingestion into standard and "
-                "parent-child retrieval indexes."
-            )
-        if "tests" in path_tokens and ("routing" in path_tokens or "retrieval" in path_tokens):
-            return (
-                f"{location} covers routing or retrieval behavior relevant to the incident."
-            )
-        if "eval" in path_tokens or "evaluation" in path_tokens:
-            return (
-                f"{location} contains evaluation context for retrieval or answer "
-                "quality checks relevant to the incident."
-            )
+        for signal in PATH_SUMMARY_SIGNALS:
+            if signal.matches(path_tokens):
+                return signal.summary_template.format(location=location)
 
         return None
