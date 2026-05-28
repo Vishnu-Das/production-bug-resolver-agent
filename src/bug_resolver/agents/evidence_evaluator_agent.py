@@ -1,4 +1,4 @@
-"""Evidence evaluator agent that decides whether the investigation has enough signal."""
+"""Evidence evaluator agent that decides whether enough evidence was collected."""
 
 from __future__ import annotations
 

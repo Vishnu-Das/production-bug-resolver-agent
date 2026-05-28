@@ -12,15 +12,42 @@ from bug_resolver.prompts import RCAPromptBuilder
 from bug_resolver.rules.rca_rules import RCARules
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas import EvidenceSourceType, RCAReport, WorkflowState
-from bug_resolver.signals.llm_output_signals import (
-    ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES,
-    INTERNAL_EVIDENCE_PREFIXES,
-    LOG_FINDING_MARKERS,
-)
 from bug_resolver.utils.ids import new_rca_report_id
 from bug_resolver.utils.observability import get_logger
 
 
+ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES = (
+    "i fixed",
+    "we fixed",
+    "has been fixed",
+    "was fixed",
+    "is fixed",
+    "deployed the fix",
+    "deployed a fix",
+    "merged the fix",
+    "opened a pull request",
+    "created a pull request",
+)
+INTERNAL_EVIDENCE_PREFIXES = (
+    "evidence-src/",
+    "evidence-src\\",
+    "evidence-tests/",
+    "evidence-tests\\",
+    "evidence-eval/",
+    "evidence-eval\\",
+    "evidence-docs/",
+    "evidence-docs\\",
+)
+LOG_FINDING_MARKERS = (
+    "log evidence",
+    "logged",
+    "request_id=",
+    "trace_id=",
+    "user feedback",
+    "warning ",
+    " error ",
+    " info ",
+)
 HYPOTHESIS_PREFIX_PATTERN = re.compile(r"^H\d+\s*:?\s*", re.IGNORECASE)
 EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
     r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"

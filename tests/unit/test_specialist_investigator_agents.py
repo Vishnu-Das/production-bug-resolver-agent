@@ -178,6 +178,7 @@ async def test_code_investigator_agent_uses_supervisor_queries() -> None:
 
     assert provider.queries == [
         "router.py route_query TypeError",
+        "evidence query route route_query router typeerror",
         "route_query",
         "router.py",
     ]
@@ -198,7 +199,7 @@ async def test_code_investigator_agent_falls_back_to_decision_reason() -> None:
 
     await agent.run(CodeInvestigatorInput(decision=decision))
 
-    assert provider.queries == ["Need more evidence."]
+    assert provider.queries == ["Need more evidence.", "evidence"]
 
 
 @pytest.mark.asyncio
@@ -221,7 +222,6 @@ async def test_code_investigator_agent_enriches_code_queries() -> None:
     joined_queries = "\n".join(provider.queries)
     assert "RERANKING_MODEL_NAME" in joined_queries
     assert "reranker_model" in joined_queries
-    assert "config" in joined_queries
     assert "order_changed" in joined_queries
 
 

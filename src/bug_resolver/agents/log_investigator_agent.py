@@ -23,7 +23,7 @@ class LogInvestigatorInput(StrictBaseModel):
 
 class LogInvestigatorAgent(BaseAgent[LogInvestigatorInput, list[EvidenceItem]]):
     """
-    Retrieves incident logs and converts runtime signals into evidence.
+    Retrieves incident logs and converts runtime facts into evidence.
     """
 
     name = "log_investigator_agent"

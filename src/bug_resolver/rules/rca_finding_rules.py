@@ -5,10 +5,31 @@ from __future__ import annotations
 from bug_resolver.rules.evidence_formatting_rules import EvidenceFormattingRules
 from bug_resolver.rules.evidence_selection_rules import EvidenceSelectionRules
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType
-from bug_resolver.signals.rca_finding_signals import (
-    NOISY_GRAPH_SUFFIXES,
-    NOISY_GRAPH_VALUES,
-    PATH_SUMMARY_SIGNALS,
+
+NOISY_GRAPH_VALUES = {
+    "dict",
+    "float",
+    "int",
+    "len",
+    "list",
+    "round",
+    "set",
+    "str",
+    "traceable",
+    "zip",
+    "logger.debug",
+    "logger.error",
+    "logger.info",
+    "logger.warning",
+}
+NOISY_GRAPH_SUFFIXES = (
+    ".append",
+    ".extend",
+    ".get",
+    ".items",
+    ".keys",
+    ".sort",
+    ".values",
 )
 
 
@@ -39,46 +60,19 @@ class RCAFindingRules:
     def finding_text(self, evidence: EvidenceItem) -> str:
         location = self.formatter.location(evidence)
         content = " ".join(evidence.content.split())
-        content_lower = content.lower()
-        path = self.formatter.display_path(evidence.file_path or evidence.source_name)
 
         if evidence.source_type == EvidenceSourceType.LOG:
-            if "invalid strategy: summary" in content_lower:
-                return (
-                    f"{location} shows the LLM router failed with "
-                    "`ValueError: Invalid strategy: summary` and triggered fallback."
-                )
-            if "resolved_strategy=parent_child" in content_lower:
-                return (
-                    f"{location} shows the fallback resolved the summary-style query "
-                    "to the supported `parent_child` retrieval strategy."
-                )
-            return f"{location} shows runtime signal: {self.formatter.shorten(content)}"
+            return f"{location} shows runtime evidence: {self.formatter.shorten(content)}"
 
         if evidence.source_type == EvidenceSourceType.CODE:
-            path_summary = self._path_aware_code_summary(path, location)
-            if path_summary is not None:
-                return path_summary
-
-            if "invalid strategy" in content_lower and "result.strategy" in content_lower:
+            symbol = evidence.metadata.get("qualified_symbol") or evidence.metadata.get(
+                "function_name",
+                "",
+            )
+            if symbol:
                 return (
-                    f"{location} validates the LLM router strategy and raises an "
-                    "error when the model returns an unsupported value."
-                )
-            if "chatopenai" in content_lower and "router_prompt" in content_lower:
-                return (
-                    f"{location} builds the LLM router around the router prompt, "
-                    "structured `RouterResult`, and configured router model."
-                )
-            if "router_type" in content_lower and "llmrouterstrategy" in content_lower:
-                return (
-                    f"{location} selects the configured router implementation, "
-                    "including the LLM router path that produced the failure."
-                )
-            if "parent_child" in content_lower and "summary" in content_lower:
-                return (
-                    f"{location} maps summary-style selected-document queries to "
-                    "the supported `parent_child` retrieval strategy."
+                    f"{location} contains source evidence for `{symbol}`: "
+                    f"{self.formatter.shorten(content)}"
                 )
             return f"{location} contains implementation context relevant to the incident."
 
@@ -172,12 +166,3 @@ class RCAFindingRules:
 
         return self.formatter.unique(values)[:limit]
 
-    def _path_aware_code_summary(self, path: str, location: str) -> str | None:
-        normalized_path = path.lower()
-        path_tokens = self.evidence_selection_rules.tokens(normalized_path)
-
-        for signal in PATH_SUMMARY_SIGNALS:
-            if signal.matches(path_tokens):
-                return signal.summary_template.format(location=location)
-
-        return None

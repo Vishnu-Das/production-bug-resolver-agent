@@ -34,6 +34,7 @@ def test_roles_detect_eval_demo_notebook_script_and_debug_paths() -> None:
 
     assert [role.name for role in rules.roles_for_path("eval/compare.py")] == ["evaluation"]
     assert [role.name for role in rules.roles_for_path("examples/demo_app.py")] == [
+        "example",
         "demo"
     ]
     assert [role.name for role in rules.roles_for_path("notebooks/analysis.ipynb")] == [

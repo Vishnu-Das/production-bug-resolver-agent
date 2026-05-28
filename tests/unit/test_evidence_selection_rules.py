@@ -1,4 +1,4 @@
-"""Tests for evidence selection signal expansion rules."""
+"""Tests for incident-term extraction rules."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ def make_state(*, title: str, description: str) -> WorkflowState:
             incident_id="INC-TEST",
             title=title,
             description=description,
-            affected_service="conversational_rag",
-            affected_area="retrieval quality",
+            affected_service="target_service",
+            affected_area="runtime quality",
         )
     )
 
@@ -29,7 +29,7 @@ def add_log(state: WorkflowState, content: str) -> None:
     )
 
 
-def test_upload_profile_expands_content_hash_filename_and_upload_signals() -> None:
+def test_incident_terms_include_runtime_log_tokens_without_expansion() -> None:
     state = make_state(
         title="Duplicate documents after upload",
         description="Users see duplicate citations.",
@@ -39,13 +39,14 @@ def test_upload_profile_expands_content_hash_filename_and_upload_signals() -> No
         'content_hash="abc123" dedupe_key="filename" duplicate_content_detected=true',
     )
 
-    signals = EvidenceSelectionRules().selection_signals(state)
+    terms = EvidenceSelectionRules().selection_terms(state)
 
-    assert {"upload", "dedup", "deduplication", "content_hash", "filename"} <= signals
-    assert {"content", "hash", "processed_uploads"} <= signals
+    assert {"duplicate", "upload", "content_hash", "filename"} <= terms
+    assert "deduplication" not in terms
+    assert "identity" not in terms
 
 
-def test_reranker_profile_expands_order_changed_scores_and_model_signals() -> None:
+def test_incident_terms_keep_observed_quality_tokens() -> None:
     state = make_state(
         title="Answers cite unrelated sources",
         description="Answer quality is worse after deployment.",
@@ -55,23 +56,10 @@ def test_reranker_profile_expands_order_changed_scores_and_model_signals() -> No
         'reranker_model=null scores="0.0,0.0,0.0,0.0" order_changed=false',
     )
 
-    signals = EvidenceSelectionRules().selection_signals(state)
+    terms = EvidenceSelectionRules().selection_terms(state)
 
-    assert {"reranker", "scores", "score", "order_changed"} <= signals
-    assert {"ranking", "model", "config", "configuration"} <= signals
-
-
-def test_summary_routing_profile_expands_strategy_signals() -> None:
-    state = make_state(
-        title="Summary questions return chunk answers",
-        description="The query used semantic_search instead of document_summary.",
-    )
-    add_log(state, 'query="summarize this document" strategy="semantic_search"')
-
-    signals = EvidenceSelectionRules().selection_signals(state)
-
-    assert {"summary", "summarize", "semantic_search", "document_summary"} <= signals
-    assert {"routing", "router", "query", "parent_child"} <= signals
+    assert {"scores", "order_changed", "reranker_model", "quality"} <= terms
+    assert "configuration" not in terms
 
 
 def test_generic_text_returns_base_tokens() -> None:
@@ -80,25 +68,25 @@ def test_generic_text_returns_base_tokens() -> None:
         description="Background worker returned stale records.",
     )
 
-    signals = EvidenceSelectionRules().selection_signals(state)
+    terms = EvidenceSelectionRules().selection_terms(state)
 
-    assert {"cache", "refresh", "delayed", "background", "worker", "stale"} <= signals
+    assert {"cache", "refresh", "delayed", "background", "worker", "stale"} <= terms
 
 
-def test_stopwords_are_removed_from_base_signals() -> None:
+def test_stopwords_are_removed_from_base_terms() -> None:
     state = make_state(
         title="The service is not responding",
         description="Users report that the service is slow.",
     )
 
-    signals = EvidenceSelectionRules().selection_signals(state)
+    terms = EvidenceSelectionRules().selection_terms(state)
 
-    assert "the" not in signals
-    assert "is" not in signals
-    assert "that" not in signals
-    assert "service" not in signals
-    assert "responding" in signals
-    assert "slow" in signals
+    assert "the" not in terms
+    assert "is" not in terms
+    assert "that" not in terms
+    assert "service" not in terms
+    assert "responding" in terms
+    assert "slow" in terms
 
 
 def test_tokens_split_snake_case_and_keep_original_token() -> None:

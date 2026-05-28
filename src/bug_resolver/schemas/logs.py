@@ -39,7 +39,7 @@ class LogEntry(StrictBaseModel):
 
 
 class LogAnalysisResult(StrictBaseModel):
-    """Summary of log analysis signals for an incident."""
+    """Summary of parsed log facts for an incident."""
 
     summary: str = Field(..., min_length=1)
 

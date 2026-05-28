@@ -312,7 +312,7 @@ async def test_evidence_evaluator_does_not_require_kb_when_kb_agent_is_unavailab
 
 
 @pytest.mark.asyncio
-async def test_evidence_evaluator_requests_historical_rca_for_recurrence_signal() -> None:
+async def test_evidence_evaluator_requests_historical_rca_for_recurrence_terms() -> None:
     agent = EvidenceEvaluatorAgent()
     state = make_state(
         confidence_threshold=0.75,
@@ -430,7 +430,7 @@ async def test_evidence_evaluator_requests_graph_even_when_replans_are_exhausted
 
 
 @pytest.mark.asyncio
-async def test_evidence_evaluator_does_not_request_graph_without_structural_signal() -> None:
+async def test_evidence_evaluator_does_not_request_graph_without_structural_anchor() -> None:
     agent = EvidenceEvaluatorAgent()
     state = make_state(confidence_threshold=0.75)
     state.add_evidence(log_evidence())

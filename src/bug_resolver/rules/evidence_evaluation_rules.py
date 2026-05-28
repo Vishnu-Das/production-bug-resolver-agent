@@ -7,18 +7,63 @@ import re
 from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 from bug_resolver.schemas.orchestration import AgentName
-from bug_resolver.signals.evidence_evaluation_signals import (
-    EXPECTED_BEHAVIOR_TERMS,
-    HISTORICAL_RCA_TERMS,
-    STRUCTURAL_RELATIONSHIP_LANGUAGE_TERMS,
-    STRUCTURAL_RELATIONSHIP_TERMS,
-)
 
 PYTHON_PATH_PATTERN = re.compile(r"\b(?:src|tests|eval|app|services)/[A-Za-z0-9_./-]+\.py\b")
 SYMBOL_REFERENCE_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\b")
 FUNCTION_CALL_PATTERN = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\(\)")
 CONFIG_KEY_PATTERN = re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b")
-SIGNAL_TOKEN_PATTERN = re.compile(r"[a-z0-9_]+")
+INCIDENT_TOKEN_PATTERN = re.compile(r"[a-z0-9_]+")
+STRUCTURAL_RELATIONSHIP_TERMS = (
+    "structural_hint",
+    "caller",
+    "callers",
+    "callee",
+    "callees",
+    "calls",
+    "called by",
+    "caller chain",
+    "call chain",
+    "dependency",
+    "dependencies",
+    "import",
+    "imports",
+    "imported by",
+    "relationship",
+    "relationships",
+)
+STRUCTURAL_RELATIONSHIP_LANGUAGE_TERMS = (
+    "which function",
+    "what function",
+    "who calls",
+    "what calls",
+    "where called",
+    "reader",
+    "readers",
+    "reads",
+    "owner",
+    "ownership",
+)
+EXPECTED_BEHAVIOR_TERMS = (
+    "expected",
+    "expected behavior",
+    "expected result",
+    "expected output",
+    "expectation",
+    "should",
+    "policy",
+    "requirement",
+    "spec",
+    "design",
+    "documented",
+)
+HISTORICAL_RCA_TERMS = (
+    "again",
+    "recurring",
+    "recurrence",
+    "previous",
+    "prior",
+    "happened before",
+)
 
 class EvidenceEvaluationRules:
     """
@@ -119,7 +164,7 @@ class EvidenceEvaluationRules:
 
         if (
             EvidenceSourceType.CODE not in source_types
-            and self._has_structural_relationship_signal(state)
+            and self._has_structural_relationship_terms(state)
         ):
             missing.append(
                 "Implementation code evidence is needed before structural graph investigation."
@@ -263,7 +308,7 @@ class EvidenceEvaluationRules:
 
         if (
             EvidenceSourceType.CODE not in self._source_types(state.evidence_items)
-            and self._has_structural_relationship_signal(state)
+            and self._has_structural_relationship_terms(state)
         ):
             return (
                 "Implementation code evidence is needed before structural graph "
@@ -296,7 +341,7 @@ class EvidenceEvaluationRules:
         if not state.can_invoke_agent(AgentName.GRAPH_INVESTIGATOR):
             return False
 
-        return self._has_structural_relationship_signal(state)
+        return self._has_structural_relationship_terms(state)
 
     def graph_discovered_code_evidence_required(self, state: WorkflowState) -> bool:
         source_types = self._source_types(state.evidence_items)
@@ -352,7 +397,7 @@ class EvidenceEvaluationRules:
         if not state.can_invoke_agent(AgentName.KNOWLEDGE_BASE_INVESTIGATOR):
             return False
 
-        return self._has_expected_behavior_signal(state)
+        return self._has_expected_behavior_terms(state)
 
     def historical_rca_evidence_required(self, state: WorkflowState) -> bool:
         source_types = self._source_types(state.evidence_items)
@@ -368,10 +413,10 @@ class EvidenceEvaluationRules:
         if not state.can_invoke_agent(AgentName.HISTORICAL_RCA_INVESTIGATOR):
             return False
 
-        return self._has_historical_rca_signal(state)
+        return self._has_historical_rca_terms(state)
 
-    def _has_structural_relationship_signal(self, state: WorkflowState) -> bool:
-        text = self._structural_signal_text(state)
+    def _has_structural_relationship_terms(self, state: WorkflowState) -> bool:
+        text = self._structural_text(state)
         normalized = text.lower()
 
         if any(term in normalized for term in STRUCTURAL_RELATIONSHIP_TERMS):
@@ -395,14 +440,20 @@ class EvidenceEvaluationRules:
             )
         )
 
-    def _structural_signal_text(self, state: WorkflowState) -> str:
-        return self._state_signal_text(state)
+    def _structural_text(self, state: WorkflowState) -> str:
+        return self._state_text(state)
 
-    def _has_expected_behavior_signal(self, state: WorkflowState) -> bool:
-        return self._has_signal_terms(self._state_signal_text(state), EXPECTED_BEHAVIOR_TERMS)
+    def _has_expected_behavior_terms(self, state: WorkflowState) -> bool:
+        text = re.sub(
+            r"\b(?:typeerror|valueerror|runtimeerror|keyerror):\s*expected[^\n.]*",
+            "",
+            self._state_text(state),
+            flags=re.IGNORECASE,
+        )
+        return self._has_terms(text, EXPECTED_BEHAVIOR_TERMS)
 
-    def _has_historical_rca_signal(self, state: WorkflowState) -> bool:
-        return self._has_signal_terms(self._state_signal_text(state), HISTORICAL_RCA_TERMS)
+    def _has_historical_rca_terms(self, state: WorkflowState) -> bool:
+        return self._has_terms(self._state_text(state), HISTORICAL_RCA_TERMS)
 
     def _code_evidence_paths(self, state: WorkflowState) -> set[str]:
         return {
@@ -426,15 +477,15 @@ class EvidenceEvaluationRules:
     def _normalize_path(self, path: str) -> str:
         return path.replace("\\", "/").lower().strip()
 
-    def _has_signal_terms(self, value: str, terms: tuple[str, ...]) -> bool:
+    def _has_terms(self, value: str, terms: tuple[str, ...]) -> bool:
         normalized = value.lower()
-        tokens = set(SIGNAL_TOKEN_PATTERN.findall(normalized))
+        tokens = set(INCIDENT_TOKEN_PATTERN.findall(normalized))
         return any(
             term in normalized if " " in term else term in tokens
             for term in terms
         )
 
-    def _state_signal_text(self, state: WorkflowState) -> str:
+    def _state_text(self, state: WorkflowState) -> str:
         values = [
             state.incident.title,
             state.incident.description,

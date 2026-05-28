@@ -17,7 +17,7 @@ class HistoricalRCAContext(StrictBaseModel):
     root_cause: str = Field(..., min_length=1)
     confidence_score: float = Field(..., ge=0.0, le=1.0)
     report_path: str | None = None
-    matched_signals: list[str] = Field(default_factory=list)
+    matched_terms: list[str] = Field(default_factory=list)
     content: str = Field(..., min_length=1)
     relevance_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
@@ -33,7 +33,7 @@ class HistoricalRCAContext(StrictBaseModel):
             confidence=self.confidence_score,
             metadata={
                 "historical_incident_id": self.incident_id,
-                "matched_signals": ", ".join(self.matched_signals),
+                "matched_terms": ", ".join(self.matched_terms),
                 "historical_context_only": "true",
             },
         )

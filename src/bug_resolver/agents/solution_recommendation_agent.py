@@ -12,11 +12,22 @@ from bug_resolver.prompts import SolutionPromptBuilder
 from bug_resolver.rules.solution_rules import SolutionRules
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.schemas import RCAReport, SolutionRecommendation
-from bug_resolver.signals.llm_output_signals import ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES
 from bug_resolver.utils.ids import new_recommendation_id
 from bug_resolver.utils.observability import get_logger
 
 
+ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES = (
+    "i fixed",
+    "we fixed",
+    "has been fixed",
+    "was fixed",
+    "is fixed",
+    "deployed the fix",
+    "deployed a fix",
+    "merged the fix",
+    "opened a pull request",
+    "created a pull request",
+)
 EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
     r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"
     r"evidence-[A-Za-z0-9_./\\:-]+)\b",

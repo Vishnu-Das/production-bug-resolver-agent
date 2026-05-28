@@ -12,7 +12,7 @@ def make_state(*, title: str, description: str, affected_area: str) -> WorkflowS
             incident_id="INC-TEST",
             title=title,
             description=description,
-            affected_service="conversational_rag",
+            affected_service="example_service",
             affected_area=affected_area,
         )
     )
@@ -607,12 +607,12 @@ def test_graph_findings_describe_structural_relationships() -> None:
         (
             "src/reranker.py:rerank_documents_with_scores shows structural code "
             "relationship: uses config from load_reranker, which reads "
-            "RERANKING_MODEL_NAME; called by answer_question."
+            "RERANKING_MODEL_NAME; calls reranker_model.predict; called by answer_question."
         )
     ]
     assert "doc.metadata.get" not in findings[0]
     assert "ranked_documents.sort" not in findings[0]
-    assert "reranker_model.predict" not in findings[0]
+    assert "reranker_model.predict" in findings[0]
     assert "test_reranker_flow" not in findings[0]
     assert "zip" not in findings[0]
 
@@ -739,7 +739,7 @@ def test_historical_findings_are_separate_supporting_context() -> None:
     ]
 
 
-def test_generic_evidence_id_fallback_keeps_evidence_when_no_strong_signal_exists() -> None:
+def test_generic_evidence_id_fallback_keeps_evidence_when_no_strong_term_exists() -> None:
     state = make_state(
         title="Unknown incident",
         description="Users report an intermittent issue.",

@@ -9,10 +9,20 @@ from bug_resolver.llm.base import LLMClient
 from bug_resolver.rules.patch_suggestion_rules import PatchSuggestionRules
 from bug_resolver.schemas import PatchSuggestion, RCAReport, SolutionRecommendation
 from bug_resolver.schemas.common import StrictBaseModel
-from bug_resolver.signals.llm_output_signals import PATCH_SUGGESTION_FORBIDDEN_PHRASES
 from bug_resolver.utils.observability import get_logger
 
 
+PATCH_SUGGESTION_FORBIDDEN_PHRASES = (
+    "i fixed",
+    "we fixed",
+    "has been fixed",
+    "was fixed",
+    "is fixed",
+    "deployed",
+    "committed",
+    "created a pull request",
+    "opened a pull request",
+)
 logger = get_logger(__name__)
 
 

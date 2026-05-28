@@ -9,17 +9,28 @@ from typing import Literal
 
 from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.schemas.code_context import CodeContext
-from bug_resolver.signals.code_context_signals import (
-    CONFIG_DIRECTORY_MARKERS,
-    CONFIG_EXTENSIONS,
-    CONFIG_FILE_NAMES,
-    CONFIG_QUERY_TERMS,
-    INIT_QUERY_TERMS,
-    SOURCE_EXTENSIONS,
-    TEST_QUERY_TERMS,
-)
 
 CodeContextMode = Literal["implementation", "test", "config", "all"]
+SOURCE_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx"}
+CONFIG_EXTENSIONS = {".env", ".ini", ".json", ".toml", ".yaml", ".yml"}
+CONFIG_FILE_NAMES = {"Dockerfile", "docker-compose.yml", "docker-compose.yaml"}
+CONFIG_DIRECTORY_MARKERS = ("/config/", "/configs/", "/settings/")
+CONFIG_QUERY_TERMS = {
+    "compose",
+    "config",
+    "configuration",
+    "docker",
+    "env",
+    "environment",
+    "requirements",
+    "setting",
+    "settings",
+    "toml",
+    "yaml",
+    "yml",
+}
+INIT_QUERY_TERMS = {"init", "__init__", "package", "exports"}
+TEST_QUERY_TERMS = {"assert", "coverage", "fixture", "pytest", "test", "tests"}
 
 
 class CodeContextRankingRules:
@@ -264,6 +275,7 @@ class CodeContextRankingRules:
         return (
             path_obj.suffix in CONFIG_EXTENSIONS
             or path_obj.name in CONFIG_FILE_NAMES
+            or path_obj.name.startswith(".env")
         )
 
     def _is_config_directory(self, path: str) -> bool:

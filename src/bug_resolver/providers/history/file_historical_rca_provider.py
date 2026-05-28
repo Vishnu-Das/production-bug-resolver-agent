@@ -9,11 +9,31 @@ from typing import Any
 
 from bug_resolver.providers.history.base import HistoricalRCAProvider
 from bug_resolver.schemas import HistoricalRCAContext
-from bug_resolver.signals.history_signals import HISTORICAL_SEARCH_STOPWORDS
 from bug_resolver.utils.observability import get_logger, log_debug_payload, traceable
 
 
 TOKEN_PATTERN = re.compile(r"[a-z0-9_]+")
+HISTORICAL_SEARCH_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "the",
+    "this",
+    "to",
+    "with",
+}
 logger = get_logger(__name__)
 
 
@@ -80,7 +100,7 @@ class FileHistoricalRCAProvider(HistoricalRCAProvider):
                     "context_id": context.context_id,
                     "incident_id": context.incident_id,
                     "score": context.relevance_score,
-                    "matched_signals": context.matched_signals,
+                    "matched_terms": context.matched_terms,
                 }
                 for context in contexts
             ],
@@ -109,8 +129,8 @@ class FileHistoricalRCAProvider(HistoricalRCAProvider):
     ) -> HistoricalRCAContext:
         searchable_text = self._searchable_text(report_data)
         report_tokens = self._tokens(searchable_text)
-        matched_signals = sorted(query_tokens & report_tokens)
-        relevance_score = min(len(matched_signals) / max(len(query_tokens), 1), 1.0)
+        matched_terms = sorted(query_tokens & report_tokens)
+        relevance_score = min(len(matched_terms) / max(len(query_tokens), 1), 1.0)
 
         incident_id = str(report_data.get("incident_id", "unknown"))
         title = str(report_data.get("title") or f"RCA for {incident_id}")
@@ -124,7 +144,7 @@ class FileHistoricalRCAProvider(HistoricalRCAProvider):
             root_cause=root_cause,
             confidence_score=confidence_score,
             report_path=str(report_path),
-            matched_signals=matched_signals,
+            matched_terms=matched_terms,
             content=(
                 f"Similar prior incident {incident_id}: {title}. "
                 f"Prior RCA root cause: {root_cause}"

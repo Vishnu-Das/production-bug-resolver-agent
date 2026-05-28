@@ -32,12 +32,14 @@ from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
 from bug_resolver.providers.logs.file_log_provider import FileLogProvider
 from bug_resolver.providers.patches import LocalFilePatchContextProvider
 from bug_resolver.providers.reports.file_report_store import FileReportStore
-from bug_resolver.rules import GuardrailEngine
+from bug_resolver.rules import CodeQueryRules, GuardrailEngine
 from bug_resolver.utils.observability import configure_langsmith_tracing
 from bug_resolver.workflows.dynamic_bug_resolution_graph import (
     DynamicBugResolutionGraphWorkflow,
 )
-from bug_resolver.workflows.workflow_dependencies import load_or_build_code_index
+from bug_resolver.workflows.workflow_dependencies import (
+    load_or_build_code_index,
+)
 
 
 async def build_dynamic_graph_workflow(
@@ -98,10 +100,12 @@ async def build_dynamic_graph_workflow(
             FAISSCodeContextProvider(
                 vector_store=vector_store,
                 embedding_client=embedding_client,
-            )
+            ),
+            code_query_rules=CodeQueryRules(),
         ),
         code_graph_investigator_agent=CodeGraphInvestigatorAgent(
-            PythonASTCodeGraphProvider(settings.target_repo_path)
+            PythonASTCodeGraphProvider(settings.target_repo_path),
+            code_query_rules=CodeQueryRules(),
         ),
         historical_rca_investigator_agent=HistoricalRCAInvestigatorAgent(
             FileHistoricalRCAProvider(settings.historical_rca_dir)

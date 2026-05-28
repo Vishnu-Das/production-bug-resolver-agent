@@ -1,7 +1,12 @@
-"""Tests for deterministic Code RAG query enrichment."""
+"""Tests for incident-grounded Code RAG query planning."""
 
 from bug_resolver.rules.code_query_rules import CodeQueryRules
-from bug_resolver.schemas import AgentDecision, AgentName, EvidenceItem, EvidenceSourceType
+from bug_resolver.schemas import (
+    AgentDecision,
+    AgentName,
+    EvidenceItem,
+    EvidenceSourceType,
+)
 
 
 def make_decision(*, queries: list[str] | None = None, reason: str = "Need code evidence"):
@@ -11,29 +16,6 @@ def make_decision(*, queries: list[str] | None = None, reason: str = "Need code 
         reason=reason,
         queries=queries or [],
     )
-
-
-def test_upload_query_enrichment_adds_content_hash_and_upload_terms() -> None:
-    decision = make_decision(
-        queries=[
-            (
-                'content_hash="abc" dedupe_key="filename" '
-                "processed_uploads_match=false duplicate_content_detected=true"
-            )
-        ]
-    )
-
-    queries = CodeQueryRules().enrich_queries(decision)
-    joined_queries = "\n".join(queries)
-
-    assert queries[0].startswith("content_hash")
-    assert "processed_uploads" in joined_queries
-    assert "duplicate_content_detected" in joined_queries
-    assert "filename" in joined_queries
-    assert "dedup" in joined_queries
-    assert "ingestion" in joined_queries
-    assert "service" in joined_queries
-    assert "handler" in joined_queries
 
 
 def test_code_query_rules_extracts_exact_identifiers_and_focused_packets() -> None:
@@ -74,38 +56,20 @@ def test_implementation_queries_are_separate_from_test_and_config_modes() -> Non
     plan = CodeQueryRules().build_search_plan(decision)
 
     assert plan.queries("implementation")
-    assert plan.queries("test") == ["pytest regression"]
+    assert plan.queries("test") == ["pytest"]
     assert any("RERANKING_MODEL_NAME" in query for query in plan.queries("config"))
 
 
-def test_upload_query_enrichment_does_not_invent_target_repo_symbols() -> None:
+def test_query_planning_does_not_invent_target_repo_symbols() -> None:
     decision = make_decision(queries=["duplicate files appear after upload"])
 
     queries = CodeQueryRules().enrich_queries(decision)
     joined_queries = "\n".join(queries)
 
     assert "upload" in joined_queries
-    assert "dedup" in joined_queries
     assert "handle_file_upload" not in joined_queries
     assert "upload_service.py" not in joined_queries
     assert "single_file_ingestion" not in joined_queries
-
-
-def test_reranker_query_enrichment_adds_generic_config_terms() -> None:
-    decision = make_decision(
-        queries=[
-            'RERANKING_MODEL_NAME="" reranker_model=null scores="0.0" order_changed=false'
-        ]
-    )
-
-    queries = CodeQueryRules().enrich_queries(decision)
-    joined_queries = "\n".join(queries)
-
-    assert "RERANKING_MODEL_NAME" in joined_queries
-    assert "reranker_model" in joined_queries
-    assert "config" in joined_queries
-    assert "reranking" in joined_queries
-    assert "order_changed" in joined_queries
 
 
 def test_query_enrichment_preserves_observed_function_names() -> None:
@@ -120,18 +84,6 @@ def test_query_enrichment_preserves_observed_function_names() -> None:
     assert "RERANKING_MODEL_NAME" in joined_queries
 
 
-def test_summary_query_enrichment_adds_routing_strategy_terms() -> None:
-    decision = make_decision(queries=["summarize this document selected semantic_search"])
-
-    queries = CodeQueryRules().enrich_queries(decision)
-    joined_queries = "\n".join(queries)
-
-    assert "document_summary" in joined_queries
-    assert "parent_child" in joined_queries
-    assert "routing" in joined_queries
-    assert "strategy" in joined_queries
-
-
 def test_reason_is_used_when_supervisor_queries_are_missing() -> None:
     decision = make_decision(reason="Need code for reranker_model null order_changed false")
 
@@ -139,11 +91,11 @@ def test_reason_is_used_when_supervisor_queries_are_missing() -> None:
     joined_queries = "\n".join(queries)
 
     assert queries[0] == "Need code for reranker_model null order_changed false"
-    assert "reranking" in joined_queries
-    assert "config" in joined_queries
+    assert "reranker_model" in joined_queries
+    assert "order_changed" in joined_queries
 
 
-def test_query_enrichment_uses_existing_log_evidence_generically() -> None:
+def test_query_enrichment_uses_existing_log_evidence() -> None:
     decision = make_decision(queries=["answer quality degraded"])
     evidence_items = [
         EvidenceItem(
@@ -157,17 +109,19 @@ def test_query_enrichment_uses_existing_log_evidence_generically() -> None:
         )
     ]
 
-    queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
+    queries = CodeQueryRules().enrich_queries(
+        decision,
+        evidence_items=evidence_items,
+    )
     joined_queries = "\n".join(queries)
 
     assert "answer quality degraded" in queries
     assert "RERANKING_MODEL_NAME" in joined_queries
     assert "reranker_model" in joined_queries
-    assert "reranking" in joined_queries
     assert "order_changed" in joined_queries
 
 
-def test_query_enrichment_uses_relevant_kb_evidence() -> None:
+def test_query_enrichment_uses_relevant_kb_evidence_by_overlap() -> None:
     decision = make_decision(queries=["duplicate upload documents"])
     evidence_items = [
         EvidenceItem(
@@ -181,7 +135,10 @@ def test_query_enrichment_uses_relevant_kb_evidence() -> None:
         )
     ]
 
-    queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
+    queries = CodeQueryRules().enrich_queries(
+        decision,
+        evidence_items=evidence_items,
+    )
     joined_queries = "\n".join(queries)
 
     assert "content_hash" in joined_queries
@@ -189,54 +146,28 @@ def test_query_enrichment_uses_relevant_kb_evidence() -> None:
     assert "upload" in joined_queries
 
 
-def test_query_enrichment_uses_relevant_graph_evidence() -> None:
-    decision = make_decision(queries=["reranker configuration fallback"])
+def test_query_enrichment_uses_relevant_graph_evidence_by_overlap() -> None:
+    decision = make_decision(queries=["ranking configuration degraded"])
     evidence_items = [
         EvidenceItem(
             evidence_id="graph-1",
             source_type=EvidenceSourceType.GRAPH,
             source_name="graph",
             file_path="src/search.py",
-            content="SearchPipeline.rerank calls load_model() before scoring.",
-            metadata={"qualified_symbol": "SearchPipeline.rerank"},
+            content="RankingPipeline.score calls load_model() before scoring configuration.",
+            metadata={"qualified_symbol": "RankingPipeline.score"},
         )
     ]
 
-    queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
+    queries = CodeQueryRules().enrich_queries(
+        decision,
+        evidence_items=evidence_items,
+    )
     joined_queries = "\n".join(queries)
 
-    assert "SearchPipeline.rerank" in joined_queries
+    assert "RankingPipeline.score" in joined_queries
     assert "load_model" in joined_queries
     assert "src/search.py" in joined_queries
-
-
-def test_query_enrichment_uses_graph_owner_hints_for_follow_up_code_search() -> None:
-    decision = make_decision(queries=["duplicate upload content_hash ingestion"])
-    evidence_items = [
-        EvidenceItem(
-            evidence_id="graph-src/ingest.py:ingest_single_document",
-            source_type=EvidenceSourceType.GRAPH,
-            source_name="src/ingest.py",
-            file_path="src/ingest.py",
-            content=(
-                "src/ingest.py:ingest_single_document is called by handle_file_upload "
-                "and imported by src/services/upload_service.py."
-            ),
-            metadata={
-                "qualified_symbol": "ingest_single_document",
-                "called_by": "handle_file_upload",
-                "imported_by": "src/services/upload_service.py",
-            },
-        )
-    ]
-
-    queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
-    joined_queries = "\n".join(queries)
-
-    assert "src/ingest.py" in joined_queries
-    assert "src/services/upload_service.py" in joined_queries
-    assert "handle_file_upload" in joined_queries
-    assert "ingest_single_document" in joined_queries
 
 
 def test_implementation_queries_ignore_test_graph_identifiers() -> None:
@@ -249,8 +180,7 @@ def test_implementation_queries_ignore_test_graph_identifiers() -> None:
             file_path="tests/rag/test_service.py",
             content=(
                 "tests/rag/test_service.py:test_stream_response checks duplicate upload and calls "
-                "mock_retrieval_strategy.retrieve.assert_called_once_with and "
-                "uses parent_child routing."
+                "mock_retrieval_strategy.retrieve.assert_called_once_with."
             ),
             metadata={
                 "qualified_symbol": "test_stream_response",
@@ -268,7 +198,10 @@ def test_implementation_queries_ignore_test_graph_identifiers() -> None:
         ),
     ]
 
-    plan = CodeQueryRules().build_search_plan(decision, evidence_items=evidence_items)
+    plan = CodeQueryRules().build_search_plan(
+        decision,
+        evidence_items=evidence_items,
+    )
     implementation_queries = "\n".join(plan.queries("implementation"))
     test_queries = "\n".join(plan.queries("test"))
 
@@ -323,10 +256,12 @@ def test_query_enrichment_ignores_unrelated_kb_evidence() -> None:
         )
     ]
 
-    queries = CodeQueryRules().enrich_queries(decision, evidence_items=evidence_items)
+    queries = CodeQueryRules().enrich_queries(
+        decision,
+        evidence_items=evidence_items,
+    )
     joined_queries = "\n".join(queries)
 
-    assert "dedup" in joined_queries
     assert "parent_child" not in joined_queries
     assert "reranking" not in joined_queries
 

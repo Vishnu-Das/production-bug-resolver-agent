@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from bug_resolver.schemas import FilePatch, PatchGenerationResult
-from bug_resolver.signals.patch_generation_signals import (
-    PLACEHOLDER_IMPLEMENTATION_MARKERS,
-    ROUTING_PATH_TERMS,
-    UPLOAD_DEDUPE_TERMS,
-    UPLOAD_OWNERSHIP_TERMS,
+
+PLACEHOLDER_IMPLEMENTATION_MARKERS = (
+    "TODO",
+    "Implementation needed",
+    "... remaining code unchanged",
+    "NotImplemented",
+    "raise NotImplementedError",
 )
 
 
@@ -107,17 +109,6 @@ class PatchGenerationRules:
                     f"Rejected patch for {patch.file_path} because it appears to "
                     "change a public function signature without corresponding "
                     "call-site patches."
-                )
-                continue
-
-            if self._is_upload_dedupe_patch_to_routing_code(
-                file_path=normalized_path,
-                incident_context=incident_context,
-            ):
-                warnings.append(
-                    "Rejected patch for "
-                    f"{normalized_path} because upload deduplication should not be "
-                    "implemented in routing code without direct upload ownership evidence."
                 )
                 continue
 
@@ -244,23 +235,6 @@ class PatchGenerationRules:
             function_name in added_defs and added_defs[function_name] != removed_signature
             for function_name, removed_signature in removed_defs.items()
         )
-
-    def _is_upload_dedupe_patch_to_routing_code(
-        self,
-        *,
-        file_path: str,
-        incident_context: str,
-    ) -> bool:
-        normalized_context = incident_context.lower()
-        normalized_path = file_path.lower()
-
-        has_upload_signal = any(term in normalized_context for term in UPLOAD_DEDUPE_TERMS)
-        is_routing_path = any(term in normalized_path for term in ROUTING_PATH_TERMS)
-        has_upload_ownership_path = any(
-            term in normalized_path for term in UPLOAD_OWNERSHIP_TERMS
-        )
-
-        return has_upload_signal and is_routing_path and not has_upload_ownership_path
 
     def _normalize_path(self, file_path: str) -> str:
         return file_path.replace("\\", "/").strip().removeprefix("./")

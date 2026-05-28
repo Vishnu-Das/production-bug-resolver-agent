@@ -151,7 +151,7 @@ async def test_rca_writer_agent_generates_report_from_dynamic_evidence() -> None
     assert result.open_questions == []
     assert result.selected_hypothesis_id == "H1"
     assert "src/rag/router.py:40-45" in result.root_cause
-    assert result.log_findings == ["app.log shows runtime signal: TypeError in route_query"]
+    assert result.log_findings == ["app.log shows runtime evidence: TypeError in route_query"]
     assert result.code_findings == [
         ("src/rag/router.py:40-45 contains implementation context relevant to the incident.")
     ]

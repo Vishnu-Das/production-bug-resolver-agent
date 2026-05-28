@@ -1,31 +1,52 @@
-"""Signal expansion rules used for RCA evidence and finding selection."""
+"""Incident-term extraction rules used for evidence ranking and RCA selection."""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import Collection
 
 from bug_resolver.schemas import EvidenceSourceType, WorkflowState
-from bug_resolver.signals.evidence_selection_signals import (
-    DEFAULT_SIGNAL_PROFILES,
-    DEFAULT_STOPWORDS,
-    SignalProfile,
+
+
+DEFAULT_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "service",
+        "that",
+        "the",
+        "this",
+        "to",
+        "with",
+    }
 )
 
 
 class EvidenceSelectionRules:
-    """Builds configurable evidence-selection signals from workflow state."""
+    """Build incident-grounded terms from workflow state."""
 
     def __init__(
         self,
         *,
-        signal_profiles: Sequence[SignalProfile] = DEFAULT_SIGNAL_PROFILES,
         stopwords: Collection[str] = DEFAULT_STOPWORDS,
     ) -> None:
-        self.signal_profiles = tuple(signal_profiles)
         self.stopwords = frozenset(stopwords)
 
-    def selection_signals(self, state: WorkflowState) -> set[str]:
+    def selection_terms(self, state: WorkflowState) -> set[str]:
         values = [
             state.incident.title,
             state.incident.description,
@@ -44,14 +65,7 @@ class EvidenceSelectionRules:
             values.extend(state.evidence_evaluation.missing_evidence)
 
         combined_text = "\n".join(value for value in values if value).lower()
-        tokens = self.tokens(combined_text)
-        signals = tokens - self.stopwords
-
-        for profile in self.signal_profiles:
-            if tokens & profile.triggers:
-                signals.update(profile.expansions)
-
-        return signals
+        return self.tokens(combined_text) - self.stopwords
 
     def tokens(self, value: str) -> set[str]:
         raw_tokens = set(re.findall(r"[a-z0-9_]+", value.lower()))

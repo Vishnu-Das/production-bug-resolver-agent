@@ -62,7 +62,7 @@ async def test_file_historical_rca_provider_returns_ranked_matches(tmp_path: Pat
     )
 
     assert [result.incident_id for result in results] == ["INC-OLD-1"]
-    assert set(results[0].matched_signals) >= {"content_hash", "duplicate", "upload"}
+    assert set(results[0].matched_terms) >= {"content_hash", "duplicate", "upload"}
     assert results[0].relevance_score > 0
 
 

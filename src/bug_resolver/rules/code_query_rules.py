@@ -1,23 +1,15 @@
-"""Deterministic query planning rules for Code RAG searches."""
+"""Incident-grounded query planning rules for Code RAG searches."""
 
 from __future__ import annotations
 
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import Literal
 
 from bug_resolver.schemas.common import EvidenceSourceType
 from bug_resolver.schemas.evidence import EvidenceItem
 from bug_resolver.schemas.orchestration import AgentDecision
-from bug_resolver.signals.code_query_signals import (
-    CONFIG_MODE_TERMS,
-    DEFAULT_CODE_QUERY_SIGNAL_PROFILES,
-    DEFAULT_QUERY_STOPWORDS,
-    TEST_IDENTIFIER_PREFIXES,
-    TEST_MODE_TERMS,
-    CodeQuerySignalProfile,
-)
 
 
 CONFIG_TOKEN_PATTERN = re.compile(r"\b[A-Z][A-Z0-9_]{2,}\b")
@@ -30,6 +22,51 @@ FILE_REFERENCE_PATTERN = re.compile(
     r"\b[a-zA-Z0-9_./\\-]+\.(?:py|toml|json|yaml|yml|env|ini|cfg)\b"
 )
 DOCKERFILE_PATTERN = re.compile(r"\b(?:Dockerfile|docker-compose\.ya?ml)\b")
+
+DEFAULT_QUERY_STOPWORDS = frozenset(
+    {
+        "a",
+        "after",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "by",
+        "for",
+        "from",
+        "in",
+        "is",
+        "it",
+        "more",
+        "need",
+        "of",
+        "on",
+        "or",
+        "the",
+        "this",
+        "to",
+        "with",
+    }
+)
+TEST_MODE_TERMS = frozenset({"assert", "coverage", "fixture", "pytest", "test", "tests"})
+TEST_IDENTIFIER_PREFIXES = ("assert", "mock", "pytest", "test", "unittest")
+CONFIG_MODE_TERMS = frozenset(
+    {
+        "compose",
+        "config",
+        "configuration",
+        "docker",
+        "env",
+        "environment",
+        "requirements",
+        "setting",
+        "settings",
+        "toml",
+        "yaml",
+        "yml",
+    }
+)
 
 CodeQueryMode = Literal["implementation", "test", "config", "all"]
 
@@ -45,7 +82,7 @@ class CodeQueryPacket:
 
 @dataclass(frozen=True)
 class CodeSearchPlan:
-    """Mode-aware search plan built from incident and evidence signals."""
+    """Mode-aware search plan built from incident and collected evidence."""
 
     packets: tuple[CodeQueryPacket, ...]
 
@@ -77,18 +114,14 @@ DEFAULT_MAX_IMPLEMENTATION_QUERIES = 30
 
 
 class CodeQueryRules:
-    """Build focused Code RAG query packets from supervisor and evidence signals."""
+    """Build focused Code RAG query packets from incident and evidence facts."""
 
     def __init__(
         self,
         *,
-        signal_profiles: Sequence[CodeQuerySignalProfile] = (
-            DEFAULT_CODE_QUERY_SIGNAL_PROFILES
-        ),
         stopwords: Collection[str] = DEFAULT_QUERY_STOPWORDS,
         max_implementation_queries: int = DEFAULT_MAX_IMPLEMENTATION_QUERIES,
     ) -> None:
-        self.signal_profiles = tuple(signal_profiles)
         self.stopwords = frozenset(stopwords)
         self.max_implementation_queries = max_implementation_queries
 
@@ -100,10 +133,7 @@ class CodeQueryRules:
         mode: CodeQueryMode = "all",
     ) -> list[str]:
         """Return deterministic code-search queries for compatibility callers."""
-        return self.build_search_plan(
-            decision,
-            evidence_items=evidence_items,
-        ).queries(mode)
+        return self.build_search_plan(decision, evidence_items=evidence_items).queries(mode)
 
     def build_search_plan(
         self,
@@ -111,7 +141,7 @@ class CodeQueryRules:
         *,
         evidence_items: list[EvidenceItem] | None = None,
     ) -> CodeSearchPlan:
-        """Return focused query packets, avoiding one broad mixed search string."""
+        """Return focused query packets without vocabulary expansion."""
         base_queries = self._base_queries(decision)
         base_text = " ".join([*base_queries, decision.reason])
         base_tokens = self._tokens(base_text)
@@ -125,33 +155,30 @@ class CodeQueryRules:
         all_evidence_text = self._evidence_text(relevant_evidence)
         combined_text = " ".join([base_text, implementation_evidence_text])
         all_search_text = " ".join([base_text, all_evidence_text])
-        tokens = self._tokens(combined_text)
         config_tokens = self.extract_config_keys(combined_text)
         symbol_tokens = self.extract_exact_identifiers(
             combined_text,
             mode="implementation",
         )
         file_references = self._file_references(combined_text)
-        profile_expansions = self._profile_expansions(tokens)
-        owner_terms = (
-            self._owner_domain_terms(tokens | profile_expansions)
-            if profile_expansions
-            else set()
-        )
+        implementation_file_references = {
+            file_reference
+            for file_reference in file_references
+            if not self._is_support_reference(file_reference)
+        }
+        owner_terms = self._owner_domain_terms(self._tokens(combined_text))
         packets: list[CodeQueryPacket] = []
 
         for query in base_queries:
             implementation_query = self._sanitize_implementation_query(query)
-            if not implementation_query:
-                continue
-
-            packets.append(
-                CodeQueryPacket(
-                    mode="implementation",
-                    query=implementation_query,
-                    purpose="incident_owner",
+            if implementation_query:
+                packets.append(
+                    CodeQueryPacket(
+                        mode="implementation",
+                        query=implementation_query,
+                        purpose="incident_owner",
+                    )
                 )
-            )
 
         if owner_terms:
             packets.append(
@@ -189,11 +216,6 @@ class CodeQueryRules:
                 )
             )
 
-        implementation_file_references = {
-            file_reference
-            for file_reference in file_references
-            if not self._is_support_reference(file_reference)
-        }
         if implementation_file_references:
             packets.append(
                 CodeQueryPacket(
@@ -237,7 +259,6 @@ class CodeQueryRules:
         queries = [query.strip() for query in decision.queries if query.strip()]
         if queries:
             return queries
-
         return [decision.reason.strip()]
 
     def _evidence_text(self, evidence_items: list[EvidenceItem]) -> str:
@@ -252,7 +273,6 @@ class CodeQueryRules:
                     *evidence.metadata.values(),
                 ]
             )
-
         return " ".join(value for value in values if value)
 
     def _evidence_queries(self, evidence_items: list[EvidenceItem]) -> list[str]:
@@ -266,20 +286,14 @@ class CodeQueryRules:
                     *evidence.metadata.values(),
                 ]
             )
-            tokens = self._tokens(evidence_text)
-            expansions = self._profile_expansions(tokens)
-            if expansions:
-                query_terms = self._owner_domain_terms(tokens | expansions)
-                identifiers = self.extract_exact_identifiers(
-                    evidence_text,
-                    mode="implementation",
-                )
-                query = self._sanitize_implementation_query(
-                    " ".join(sorted(query_terms | identifiers))
-                )
-                if query:
-                    queries.append(query)
-
+            terms = self._owner_domain_terms(self._tokens(evidence_text))
+            identifiers = self.extract_exact_identifiers(
+                evidence_text,
+                mode="implementation",
+            )
+            query = self._sanitize_implementation_query(" ".join(sorted(terms | identifiers)))
+            if query:
+                queries.append(query)
         return queries
 
     def _runtime_evidence(
@@ -300,7 +314,6 @@ class CodeQueryRules:
     ) -> bool:
         if evidence.source_type == EvidenceSourceType.LOG:
             return True
-
         if evidence.source_type not in {
             EvidenceSourceType.KNOWLEDGE_BASE,
             EvidenceSourceType.GRAPH,
@@ -317,23 +330,7 @@ class CodeQueryRules:
                 ]
             )
         )
-        meaningful_base_tokens = base_tokens - self.stopwords
-
-        if evidence_tokens & meaningful_base_tokens:
-            return True
-
-        base_expansions = self._profile_expansions(base_tokens)
-        evidence_expansions = self._profile_expansions(evidence_tokens)
-        return bool(base_expansions & evidence_expansions)
-
-    def _profile_expansions(self, tokens: set[str]) -> set[str]:
-        expansions: set[str] = set()
-
-        for profile in self.signal_profiles:
-            if tokens & profile.triggers:
-                expansions.update(profile.expansions)
-
-        return expansions
+        return bool(evidence_tokens & (base_tokens - self.stopwords))
 
     def extract_exact_identifiers(
         self,
@@ -353,7 +350,6 @@ class CodeQueryRules:
                 for identifier in identifiers
                 if not self._is_support_identifier(identifier)
             }
-
         return identifiers
 
     def extract_config_keys(self, value: str) -> set[str]:
@@ -423,17 +419,14 @@ class CodeQueryRules:
             if self._is_support_identifier(stripped):
                 continue
             kept_terms.append(stripped)
-
         return " ".join(kept_terms)
 
     def _is_support_identifier(self, value: str) -> bool:
         normalized = value.replace("\\", "/").strip().lower()
         if not normalized:
             return False
-
         if self._is_support_reference(normalized):
             return True
-
         normalized_name = normalized.rsplit("/", maxsplit=1)[-1]
         return normalized_name.startswith(TEST_IDENTIFIER_PREFIXES)
 
@@ -452,33 +445,20 @@ class CodeQueryRules:
         )
 
     def _owner_domain_terms(self, tokens: set[str]) -> set[str]:
-        tokens = {
-            token
-            for token in tokens
-            if not self._is_support_identifier(token)
-        }
         terms = {
             token
             for token in tokens
-            if token not in self.stopwords
+            if not self._is_support_identifier(token)
+            and token not in self.stopwords
             and len(token) > 2
             and not token.isdigit()
         }
-
-        if not terms:
-            return set()
-
         if len(terms) <= 18:
             return terms
 
-        profile_terms = self._profile_expansions(tokens)
-        exact_signal_terms = {token for token in tokens if "_" in token}
-        if profile_terms:
-            return profile_terms | exact_signal_terms
-
-        prioritized = profile_terms | exact_signal_terms
-        remaining = sorted(terms - prioritized)
-        return set(sorted(prioritized)[:18]) | set(remaining[: max(0, 18 - len(prioritized))])
+        exact_terms = {token for token in terms if "_" in token or "." in token}
+        remaining = sorted(terms - exact_terms)
+        return set(sorted(exact_terms)[:18]) | set(remaining[: max(0, 18 - len(exact_terms))])
 
     def _query_mentions_tests(self, tokens: set[str]) -> bool:
         return bool(tokens & TEST_MODE_TERMS)
@@ -503,11 +483,9 @@ class CodeQueryRules:
             normalized_query = " ".join(packet.query.split())
             if not normalized_query:
                 continue
-
             key = (packet.mode, normalized_query)
             if key in seen:
                 continue
-
             seen.add(key)
             unique_packets.append(
                 CodeQueryPacket(
@@ -539,7 +517,6 @@ class CodeQueryRules:
                 key=self._packet_priority,
             )[: self.max_implementation_queries]
         }
-
         return [
             packet
             for packet in packets
@@ -560,17 +537,3 @@ class CodeQueryRules:
             len(packet.query),
             packet.query,
         )
-
-    def _unique(self, queries: list[str]) -> list[str]:
-        unique_queries: list[str] = []
-        seen: set[str] = set()
-
-        for query in queries:
-            normalized = " ".join(query.split())
-            if not normalized or normalized in seen:
-                continue
-
-            seen.add(normalized)
-            unique_queries.append(normalized)
-
-        return unique_queries

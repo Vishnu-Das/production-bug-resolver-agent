@@ -631,7 +631,7 @@ async def test_graph_workflow_routes_to_kb_for_expected_behavior_mismatch() -> N
 
 
 @pytest.mark.asyncio
-async def test_graph_workflow_routes_to_historical_rca_for_recurrence_signal() -> None:
+async def test_graph_workflow_routes_to_historical_rca_for_recurrence_terms() -> None:
     supervisor = FakeSupervisorAgent(
         [
             decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-REPEAT logs"]),

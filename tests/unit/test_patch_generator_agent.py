@@ -246,7 +246,7 @@ async def test_patch_generator_skips_when_only_graph_and_test_evidence_exists() 
 
 
 @pytest.mark.asyncio
-async def test_patch_generator_rejects_upload_patch_to_routing_even_if_code_backed() -> None:
+async def test_patch_generator_allows_readable_code_backed_patch_without_domain_blocklist() -> None:
     llm_client = FakeLLMClient(
         PatchGenerationResult(
             file_patches=[
@@ -283,9 +283,11 @@ async def test_patch_generator_rejects_upload_patch_to_routing_even_if_code_back
         )
     )
 
-    assert result.generated_diff is False
-    assert result.file_patches == []
-    assert any("routing code" in warning for warning in result.warnings)
+    assert result.generated_diff is True
+    assert [patch.file_path for patch in result.file_patches] == [
+        "src/rag/routing/rule_based.py"
+    ]
+    assert result.warnings == []
 
 
 @pytest.mark.asyncio
