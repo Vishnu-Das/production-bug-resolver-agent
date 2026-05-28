@@ -16,7 +16,7 @@ from bug_resolver.utils.ids import new_recommendation_id
 from bug_resolver.utils.observability import get_logger
 
 
-ANALYZE_ONLY_FORBIDDEN_PHRASES = (
+ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES = (
     "i fixed",
     "we fixed",
     "has been fixed",
@@ -28,7 +28,6 @@ ANALYZE_ONLY_FORBIDDEN_PHRASES = (
     "opened a pull request",
     "created a pull request",
 )
-
 EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
     r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"
     r"evidence-[A-Za-z0-9_./\\:-]+)\b",
@@ -239,7 +238,9 @@ class SolutionRecommendationAgent(BaseAgent[RCAReport, SolutionRecommendation]):
             *output.risk_notes,
         ]
         combined_text = "\n".join(values).lower()
-        return any(phrase in combined_text for phrase in ANALYZE_ONLY_FORBIDDEN_PHRASES)
+        return any(
+            phrase in combined_text for phrase in ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES
+        )
 
     def _contains_evidence_id_in_prose(
         self,

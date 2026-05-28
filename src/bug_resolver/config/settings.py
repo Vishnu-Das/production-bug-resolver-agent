@@ -26,6 +26,20 @@ class AppSettings(BaseSettings):
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     llm_model: str = Field(default="gpt-4o-mini", alias="LLM_MODEL")
+    supervisor_llm_model: str = Field(default="", alias="SUPERVISOR_LLM_MODEL")
+    rca_writer_llm_model: str = Field(default="", alias="RCA_WRITER_LLM_MODEL")
+    solution_recommender_llm_model: str = Field(
+        default="",
+        alias="SOLUTION_RECOMMENDER_LLM_MODEL",
+    )
+    patch_suggestion_llm_model: str = Field(
+        default="",
+        alias="PATCH_SUGGESTION_LLM_MODEL",
+    )
+    patch_generator_llm_model: str = Field(
+        default="",
+        alias="PATCH_GENERATOR_LLM_MODEL",
+    )
     embedding_model: str = Field(default="text-embedding-3-small", alias="EMBEDDING_MODEL")
     langsmith_tracing: bool = Field(
         default=False,
@@ -56,6 +70,31 @@ class AppSettings(BaseSettings):
         alias="MAX_INVESTIGATION_STEPS",
     )
     confidence_threshold: float = Field(default=0.75, alias="CONFIDENCE_THRESHOLD")
+
+    @property
+    def supervisor_model(self) -> str:
+        """Return the configured supervisor model or the global default."""
+        return self.supervisor_llm_model or self.llm_model
+
+    @property
+    def rca_writer_model(self) -> str:
+        """Return the configured RCA writer model or the global default."""
+        return self.rca_writer_llm_model or self.llm_model
+
+    @property
+    def solution_recommender_model(self) -> str:
+        """Return the configured solution model or the global default."""
+        return self.solution_recommender_llm_model or self.llm_model
+
+    @property
+    def patch_suggestion_model(self) -> str:
+        """Return the configured patch suggestion model or the global default."""
+        return self.patch_suggestion_llm_model or self.llm_model
+
+    @property
+    def patch_generator_model(self) -> str:
+        """Return the configured patch generator model or the global default."""
+        return self.patch_generator_llm_model or self.llm_model
 
 
 def get_settings() -> AppSettings:

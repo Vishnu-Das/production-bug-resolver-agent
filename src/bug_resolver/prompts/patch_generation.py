@@ -13,6 +13,9 @@ class PatchGenerationPromptBuilder:
         return (
             "You generate human-reviewable unified diffs for production bug fixes. "
             "Do not apply patches. Do not claim code has changed. Do not invent files. "
+            "Prefer standard unified diffs with --- a/path and +++ b/path headers. "
+            "apply_patch-style update blocks are acceptable only when they update the "
+            "same readable affected file. "
             "Only modify files whose exact contents are provided. If code context is "
             "insufficient, return open questions or warnings instead of fake diffs. "
             "Historical RCA and knowledge-base evidence are supporting context only; "
@@ -44,7 +47,10 @@ class PatchGenerationPromptBuilder:
             "Exact readable target file contents:\n"
             f"{self._format_file_contents(file_contents)}\n\n"
             "Return patches only for readable affected files listed above. "
-            "Use unified diff format with headers for the same file path."
+            "Prefer standard unified diff format with headers for the same file path, "
+            "for example --- a/src/file.py and +++ b/src/file.py. If you return "
+            "apply_patch syntax, use only *** Update File for one readable affected "
+            "file; do not use add, delete, or move patch operations."
         )
 
     def _format_list(self, values: list[str]) -> str:

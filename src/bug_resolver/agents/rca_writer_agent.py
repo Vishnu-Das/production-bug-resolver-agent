@@ -16,14 +16,7 @@ from bug_resolver.utils.ids import new_rca_report_id
 from bug_resolver.utils.observability import get_logger
 
 
-HYPOTHESIS_PREFIX_PATTERN = re.compile(r"^H\d+\s*:?\s*", re.IGNORECASE)
-EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
-    r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"
-    r"evidence-[A-Za-z0-9_./\\:-]+)\b",
-    re.IGNORECASE,
-)
-
-ANALYZE_ONLY_FORBIDDEN_PHRASES = (
+ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES = (
     "i fixed",
     "we fixed",
     "has been fixed",
@@ -35,15 +28,43 @@ ANALYZE_ONLY_FORBIDDEN_PHRASES = (
     "opened a pull request",
     "created a pull request",
 )
+INTERNAL_EVIDENCE_PREFIXES = (
+    "evidence-src/",
+    "evidence-src\\",
+    "evidence-tests/",
+    "evidence-tests\\",
+    "evidence-eval/",
+    "evidence-eval\\",
+    "evidence-docs/",
+    "evidence-docs\\",
+)
+LOG_FINDING_MARKERS = (
+    "log evidence",
+    "logged",
+    "request_id=",
+    "trace_id=",
+    "user feedback",
+    "warning ",
+    " error ",
+    " info ",
+)
+HYPOTHESIS_PREFIX_PATTERN = re.compile(r"^H\d+\s*:?\s*", re.IGNORECASE)
+EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
+    r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"
+    r"evidence-[A-Za-z0-9_./\\:-]+)\b",
+    re.IGNORECASE,
+)
+
 logger = get_logger(__name__)
 
 
 class RCAWriterFallback(Exception):
     """Internal control exception carrying the deterministic fallback reason."""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, *, details: dict[str, list[str]] | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.details = details or {}
 
 
 class RCAWriterOutput(StrictBaseModel):
@@ -128,7 +149,11 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             )
             return report
         except RCAWriterFallback as error:
-            logger.warning("rca writer using fallback reason=%s", error.reason)
+            logger.warning(
+                "rca writer using fallback reason=%s details=%s",
+                error.reason,
+                error.details,
+            )
             return self._with_fallback_metadata(
                 deterministic_report,
                 reason=error.reason,
@@ -191,26 +216,43 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
         output: RCAWriterOutput,
         fallback_report: RCAReport,
     ) -> RCAReport:
-        allowed_evidence_ids = set(fallback_report.evidence_ids)
+        collected_evidence_ids = {evidence.evidence_id for evidence in state.evidence_items}
+        selected_evidence_ids = set(fallback_report.evidence_ids)
         invalid_evidence_ids = [
             evidence_id
             for evidence_id in output.evidence_ids
-            if evidence_id not in allowed_evidence_ids
+            if evidence_id not in collected_evidence_ids
         ]
         if invalid_evidence_ids:
-            raise RCAWriterFallback("invalid_evidence_id")
+            raise RCAWriterFallback(
+                "invalid_evidence_id",
+                details={"invalid_ids": invalid_evidence_ids},
+            )
 
         evidence_ids = [
             evidence_id
             for evidence_id in output.evidence_ids
-            if evidence_id in allowed_evidence_ids
+            if evidence_id in collected_evidence_ids
         ]
+        extra_collected_evidence_ids = [
+            evidence_id
+            for evidence_id in evidence_ids
+            if evidence_id not in selected_evidence_ids
+        ]
+        if extra_collected_evidence_ids:
+            logger.info(
+                "rca writer accepted collected evidence outside deterministic selection ids=%s",
+                extra_collected_evidence_ids,
+            )
         hypotheses_considered, selected_hypothesis_id = self._normalize_hypotheses(
             output.hypotheses_considered,
             output.selected_hypothesis_id,
         )
         if not evidence_ids:
-            raise RCAWriterFallback("invalid_evidence_id")
+            raise RCAWriterFallback(
+                "invalid_evidence_id",
+                details={"invalid_ids": output.evidence_ids},
+            )
 
         if output.confidence_score < state.confidence_threshold and not output.open_questions:
             raise RCAWriterFallback("llm_call_failed")
@@ -237,10 +279,18 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             raise RCAWriterFallback("forbidden_completion_claim")
 
         if self._contains_internal_evidence_path(output):
-            raise RCAWriterFallback("internal_evidence_prefix_in_prose")
+            raise RCAWriterFallback(
+                "internal_evidence_prefix_in_prose",
+                details={
+                    "matches": self._internal_evidence_path_matches(output),
+                },
+            )
 
         if self._contains_evidence_id_in_prose(output):
-            raise RCAWriterFallback("invalid_evidence_id")
+            raise RCAWriterFallback(
+                "invalid_evidence_id",
+                details={"matches": self._evidence_id_prose_matches(output)},
+            )
 
         if self._has_misclassified_findings(output):
             raise RCAWriterFallback("llm_call_failed")
@@ -370,44 +420,38 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             output.low_confidence_warning or "",
         ]
         combined_text = "\n".join(values).lower()
-        return any(phrase in combined_text for phrase in ANALYZE_ONLY_FORBIDDEN_PHRASES)
+        return any(
+            phrase in combined_text for phrase in ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES
+        )
 
     def _contains_internal_evidence_path(self, output: RCAWriterOutput) -> bool:
-        combined_text = "\n".join(self._output_text_values(output)).lower()
-        internal_prefixes = (
-            "evidence-src/",
-            "evidence-src\\",
-            "evidence-tests/",
-            "evidence-tests\\",
-            "evidence-eval/",
-            "evidence-eval\\",
-            "evidence-docs/",
-            "evidence-docs\\",
-        )
-        return any(prefix in combined_text for prefix in internal_prefixes)
+        return bool(self._internal_evidence_path_matches(output))
+
+    def _internal_evidence_path_matches(self, output: RCAWriterOutput) -> list[str]:
+        matches: list[str] = []
+        for value in self._output_text_values(output):
+            normalized_value = value.lower()
+            if any(prefix in normalized_value for prefix in INTERNAL_EVIDENCE_PREFIXES):
+                matches.append(value)
+        return matches[:5]
 
     def _contains_evidence_id_in_prose(self, output: RCAWriterOutput) -> bool:
-        return any(
-            EVIDENCE_ID_IN_PROSE_PATTERN.search(value)
-            for value in self._output_text_values(output)
-        )
+        return bool(self._evidence_id_prose_matches(output))
+
+    def _evidence_id_prose_matches(self, output: RCAWriterOutput) -> list[str]:
+        matches: list[str] = []
+        for value in self._output_text_values(output):
+            match = EVIDENCE_ID_IN_PROSE_PATTERN.search(value)
+            if match is not None:
+                matches.append(match.group(0))
+        return matches[:10]
 
     def _has_misclassified_findings(self, output: RCAWriterOutput) -> bool:
         return any(self._looks_like_log_finding(finding) for finding in output.code_findings)
 
     def _looks_like_log_finding(self, value: str) -> bool:
         normalized = value.lower()
-        log_markers = (
-            "log evidence",
-            "logged",
-            "request_id=",
-            "trace_id=",
-            "user feedback",
-            "warning ",
-            " error ",
-            " info ",
-        )
-        return any(marker in normalized for marker in log_markers)
+        return any(marker in normalized for marker in LOG_FINDING_MARKERS)
 
     def _contains_unbalanced_inline_code(self, output: RCAWriterOutput) -> bool:
         return any(value.count("`") % 2 == 1 for value in self._output_text_values(output))

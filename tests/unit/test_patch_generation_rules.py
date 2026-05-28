@@ -100,6 +100,105 @@ def test_patch_generation_rules_rejects_mismatched_diff_header() -> None:
     assert any("headers do not match" in warning for warning in validated.warnings)
 
 
+def test_patch_generation_rules_normalizes_apply_patch_format() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/services/upload_service.py",
+                unified_diff=(
+                    "*** Begin Patch\n"
+                    "*** Update File: src/services/upload_service.py\n"
+                    "@@\n"
+                    "-    if filename in st.session_state.processed_uploads:\n"
+                    "+    if content_hash in st.session_state.processed_uploads:\n"
+                    "         return\n"
+                    "*** End Patch"
+                ),
+                reason="Use content identity for duplicate detection.",
+                confidence_score=0.7,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/services/upload_service.py"},
+    )
+
+    assert validated.generated_diff is True
+    assert len(validated.file_patches) == 1
+    assert validated.file_patches[0].unified_diff.startswith(
+        "--- a/src/services/upload_service.py\n+++ b/src/services/upload_service.py\n"
+    )
+    assert "*** Begin Patch" not in validated.file_patches[0].unified_diff
+    assert validated.warnings == []
+
+
+def test_patch_generation_rules_normalizes_fenced_apply_patch_format() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/services/upload_service.py",
+                unified_diff=(
+                    "```patch\n"
+                    "*** Begin Patch\n"
+                    "*** Update File: .\\src\\services\\upload_service.py\n"
+                    "@@\n"
+                    "-    st.session_state.processed_uploads.add(filename)\n"
+                    "+    st.session_state.processed_uploads.add(content_hash)\n"
+                    "*** End Patch\n"
+                    "```"
+                ),
+                reason="Use content identity for duplicate detection.",
+                confidence_score=0.7,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/services/upload_service.py"},
+    )
+
+    assert validated.generated_diff is True
+    assert len(validated.file_patches) == 1
+    assert validated.file_patches[0].unified_diff.startswith(
+        "--- a/src/services/upload_service.py\n+++ b/src/services/upload_service.py\n"
+    )
+    assert "```" not in validated.file_patches[0].unified_diff
+    assert validated.warnings == []
+
+
+def test_patch_generation_rules_rejects_apply_patch_add_file() -> None:
+    rules = PatchGenerationRules()
+    result = PatchGenerationResult(
+        file_patches=[
+            FilePatch(
+                file_path="src/app.py",
+                unified_diff=(
+                    "*** Begin Patch\n"
+                    "*** Add File: src/app.py\n"
+                    "+print('invented')\n"
+                    "*** End Patch"
+                ),
+                reason="Invent a file.",
+                confidence_score=0.4,
+            )
+        ],
+    )
+
+    validated = rules.validate_patch_result(
+        result=result,
+        allowed_files={"src/app.py"},
+    )
+
+    assert validated.generated_diff is False
+    assert validated.file_patches == []
+    assert any("headers do not match" in warning for warning in validated.warnings)
+
+
 def test_patch_generation_rules_rejects_placeholder_implementation() -> None:
     rules = PatchGenerationRules()
     result = PatchGenerationResult(
@@ -162,7 +261,7 @@ def test_patch_generation_rules_rejects_signature_changing_single_file_patch() -
     assert any("function signature" in warning for warning in validated.warnings)
 
 
-def test_patch_generation_rules_rejects_upload_dedupe_patch_to_routing_file() -> None:
+def test_patch_generation_rules_allows_readable_approved_patch_without_domain_blocklist() -> None:
     rules = PatchGenerationRules()
     result = PatchGenerationResult(
         file_patches=[
@@ -187,9 +286,11 @@ def test_patch_generation_rules_rejects_upload_dedupe_patch_to_routing_file() ->
         incident_context="duplicate upload content_hash ingestion bug",
     )
 
-    assert validated.generated_diff is False
-    assert validated.file_patches == []
-    assert any("routing code" in warning for warning in validated.warnings)
+    assert validated.generated_diff is True
+    assert [patch.file_path for patch in validated.file_patches] == [
+        "src/rag/routing/rule_based.py"
+    ]
+    assert validated.warnings == []
 
 
 def test_patch_generation_rules_generated_diff_false_when_all_patches_rejected() -> None:

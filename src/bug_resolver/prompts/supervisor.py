@@ -33,7 +33,7 @@ class SupervisorPromptBuilder:
             "- `graph_investigator`: Use for structural code questions such as callers, "
             "callees, imports, config reads, ownership, or class/function relationships. "
             "Prefer this after code evidence already exists. Use it before code evidence "
-            "only when there is a strong structural signal such as a Python file path, "
+            "only when there is a strong structural anchor such as a Python file path, "
             "config key, function name, class name, or `Class.method` reference.\n"
             "- `historical_rca_investigator`: Use when the incident mentions recurrence, "
             "similar incidents, previous RCA, regressions, known issues, or the same "

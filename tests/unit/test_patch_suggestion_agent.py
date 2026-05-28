@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
+import bug_resolver.rules.patch_suggestion_rules as patch_suggestion_rules
 from bug_resolver.agents import PatchSuggestionAgent, PatchSuggestionInput
 from bug_resolver.agents.patch_suggestion_agent import PatchSuggestionNarrativeOutput
 from bug_resolver.schemas import RCAReport, SolutionRecommendation
@@ -45,6 +48,68 @@ def build_rca_report_with_graph_context() -> RCAReport:
     )
 
 
+def build_inc_007_style_rca_report_with_supporting_context() -> RCAReport:
+    return RCAReport(
+        report_id="RCA-007",
+        incident_id="INC-007",
+        title="Duplicate document records after upload",
+        incident_summary="Users saw duplicate document records after upload.",
+        root_cause=(
+            "The upload flow used filename-based duplicate tracking instead of "
+            "content-based identity."
+        ),
+        technical_explanation=(
+            "src/services/upload_service.py computes a content hash but checks "
+            "filename state before calling src/ingest.py. src/ingest.py is the "
+            "direct entry point called after the faulty duplicate check and creates "
+            "records for each accepted file. "
+            "src/rag/retrieval/parent_child/ingestion.py propagates the already "
+            "accepted document into a downstream component, increasing blast radius. "
+            "src/rag/pipeline.py later deduplicates returned documents, which can "
+            "reduce but not eliminate the duplicate records. "
+            "src/rag/retrieval/fusion/strategy.py is a downstream safeguard "
+            "rather than the root-cause guard."
+        ),
+        code_findings=[
+            (
+                "src/services/upload_service.py:handle_file_upload computes a "
+                "content hash but uses filename-based duplicate detection."
+            ),
+            (
+                "src/ingest.py:ingest_single_document is the direct entry point "
+                "called after the faulty duplicate check and creates records for "
+                "each accepted file."
+            ),
+            (
+                "src/rag/retrieval/parent_child/ingestion.py:ingest_parent_child_documents "
+                "propagates the already accepted document into a downstream "
+                "component, increasing blast radius."
+            ),
+            (
+                "src/rag/pipeline.py:process_documents_with_scores later "
+                "deduplicates returned documents, which can reduce but not "
+                "eliminate duplicate records."
+            ),
+            (
+                "src/rag/retrieval/fusion/strategy.py:deduplicate_retrieved_docs "
+                "is a downstream safeguard rather than the root-cause guard."
+            ),
+        ],
+        evidence_ids=[
+            "EVID-LOG-001",
+            "evidence-src/services/upload_service.py:handle_file_upload",
+            "evidence-src/ingest.py:ingest_single_document",
+            "evidence-src/rag/retrieval/parent_child/ingestion.py:ingest_parent_child_documents",
+            "evidence-src/rag/pipeline.py:process_documents_with_scores",
+            "evidence-src/rag/retrieval/fusion/strategy.py:deduplicate_retrieved_docs",
+        ],
+        confidence_score=0.8,
+        confidence_reason="Logs and code agree.",
+        immediate_fix="Use content hash as the primary upload identity before ingestion.",
+        tests_to_add=["Add same-content different-filename upload test."],
+    )
+
+
 def build_solution() -> SolutionRecommendation:
     return SolutionRecommendation(
         recommendation_id="SOL-010",
@@ -66,6 +131,28 @@ def build_solution() -> SolutionRecommendation:
             "kb-upload-ingestion",
             "evidence-src/services/upload_service.py:handle_file_upload",
             "historical-INC-007",
+        ],
+    )
+
+
+def build_inc_007_style_solution_with_supporting_context() -> SolutionRecommendation:
+    return SolutionRecommendation(
+        recommendation_id="SOL-007",
+        incident_id="INC-007",
+        rca_report_id="RCA-007",
+        summary="Use content hash for duplicate upload handling.",
+        immediate_steps=[
+            "Use content hash as the primary upload identity before ingestion starts.",
+            "Reject, merge, or version same-content uploads before ingestion.",
+        ],
+        tests_to_add=["Verify same-content uploads do not create duplicate records."],
+        confidence_score=0.8,
+        evidence_ids=[
+            "evidence-src/services/upload_service.py:handle_file_upload",
+            "evidence-src/ingest.py:ingest_single_document",
+            "evidence-src/rag/retrieval/parent_child/ingestion.py:ingest_parent_child_documents",
+            "evidence-src/rag/pipeline.py:process_documents_with_scores",
+            "evidence-src/rag/retrieval/fusion/strategy.py:deduplicate_retrieved_docs",
         ],
     )
 
@@ -153,6 +240,39 @@ async def test_patch_suggestion_agent_keeps_graph_context_out_of_affected_files(
     assert result.metadata["supporting_context_files"] == (
         "src/rag/service.py, src/ui/chat.py"
     )
+
+
+@pytest.mark.asyncio
+async def test_patch_suggestion_agent_keeps_supporting_context_out_of_affected_files() -> None:
+    agent = PatchSuggestionAgent()
+
+    result = await agent.run(
+        PatchSuggestionInput(
+            rca_report=build_inc_007_style_rca_report_with_supporting_context(),
+            solution_recommendation=build_inc_007_style_solution_with_supporting_context(),
+        )
+    )
+
+    assert result.affected_files == [
+        "src/services/upload_service.py",
+        "src/ingest.py",
+    ]
+    assert result.metadata["supporting_context_files"] == (
+        "src/rag/retrieval/parent_child/ingestion.py, "
+        "src/rag/pipeline.py, "
+        "src/rag/retrieval/fusion/strategy.py"
+    )
+
+
+def test_patch_suggestion_rules_do_not_hardcode_target_repo_terms() -> None:
+    module_source = inspect.getsource(patch_suggestion_rules)
+
+    assert "parent_child" not in module_source
+    assert "vectorstore" not in module_source
+    assert "rerank" not in module_source
+    assert "retrieval-time" not in module_source
+    assert "content hash" not in module_source
+    assert "filename" not in module_source
 
 
 @pytest.mark.asyncio

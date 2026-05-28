@@ -124,7 +124,7 @@ class GuardrailEngine:
                 violated_rules.append("finish_requires_report_or_low_confidence")
 
         if self._graph_rules.should_block_graph_before_code(state, decision):
-            violated_rules.append("graph_investigator_requires_code_or_structural_signal")
+            violated_rules.append("graph_investigator_requires_code_or_structural_anchor")
 
         if violated_rules:
             guardrail_decision = GuardrailDecision(

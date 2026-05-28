@@ -25,12 +25,12 @@ class GuardrailGraphRules:
         if self._evidence_rules.has_code_evidence(state):
             return False
 
-        if self.has_strong_graph_signal(state, decision):
+        if self.has_strong_graph_anchor(state, decision):
             return False
 
         return True
 
-    def has_strong_graph_signal(
+    def has_strong_graph_anchor(
         self,
         state: WorkflowState,
         decision: AgentDecision,

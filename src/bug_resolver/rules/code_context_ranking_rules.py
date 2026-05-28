@@ -10,61 +10,27 @@ from typing import Literal
 from bug_resolver.rules.code_evidence_path_rules import CodeEvidencePathRules
 from bug_resolver.schemas.code_context import CodeContext
 
-
-TEST_QUERY_TERMS = {
-    "test",
-    "tests",
-    "pytest",
-    "unittest",
-    "regression",
-    "assert",
-}
-
+CodeContextMode = Literal["implementation", "test", "config", "all"]
+SOURCE_EXTENSIONS = {".py", ".js", ".jsx", ".ts", ".tsx"}
+CONFIG_EXTENSIONS = {".env", ".ini", ".json", ".toml", ".yaml", ".yml"}
+CONFIG_FILE_NAMES = {"Dockerfile", "docker-compose.yml", "docker-compose.yaml"}
+CONFIG_DIRECTORY_MARKERS = ("/config/", "/configs/", "/settings/")
 CONFIG_QUERY_TERMS = {
+    "compose",
     "config",
     "configuration",
-    "settings",
+    "docker",
     "env",
     "environment",
-    "json",
+    "requirements",
+    "setting",
+    "settings",
+    "toml",
     "yaml",
     "yml",
-    "toml",
-    "docker",
-    "compose",
 }
-
-INIT_QUERY_TERMS = {
-    "init",
-    "__init__",
-    "package",
-    "export",
-    "exports",
-}
-
-SOURCE_EXTENSIONS = {
-    ".py",
-    ".js",
-    ".ts",
-    ".tsx",
-    ".jsx",
-    ".java",
-    ".go",
-    ".rs",
-    ".cs",
-}
-
-CONFIG_EXTENSIONS = {
-    ".json",
-    ".yaml",
-    ".yml",
-    ".toml",
-    ".ini",
-    ".cfg",
-    ".md",
-}
-
-CodeContextMode = Literal["implementation", "test", "config", "all"]
+INIT_QUERY_TERMS = {"init", "__init__", "package", "exports"}
+TEST_QUERY_TERMS = {"assert", "coverage", "fixture", "pytest", "test", "tests"}
 
 
 class CodeContextRankingRules:
@@ -308,23 +274,13 @@ class CodeContextRankingRules:
         path_obj = PurePosixPath(path)
         return (
             path_obj.suffix in CONFIG_EXTENSIONS
-            or path_obj.name in {
-                "dockerfile",
-                ".env",
-                ".env.example",
-                "docker-compose.yml",
-                "requirements.txt",
-                "pyproject.toml",
-                "readme.md",
-            }
+            or path_obj.name in CONFIG_FILE_NAMES
+            or path_obj.name.startswith(".env")
         )
 
     def _is_config_directory(self, path: str) -> bool:
         normalized = f"/{path.strip('/')}/"
-        return any(
-            marker in normalized
-            for marker in ("/config/", "/configs/", "/settings/", "/docs/")
-        )
+        return any(marker in normalized for marker in CONFIG_DIRECTORY_MARKERS)
 
     def _is_test_path(self, path: str) -> bool:
         path_obj = PurePosixPath(path)

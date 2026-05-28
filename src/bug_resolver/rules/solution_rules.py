@@ -1,4 +1,4 @@
-"""Deterministic solution recommendation rules used as writer fallback."""
+"""Deterministic solution recommendation helpers."""
 
 from __future__ import annotations
 
@@ -42,18 +42,8 @@ class SolutionRules:
         if rca_report.long_term_prevention:
             steps.append(rca_report.long_term_prevention)
 
-        if self._is_invalid_summary_strategy_rca(rca_report):
-            steps.append(
-                "Keep the LLM router output schema, prompt instructions, and retrieval "
-                "strategy enum in sync so unsupported conceptual labels cannot be emitted."
-            )
-            steps.append(
-                "Document the supported retrieval strategies and the expected mapping "
-                "for summary-style selected-document questions."
-            )
-        else:
-            steps.append("Add input and output contract checks around the implicated code path.")
-            steps.append("Document the expected behavior and failure mode for future incidents.")
+        steps.append("Add input and output contract checks around the implicated code path.")
+        steps.append("Document the expected behavior and failure mode for future incidents.")
 
         return self.unique(steps)
 
@@ -73,23 +63,10 @@ class SolutionRules:
         return self.unique(tests)
 
     def build_monitoring_improvements(self, rca_report: RCAReport) -> list[str]:
-        if self._is_invalid_summary_strategy_rca(rca_report):
-            improvements = [
-                (
-                    "Log the raw LLM router strategy value, normalized strategy value, "
-                    "router type, fallback reason, request id, and trace id whenever "
-                    "router fallback occurs."
-                ),
-                (
-                    "Add a metric for unsupported LLM router strategy values so "
-                    "`summary`-style contract drift is visible before it affects users."
-                ),
-            ]
-        else:
-            improvements = [
-                "Add structured logging around the implicated code path.",
-                "Log request or trace identifiers with the error when available.",
-            ]
+        improvements = [
+            "Add structured logging around the implicated code path.",
+            "Log request or trace identifiers with the error when available.",
+        ]
 
         if rca_report.low_confidence_warning:
             improvements.append(
@@ -98,20 +75,10 @@ class SolutionRules:
 
         if not rca_report.log_findings:
             improvements.append(
-                "Improve runtime logging so future incidents include clear failure signals."
+                "Improve runtime logging so future incidents include clear failure facts."
             )
 
         return self.unique(improvements)
-
-    def _is_invalid_summary_strategy_rca(self, rca_report: RCAReport) -> bool:
-        combined_text = "\n".join(
-            [
-                rca_report.root_cause,
-                rca_report.technical_explanation,
-                rca_report.immediate_fix or "",
-            ]
-        ).lower()
-        return "invalid strategy: summary" in combined_text
 
     def build_risk_notes(self, rca_report: RCAReport) -> list[str]:
         risks: list[str] = []

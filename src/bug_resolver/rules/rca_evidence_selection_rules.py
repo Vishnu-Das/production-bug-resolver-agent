@@ -57,25 +57,25 @@ class RCAEvidenceSelectionRules:
         if len(evidence_items) <= 1:
             return evidence_items
 
-        signals = self.evidence_selection_rules.selection_signals(state)
-        if not signals:
+        incident_terms = self.evidence_selection_rules.selection_terms(state)
+        if not incident_terms:
             return evidence_items
 
         scored_items = [
             (
-                self.evidence_relevance_score(evidence, signals),
-                self.evidence_signal_score(evidence, signals),
+                self.evidence_relevance_score(evidence, incident_terms),
+                self.evidence_term_score(evidence, incident_terms),
                 evidence,
             )
             for evidence in evidence_items
         ]
-        strongest_signal_score = max(signal_score for _, signal_score, _ in scored_items)
+        strongest_term_score = max(term_score for _, term_score, _ in scored_items)
 
-        if strongest_signal_score <= 0:
+        if strongest_term_score <= 0:
             return evidence_items
 
-        signal_ratio = 0.65 if source_type == EvidenceSourceType.KNOWLEDGE_BASE else 0.5
-        minimum_signal_score = max(1.0, strongest_signal_score * signal_ratio)
+        term_ratio = 0.75 if source_type == EvidenceSourceType.KNOWLEDGE_BASE else 0.5
+        minimum_term_score = max(1.0, strongest_term_score * term_ratio)
         ranked_items = sorted(
             scored_items,
             key=lambda item: (
@@ -90,15 +90,15 @@ class RCAEvidenceSelectionRules:
         )
         selected_items = [
             evidence
-            for score, signal_score, evidence in ranked_items
-            if score > 0 and signal_score >= minimum_signal_score
+            for score, term_score, evidence in ranked_items
+            if score > 0 and term_score >= minimum_term_score
         ][:max_items]
 
         if not selected_items:
             return evidence_items
 
         if source_type in {EvidenceSourceType.CODE, EvidenceSourceType.GRAPH}:
-            return self._prefer_primary_code_evidence(selected_items, signals)
+            return self._prefer_primary_code_evidence(selected_items, incident_terms)
 
         return selected_items
 
@@ -114,28 +114,28 @@ class RCAEvidenceSelectionRules:
     def evidence_relevance_score(
         self,
         evidence: EvidenceItem,
-        signals: set[str],
+        incident_terms: set[str],
     ) -> float:
-        score = self.evidence_signal_score(evidence, signals)
+        score = self.evidence_term_score(evidence, incident_terms)
         score += (evidence.relevance_score or 0.0) * 0.5
 
         if evidence.source_type == EvidenceSourceType.CODE:
             score += self._code_finding_penalty(
                 self.formatter.display_path(evidence.file_path or evidence.source_name).lower(),
-                signals,
+                incident_terms,
             )
         if evidence.source_type == EvidenceSourceType.GRAPH:
             score += self._graph_finding_penalty(
                 self.formatter.display_path(evidence.file_path or evidence.source_name).lower(),
-                signals,
+                incident_terms,
             )
 
         return score
 
-    def evidence_signal_score(
+    def evidence_term_score(
         self,
         evidence: EvidenceItem,
-        signals: set[str],
+        incident_terms: set[str],
     ) -> float:
         path = self.formatter.display_path(evidence.file_path or evidence.source_name).lower()
         path_source_tokens = self.evidence_selection_rules.tokens(
@@ -150,33 +150,36 @@ class RCAEvidenceSelectionRules:
             )
         )
 
-        path_score = len(path_source_tokens & signals) * 3.0
-        content_score = min(len(content_tokens & signals), 10) * 1.0
+        path_multiplier = (
+            0.5 if evidence.source_type == EvidenceSourceType.KNOWLEDGE_BASE else 3.0
+        )
+        path_score = len(path_source_tokens & incident_terms) * path_multiplier
+        content_score = min(len(content_tokens & incident_terms), 10) * 1.0
 
         return path_score + content_score
 
     def _prefer_primary_code_evidence(
         self,
         evidence_items: list[EvidenceItem],
-        signals: set[str],
+        incident_terms: set[str],
     ) -> list[EvidenceItem]:
         primary_items = [
             evidence
             for evidence in evidence_items
             if self.code_path_rules.is_allowed_support_path(
                 self.formatter.display_path(evidence.file_path or evidence.source_name).lower(),
-                signals,
+                incident_terms,
             )
         ]
 
         return primary_items or evidence_items
 
-    def _code_finding_penalty(self, path: str, signals: set[str]) -> float:
+    def _code_finding_penalty(self, path: str, incident_terms: set[str]) -> float:
         penalty = 0.0
 
         penalty += self.code_path_rules.support_adjustment(
             path,
-            signals,
+            incident_terms,
             penalty=-2.0,
             mention_bonus=0.5,
         )
@@ -188,12 +191,12 @@ class RCAEvidenceSelectionRules:
 
         return penalty
 
-    def _graph_finding_penalty(self, path: str, signals: set[str]) -> float:
+    def _graph_finding_penalty(self, path: str, incident_terms: set[str]) -> float:
         penalty = 0.0
 
         penalty += self.code_path_rules.support_adjustment(
             path,
-            signals,
+            incident_terms,
             penalty=-8.0,
             mention_bonus=0.5,
         )

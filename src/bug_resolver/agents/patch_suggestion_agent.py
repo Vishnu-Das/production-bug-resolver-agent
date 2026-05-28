@@ -12,9 +12,7 @@ from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.utils.observability import get_logger
 
 
-logger = get_logger(__name__)
-
-FORBIDDEN_ANALYZE_ONLY_PHRASES = (
+PATCH_SUGGESTION_FORBIDDEN_PHRASES = (
     "i fixed",
     "we fixed",
     "has been fixed",
@@ -25,6 +23,7 @@ FORBIDDEN_ANALYZE_ONLY_PHRASES = (
     "created a pull request",
     "opened a pull request",
 )
+logger = get_logger(__name__)
 
 
 class PatchSuggestionInput(StrictBaseModel):
@@ -164,7 +163,7 @@ class PatchSuggestionAgent(BaseAgent[PatchSuggestionInput, PatchSuggestion]):
                 *output.warnings,
             ]
         ).lower()
-        return any(phrase in combined_text for phrase in FORBIDDEN_ANALYZE_ONLY_PHRASES)
+        return any(phrase in combined_text for phrase in PATCH_SUGGESTION_FORBIDDEN_PHRASES)
 
     def _build_system_prompt(self) -> str:
         return (

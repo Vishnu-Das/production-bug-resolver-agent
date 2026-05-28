@@ -2,8 +2,29 @@
 
 from __future__ import annotations
 
+import re
+
 from bug_resolver.schemas import PatchSuggestion, RCAReport, SolutionRecommendation
 from bug_resolver.utils.ids import new_patch_suggestion_id
+
+
+VALIDATION_STEP_PREFIXES = (
+    "run ",
+    "validate ",
+    "verify ",
+    "confirm ",
+    "reproduce ",
+    "test ",
+    "monitor ",
+)
+VALIDATION_STEP_TERMS = (
+    "test",
+    "validation",
+    "verify",
+    "reproduce",
+    "confirm",
+    "monitoring",
+)
 
 
 class PatchSuggestionRules:
@@ -16,15 +37,17 @@ class PatchSuggestionRules:
         solution: SolutionRecommendation,
     ) -> PatchSuggestion:
         """Create a deterministic patch suggestion from RCA and solution outputs."""
+        affected_files = self.affected_files_for_reports(
+            rca_report=rca_report,
+            solution=solution,
+        )
         return PatchSuggestion(
             suggestion_id=new_patch_suggestion_id(),
             incident_id=rca_report.incident_id,
             rca_report_id=rca_report.report_id,
             solution_recommendation_id=solution.recommendation_id,
             summary=self.build_summary(rca_report),
-            affected_files=self.affected_files(
-                [*rca_report.evidence_ids, *solution.evidence_ids]
-            ),
+            affected_files=affected_files,
             behavior_changes=self.behavior_changes(rca_report, solution),
             tests_to_add=self.tests_to_add(rca_report, solution),
             validation_commands=self.validation_commands(),
@@ -42,8 +65,10 @@ class PatchSuggestionRules:
                 "analyze_only": "true",
                 "target_repo_modified": "false",
                 "supporting_context_files": ", ".join(
-                    self.supporting_context_files(
-                        [*rca_report.evidence_ids, *solution.evidence_ids]
+                    self.supporting_context_files_for_reports(
+                        rca_report=rca_report,
+                        solution=solution,
+                        affected_files=affected_files,
                     )
                 ),
             },
@@ -66,6 +91,33 @@ class PatchSuggestionRules:
                 paths.append(path)
         return self.unique(paths)
 
+    def affected_files_for_reports(
+        self,
+        *,
+        rca_report: RCAReport,
+        solution: SolutionRecommendation,
+    ) -> list[str]:
+        evidence_ids = self.unique([*rca_report.evidence_ids, *solution.evidence_ids])
+        all_paths = self.affected_files(evidence_ids)
+        ranked_finding_paths = [
+            path
+            for path in self._paths_from_finding_text(rca_report.code_findings)
+            if path in all_paths
+        ]
+        if ranked_finding_paths:
+            return self.unique(ranked_finding_paths)[:2]
+
+        direct_paths = [
+            path
+            for path in all_paths
+            if self._path_is_named_in_fix_text(
+                path=path,
+                rca_report=rca_report,
+                solution=solution,
+            )
+        ]
+        return direct_paths or all_paths[:2]
+
     def supporting_context_files(self, evidence_ids: list[str]) -> list[str]:
         paths: list[str] = []
         for evidence_id in evidence_ids:
@@ -73,10 +125,27 @@ class PatchSuggestionRules:
                 evidence_id,
                 allow_graph=True,
             )
-            if path is None or path in self.affected_files(evidence_ids):
-                continue
-            paths.append(path)
+            if path is not None:
+                paths.append(path)
         return self.unique(paths)
+
+    def supporting_context_files_for_reports(
+        self,
+        *,
+        rca_report: RCAReport,
+        solution: SolutionRecommendation,
+        affected_files: list[str] | None = None,
+    ) -> list[str]:
+        evidence_ids = self.unique([*rca_report.evidence_ids, *solution.evidence_ids])
+        affected = set(affected_files or self.affected_files_for_reports(
+            rca_report=rca_report,
+            solution=solution,
+        ))
+        return [
+            path
+            for path in self.supporting_context_files(evidence_ids)
+            if path not in affected
+        ]
 
     def behavior_changes(
         self,
@@ -144,25 +213,57 @@ class PatchSuggestionRules:
 
     def _is_validation_step(self, value: str) -> bool:
         normalized = value.strip().lower()
-        validation_prefixes = (
-            "run ",
-            "validate ",
-            "verify ",
-            "confirm ",
-            "reproduce ",
-            "test ",
-            "monitor ",
+        return normalized.startswith(VALIDATION_STEP_PREFIXES) or any(
+            term in normalized for term in VALIDATION_STEP_TERMS
         )
-        validation_terms = (
-            "test",
-            "validation",
-            "verify",
-            "reproduce",
-            "confirm",
-            "monitoring",
+
+    def _path_is_named_in_fix_text(
+        self,
+        *,
+        path: str,
+        rca_report: RCAReport,
+        solution: SolutionRecommendation,
+    ) -> bool:
+        display_path = path.lower()
+        symbolless_path = path.split(":", maxsplit=1)[0].lower()
+        values = [
+            rca_report.root_cause,
+            rca_report.technical_explanation,
+            rca_report.immediate_fix or "",
+            rca_report.long_term_prevention or "",
+            solution.summary,
+            *solution.immediate_steps,
+        ]
+        return any(
+            display_path in value.lower() or symbolless_path in value.lower()
+            for value in values
         )
-        return normalized.startswith(validation_prefixes) or any(
-            term in normalized for term in validation_terms
+
+    def _paths_from_finding_text(self, findings: list[str]) -> list[str]:
+        paths: list[str] = []
+        for finding in findings:
+            if self._is_negative_or_supporting_finding(finding):
+                continue
+            paths.extend(
+                match.rstrip(".,;:")
+                for match in re.findall(
+                    r"\b(?:src|app|services|lib)/[A-Za-z0-9_./-]+\.(?:py|js|ts|tsx|jsx)",
+                    finding,
+                )
+            )
+        return self.unique(paths)
+
+    def _is_negative_or_supporting_finding(self, finding: str) -> bool:
+        normalized = finding.lower()
+        return any(
+            phrase in normalized
+            for phrase in (
+                "does not",
+                "do not",
+                "without owning",
+                "supporting context",
+                "rather than",
+            )
         )
 
     def unique(self, values: list[str] | object) -> list[str]:

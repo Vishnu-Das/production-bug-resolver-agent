@@ -11,7 +11,7 @@ from bug_resolver.schemas.common import EvidenceSourceType
 
 class LogAnalysisRules:
     """
-    Deterministic rules for extracting useful debugging signals from logs.
+    Deterministic rules for extracting useful debugging facts from logs.
 
     This class keeps parsing rules outside the agent so the agent remains thin.
     Later, we can replace or extend these rules without changing agent flow.

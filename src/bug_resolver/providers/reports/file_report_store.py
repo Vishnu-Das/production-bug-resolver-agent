@@ -143,7 +143,7 @@ class FileReportStore(ReportStore):
         markdown_path: Path,
     ) -> None:
         markdown_path.write_text(
-            self._build_patch_markdown(patch_suggestion),
+            self._markdown_safe(self._build_patch_markdown(patch_suggestion)),
             encoding="utf-8",
         )
 
@@ -153,13 +153,13 @@ class FileReportStore(ReportStore):
         markdown_path: Path,
     ) -> None:
         markdown_path.write_text(
-            self._build_solution_markdown(solution),
+            self._markdown_safe(self._build_solution_markdown(solution)),
             encoding="utf-8",
         )
 
     def _save_markdown(self, report: RCAReport, markdown_path: Path) -> None:
         markdown_path.write_text(
-            self._build_markdown(report),
+            self._markdown_safe(self._build_markdown(report)),
             encoding="utf-8",
         )
 
@@ -502,3 +502,20 @@ class FileReportStore(ReportStore):
                 break
 
         return value if evidence_id.startswith("evidence-") else evidence_id
+
+    def _markdown_safe(self, value: str) -> str:
+        """Normalize generated Markdown to ASCII-safe punctuation."""
+        return value.translate(
+            str.maketrans(
+                {
+                    "\u2018": "'",
+                    "\u2019": "'",
+                    "\u201c": '"',
+                    "\u201d": '"',
+                    "\u2013": "-",
+                    "\u2014": "-",
+                    "\u00a0": " ",
+                    "\u2026": "...",
+                }
+            )
+        )

@@ -36,7 +36,7 @@ def assert_patch_files_exist(report_dir: Path, incident_id: str) -> None:
 
 
 def report_json(report_dir: Path, incident_id: str) -> dict:
-    """Load generated RCA JSON for broad signal assertions."""
+    """Load generated RCA JSON for broad evidence assertions."""
     return json.loads(
         (report_dir / "incidents" / incident_id / "rca.json").read_text(
             encoding="utf-8"
@@ -50,7 +50,7 @@ def source_types(state) -> set[EvidenceSourceType]:
 
 
 def patch_json(report_dir: Path, incident_id: str) -> dict:
-    """Load generated patch JSON for broad signal assertions."""
+    """Load generated patch JSON for broad evidence assertions."""
     return json.loads(
         (report_dir / "incidents" / incident_id / "patch.json").read_text(
             encoding="utf-8"
@@ -259,7 +259,9 @@ async def test_inc_007_owner_discovery_prefers_upload_source_over_noisy_tests(
     assert "evidence-src/services/upload_service.py:handle_file_upload" in code_evidence_ids
     assert not any(evidence_id.startswith("evidence-tests/") for evidence_id in code_evidence_ids)
     assert generated_patch["affected_files"] == ["src/services/upload_service.py"]
-    assert generated_patch["metadata"]["supporting_context_files"] == "src/ui/chat.py"
+    supporting_context = generated_patch["metadata"]["supporting_context_files"]
+    assert "src/ui/chat.py" in supporting_context
+    assert "src/routing/retrieval_router.py" in supporting_context
     assert all(
         not file_path.startswith("tests/")
         for file_path in generated_patch["affected_files"]

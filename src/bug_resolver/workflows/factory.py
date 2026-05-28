@@ -32,12 +32,14 @@ from bug_resolver.providers.knowledge.local_knowledge_base_provider import (
 from bug_resolver.providers.logs.file_log_provider import FileLogProvider
 from bug_resolver.providers.patches import LocalFilePatchContextProvider
 from bug_resolver.providers.reports.file_report_store import FileReportStore
-from bug_resolver.rules import GuardrailEngine
+from bug_resolver.rules import CodeQueryRules, GuardrailEngine
 from bug_resolver.utils.observability import configure_langsmith_tracing
 from bug_resolver.workflows.dynamic_bug_resolution_workflow import (
     DynamicBugResolutionWorkflow,
 )
-from bug_resolver.workflows.workflow_dependencies import load_or_build_code_index
+from bug_resolver.workflows.workflow_dependencies import (
+    load_or_build_code_index,
+)
 
 
 async def build_dynamic_workflow(
@@ -60,9 +62,25 @@ async def build_dynamic_workflow(
             suggested_action="Set OPENAI_API_KEY in .env before running investigations.",
         )
 
-    llm_client = OpenAILLMClient(
+    supervisor_llm_client = OpenAILLMClient(
         api_key=settings.openai_api_key,
-        model=settings.llm_model,
+        model=settings.supervisor_model,
+    )
+    rca_writer_llm_client = OpenAILLMClient(
+        api_key=settings.openai_api_key,
+        model=settings.rca_writer_model,
+    )
+    solution_recommender_llm_client = OpenAILLMClient(
+        api_key=settings.openai_api_key,
+        model=settings.solution_recommender_model,
+    )
+    patch_suggestion_llm_client = OpenAILLMClient(
+        api_key=settings.openai_api_key,
+        model=settings.patch_suggestion_model,
+    )
+    patch_generator_llm_client = OpenAILLMClient(
+        api_key=settings.openai_api_key,
+        model=settings.patch_generator_model,
     )
     embedding_client = OpenAIEmbeddingClient(
         api_key=settings.openai_api_key,
@@ -75,17 +93,19 @@ async def build_dynamic_workflow(
 
     return DynamicBugResolutionWorkflow(
         incident_provider=FileIncidentProvider(settings.incidents_dir),
-        supervisor_agent=SupervisorAgent(llm_client),
+        supervisor_agent=SupervisorAgent(supervisor_llm_client),
         guardrail_engine=GuardrailEngine(),
         log_investigator_agent=LogInvestigatorAgent(FileLogProvider(settings.logs_dir)),
         code_investigator_agent=CodeInvestigatorAgent(
             FAISSCodeContextProvider(
                 vector_store=vector_store,
                 embedding_client=embedding_client,
-            )
+            ),
+            code_query_rules=CodeQueryRules(),
         ),
         code_graph_investigator_agent=CodeGraphInvestigatorAgent(
-            PythonASTCodeGraphProvider(settings.target_repo_path)
+            PythonASTCodeGraphProvider(settings.target_repo_path),
+            code_query_rules=CodeQueryRules(),
         ),
         historical_rca_investigator_agent=HistoricalRCAInvestigatorAgent(
             FileHistoricalRCAProvider(settings.historical_rca_dir)
@@ -94,11 +114,15 @@ async def build_dynamic_workflow(
             LocalKnowledgeBaseProvider(settings.knowledge_base_dir)
         ),
         evidence_evaluator_agent=EvidenceEvaluatorAgent(),
-        rca_writer_agent=RCAWriterAgent(llm_client=llm_client),
-        solution_recommendation_agent=SolutionRecommendationAgent(llm_client=llm_client),
-        patch_suggestion_agent=PatchSuggestionAgent(llm_client=llm_client),
+        rca_writer_agent=RCAWriterAgent(llm_client=rca_writer_llm_client),
+        solution_recommendation_agent=SolutionRecommendationAgent(
+            llm_client=solution_recommender_llm_client,
+        ),
+        patch_suggestion_agent=PatchSuggestionAgent(
+            llm_client=patch_suggestion_llm_client,
+        ),
         patch_generator_agent=PatchGeneratorAgent(
-            llm_client=llm_client,
+            llm_client=patch_generator_llm_client,
             patch_context_provider=LocalFilePatchContextProvider(settings.target_repo_path),
         ),
         report_writer_agent=ReportWriterAgent(FileReportStore(settings.reports_dir)),

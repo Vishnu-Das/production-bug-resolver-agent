@@ -43,11 +43,6 @@ class EvidenceFormattingRules:
 
     def display_path(self, path: str) -> str:
         normalized_path = path.replace("\\", "/")
-        repo_marker = "/conversational_rag/"
-        if repo_marker in normalized_path.lower():
-            marker_index = normalized_path.lower().index(repo_marker)
-            return normalized_path[marker_index + len(repo_marker) :]
-
         for marker in ("/src/", "/tests/", "/eval/", "/docs/", "/sample_data/"):
             if marker in normalized_path:
                 return f"{marker.strip('/')}/{normalized_path.split(marker, 1)[1]}"

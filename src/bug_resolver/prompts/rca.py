@@ -61,6 +61,9 @@ class RCAPromptBuilder:
             )
 
         evidence_text = "\n\n---\n\n".join(evidence_blocks)
+        collected_evidence_ids = ", ".join(
+            evidence.evidence_id for evidence in state.evidence_items
+        )
 
         return (
             "Write a structured RCA report from the evidence.\n\n"
@@ -75,7 +78,8 @@ class RCAPromptBuilder:
             "- Do not copy Evidence ID values into prose fields.\n"
             "- Use Display path values in prose when referring to files.\n"
             "- Never write internal evidence prefixes like evidence-src/ or evidence-tests/ in prose.\n\n"
-            f"Allowed evidence IDs: {', '.join(deterministic_report.evidence_ids)}\n\n"
+            f"Allowed evidence IDs: {collected_evidence_ids}\n"
+            f"Focused baseline evidence IDs: {', '.join(deterministic_report.evidence_ids)}\n\n"
             "Evidence blocks:\n"
             f"{evidence_text}\n\n"
             "Deterministic baseline RCA for grounding:\n"
@@ -83,7 +87,6 @@ class RCAPromptBuilder:
             "if they violate the Display path rules.\n"
             f"Root cause: {deterministic_report.root_cause}\n"
             f"Technical explanation: {deterministic_report.technical_explanation}\n"
-            f"Focused baseline evidence IDs: {', '.join(deterministic_report.evidence_ids)}\n"
             "Focused code findings baseline:\n"
             f"{self._format_baseline_list(deterministic_report.code_findings)}\n"
             "Focused graph findings baseline:\n"
