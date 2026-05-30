@@ -11,6 +11,13 @@ from bug_resolver.schemas.common import (
 )
 from bug_resolver.schemas.evaluation import EvidenceEvaluationResult
 from bug_resolver.schemas.evidence import EvidenceItem
+from bug_resolver.schemas.evidence_scoring import (
+    EvidenceCandidate,
+    EvidenceEvaluationResult as RetrievalEvidenceEvaluationResult,
+    EvidenceScoreBreakdown,
+    EvidenceSourceType as RetrievalEvidenceSourceType,
+    RankedEvidence,
+)
 from bug_resolver.schemas.errors import WorkflowErrorInfo
 from bug_resolver.schemas.hypothesis import Hypothesis
 from bug_resolver.schemas.historical_rca import HistoricalRCAContext
@@ -35,6 +42,15 @@ from bug_resolver.schemas.patch_suggestion import (
     PatchSuggestion,
 )
 from bug_resolver.schemas.rca import RCAReport
+from bug_resolver.schemas.retrieval import (
+    FileContextRequest,
+    GraphExpansionRequest,
+    IncidentFacts,
+    RetrievalAnchor,
+    RetrievalPlan,
+    RetrievalQuery,
+    StackFrame,
+)
 from bug_resolver.schemas.solution import SolutionRecommendation
 from bug_resolver.schemas.workflow_state import WorkflowState
 from bug_resolver.schemas.reports import ReportSaveResult
@@ -48,14 +64,19 @@ __all__ = [
     "AgentName",
     "AgentRunStatus",
     "EvidenceEvaluationResult",
+    "EvidenceCandidate",
     "EvidenceItem",
+    "EvidenceScoreBreakdown",
     "EvidenceSourceType",
+    "FileContextRequest",
     "FilePatch",
+    "GraphExpansionRequest",
     "GuardrailDecision",
     "Hypothesis",
     "HistoricalRCAContext",
     "HypothesisStatus",
     "Incident",
+    "IncidentFacts",
     "IncidentSeverity",
     "IncidentStatus",
     "InvestigationStatus",
@@ -68,7 +89,14 @@ __all__ = [
     "PatchGenerationResult",
     "PatchSuggestion",
     "RCAReport",
+    "RankedEvidence",
+    "RetrievalAnchor",
+    "RetrievalEvidenceEvaluationResult",
+    "RetrievalEvidenceSourceType",
+    "RetrievalPlan",
+    "RetrievalQuery",
     "SolutionRecommendation",
+    "StackFrame",
     "StackTraceFrame",
     "ToolCallRequest",
     "ToolCallResult",
