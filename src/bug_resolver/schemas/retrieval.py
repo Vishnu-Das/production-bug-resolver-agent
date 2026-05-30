@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import Field, model_validator
 
 from bug_resolver.schemas.common import ConfidenceScore, StrictBaseModel
+from bug_resolver.schemas.evidence_scoring import EvidenceCandidate
 
 
 class StackFrame(StrictBaseModel):
@@ -91,3 +92,21 @@ class RetrievalPlan(StrictBaseModel):
     file_context_requests: list[FileContextRequest] = Field(default_factory=list)
     graph_expansion_requests: list[GraphExpansionRequest] = Field(default_factory=list)
     kb_queries: list[RetrievalQuery] = Field(default_factory=list)
+
+
+class RetrievalProviderFailure(StrictBaseModel):
+    """A provider route that failed while parallel context retrieval continued."""
+
+    route: str = Field(..., min_length=1)
+    provider_name: str = Field(..., min_length=1)
+    error_type: str = Field(..., min_length=1)
+    message: str = Field(..., min_length=1)
+
+
+class RetrievalBatchResult(StrictBaseModel):
+    """Raw evidence candidates and recoverable failures from retrieval routes."""
+
+    candidates: list[EvidenceCandidate] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    failed_retrievers: list[str] = Field(default_factory=list)
+    failures: list[RetrievalProviderFailure] = Field(default_factory=list)
