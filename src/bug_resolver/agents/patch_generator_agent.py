@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from bug_resolver.agents.base import BaseAgent
 from bug_resolver.llm import LLMClient
 from bug_resolver.prompts import PatchGenerationPromptBuilder
 from bug_resolver.providers.patches import PatchContextProvider
-from bug_resolver.rules import PatchGenerationRules
+from bug_resolver.rules import PatchEvidenceAuthorizationRules, PatchGenerationRules
 from bug_resolver.schemas import (
+    EvidenceItem,
     PatchGenerationResult,
     RCAReport,
     SolutionRecommendation,
@@ -25,7 +28,8 @@ class PatchGeneratorInput(StrictBaseModel):
     rca_report: RCAReport
     solution_recommendation: SolutionRecommendation
     affected_files: list[str]
-    evidence_ids: list[str] = []
+    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_items: list[EvidenceItem] = Field(default_factory=list)
 
 
 class PatchGeneratorAgent(BaseAgent[PatchGeneratorInput, PatchGenerationResult]):
@@ -40,11 +44,15 @@ class PatchGeneratorAgent(BaseAgent[PatchGeneratorInput, PatchGenerationResult])
         llm_client: LLMClient | None = None,
         prompt_builder: PatchGenerationPromptBuilder | None = None,
         rules: PatchGenerationRules | None = None,
+        evidence_authorization_rules: PatchEvidenceAuthorizationRules | None = None,
     ) -> None:
         self._patch_context_provider = patch_context_provider
         self._llm_client = llm_client
         self._prompt_builder = prompt_builder or PatchGenerationPromptBuilder()
         self._rules = rules or PatchGenerationRules()
+        self._evidence_authorization_rules = (
+            evidence_authorization_rules or PatchEvidenceAuthorizationRules()
+        )
 
     async def _run(self, input_data: PatchGeneratorInput) -> PatchGenerationResult:
         authorized_files = self._code_backed_patch_targets(input_data)
@@ -120,7 +128,12 @@ class PatchGeneratorAgent(BaseAgent[PatchGeneratorInput, PatchGenerationResult])
         return validated_result
 
     def _code_backed_patch_targets(self, input_data: PatchGeneratorInput) -> list[str]:
-        code_evidence_paths = self._source_paths_from_code_evidence(input_data.evidence_ids)
+        code_evidence_paths = {
+            *self._evidence_authorization_rules.direct_source_paths(
+                input_data.evidence_items
+            ),
+            *self._source_paths_from_code_evidence(input_data.evidence_ids),
+        }
         affected_files = {
             self._normalize_path(file_path) for file_path in input_data.affected_files
         }

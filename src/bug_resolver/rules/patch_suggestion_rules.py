@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import re
 
-from bug_resolver.schemas import PatchSuggestion, RCAReport, SolutionRecommendation
+from bug_resolver.rules.patch_evidence_authorization_rules import (
+    PatchEvidenceAuthorizationRules,
+)
+from bug_resolver.schemas import (
+    EvidenceItem,
+    PatchSuggestion,
+    RCAReport,
+    SolutionRecommendation,
+)
 from bug_resolver.utils.ids import new_patch_suggestion_id
 
 
@@ -30,16 +38,26 @@ VALIDATION_STEP_TERMS = (
 class PatchSuggestionRules:
     """Build a human-reviewable patch plan without modifying target repositories."""
 
+    def __init__(
+        self,
+        evidence_authorization_rules: PatchEvidenceAuthorizationRules | None = None,
+    ) -> None:
+        self._evidence_authorization_rules = (
+            evidence_authorization_rules or PatchEvidenceAuthorizationRules()
+        )
+
     def build_patch_suggestion(
         self,
         *,
         rca_report: RCAReport,
         solution: SolutionRecommendation,
+        evidence_items: list[EvidenceItem] | None = None,
     ) -> PatchSuggestion:
         """Create a deterministic patch suggestion from RCA and solution outputs."""
         affected_files = self.affected_files_for_reports(
             rca_report=rca_report,
             solution=solution,
+            evidence_items=evidence_items,
         )
         return PatchSuggestion(
             suggestion_id=new_patch_suggestion_id(),
@@ -69,6 +87,7 @@ class PatchSuggestionRules:
                         rca_report=rca_report,
                         solution=solution,
                         affected_files=affected_files,
+                        evidence_items=evidence_items,
                     )
                 ),
             },
@@ -96,9 +115,17 @@ class PatchSuggestionRules:
         *,
         rca_report: RCAReport,
         solution: SolutionRecommendation,
+        evidence_items: list[EvidenceItem] | None = None,
     ) -> list[str]:
         evidence_ids = self.unique([*rca_report.evidence_ids, *solution.evidence_ids])
-        all_paths = self.affected_files(evidence_ids)
+        all_paths = self.unique(
+            [
+                *self._evidence_authorization_rules.direct_source_paths(
+                    evidence_items or []
+                ),
+                *self.affected_files(evidence_ids),
+            ]
+        )
         ranked_finding_paths = [
             path
             for path in self._paths_from_finding_text(rca_report.code_findings)
@@ -135,15 +162,24 @@ class PatchSuggestionRules:
         rca_report: RCAReport,
         solution: SolutionRecommendation,
         affected_files: list[str] | None = None,
+        evidence_items: list[EvidenceItem] | None = None,
     ) -> list[str]:
         evidence_ids = self.unique([*rca_report.evidence_ids, *solution.evidence_ids])
         affected = set(affected_files or self.affected_files_for_reports(
             rca_report=rca_report,
             solution=solution,
+            evidence_items=evidence_items,
         ))
         return [
             path
-            for path in self.supporting_context_files(evidence_ids)
+            for path in self.unique(
+                [
+                    *self._evidence_authorization_rules.supporting_context_paths(
+                        evidence_items or []
+                    ),
+                    *self.supporting_context_files(evidence_ids),
+                ]
+            )
             if path not in affected
         ]
 

@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 
 from bug_resolver.agents import PatchGeneratorAgent, PatchGeneratorInput
-from bug_resolver.schemas import FilePatch, PatchGenerationResult, RCAReport
+from bug_resolver.schemas import (
+    EvidenceItem,
+    EvidenceSourceType,
+    FilePatch,
+    PatchGenerationResult,
+    RCAReport,
+)
 from bug_resolver.schemas.solution import SolutionRecommendation
 
 
@@ -288,6 +294,63 @@ async def test_patch_generator_allows_readable_code_backed_patch_without_domain_
         "src/rag/routing/rule_based.py"
     ]
     assert result.warnings == []
+
+
+@pytest.mark.asyncio
+async def test_patch_generator_authorizes_structured_exact_code_evidence() -> None:
+    llm_client = FakeLLMClient(
+        PatchGenerationResult(
+            file_patches=[
+                FilePatch(
+                    file_path="src/services/upload_service.py",
+                    unified_diff=(
+                        "--- a/src/services/upload_service.py\n"
+                        "+++ b/src/services/upload_service.py\n"
+                        "@@\n"
+                        "-if filename in processed_uploads:\n"
+                        "+if content_hash in processed_uploads:\n"
+                    ),
+                    reason="Use stable content identity.",
+                    confidence_score=0.75,
+                )
+            ]
+        )
+    )
+    agent = PatchGeneratorAgent(
+        patch_context_provider=FakePatchContextProvider(
+            {
+                "src/services/upload_service.py": (
+                    "if filename in processed_uploads:\n    return\n"
+                )
+            }
+        ),
+        llm_client=llm_client,
+    )
+
+    result = await agent.run(
+        PatchGeneratorInput(
+            rca_report=build_upload_rca_report(),
+            solution_recommendation=build_upload_solution(),
+            affected_files=["src/services/upload_service.py"],
+            evidence_ids=["EVID-EXACT-OWNER"],
+            evidence_items=[
+                EvidenceItem(
+                    evidence_id="EVID-EXACT-OWNER",
+                    source_type=EvidenceSourceType.CODE,
+                    source_name="src/services/upload_service.py",
+                    file_path="src/services/upload_service.py",
+                    content="if filename in processed_uploads:\n    return",
+                    metadata={"retrieval_source_type": "code_exact"},
+                )
+            ],
+        )
+    )
+
+    assert result.generated_diff is True
+    assert [patch.file_path for patch in result.file_patches] == [
+        "src/services/upload_service.py"
+    ]
+    assert "File: src/services/upload_service.py" in llm_client.prompt
 
 
 @pytest.mark.asyncio

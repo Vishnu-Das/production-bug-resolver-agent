@@ -7,7 +7,12 @@ from pydantic import Field
 from bug_resolver.agents.base import BaseAgent
 from bug_resolver.llm.base import LLMClient
 from bug_resolver.rules.patch_suggestion_rules import PatchSuggestionRules
-from bug_resolver.schemas import PatchSuggestion, RCAReport, SolutionRecommendation
+from bug_resolver.schemas import (
+    EvidenceItem,
+    PatchSuggestion,
+    RCAReport,
+    SolutionRecommendation,
+)
 from bug_resolver.schemas.common import StrictBaseModel
 from bug_resolver.utils.observability import get_logger
 
@@ -31,6 +36,7 @@ class PatchSuggestionInput(StrictBaseModel):
 
     rca_report: RCAReport
     solution_recommendation: SolutionRecommendation
+    evidence_items: list[EvidenceItem] = Field(default_factory=list)
 
 
 class PatchSuggestionNarrativeOutput(StrictBaseModel):
@@ -61,6 +67,7 @@ class PatchSuggestionAgent(BaseAgent[PatchSuggestionInput, PatchSuggestion]):
         suggestion = self._rules.build_patch_suggestion(
             rca_report=input_data.rca_report,
             solution=input_data.solution_recommendation,
+            evidence_items=input_data.evidence_items,
         )
         suggestion = await self._maybe_apply_llm_narrative(
             input_data=input_data,

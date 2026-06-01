@@ -543,6 +543,7 @@ class DynamicBugResolutionGraphWorkflow:
                 PatchSuggestionInput(
                     rca_report=state.rca_report,
                     solution_recommendation=state.solution_recommendation,
+                    evidence_items=state.evidence_items,
                 )
             )
         except Exception as exc:
@@ -591,6 +592,7 @@ class DynamicBugResolutionGraphWorkflow:
                     solution_recommendation=state.solution_recommendation,
                     affected_files=state.patch_suggestion.affected_files,
                     evidence_ids=state.patch_suggestion.evidence_ids,
+                    evidence_items=state.evidence_items,
                 )
             )
         except Exception as exc:

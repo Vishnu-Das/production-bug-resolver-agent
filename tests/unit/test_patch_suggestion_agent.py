@@ -9,7 +9,12 @@ import pytest
 import bug_resolver.rules.patch_suggestion_rules as patch_suggestion_rules
 from bug_resolver.agents import PatchSuggestionAgent, PatchSuggestionInput
 from bug_resolver.agents.patch_suggestion_agent import PatchSuggestionNarrativeOutput
-from bug_resolver.schemas import RCAReport, SolutionRecommendation
+from bug_resolver.schemas import (
+    EvidenceItem,
+    EvidenceSourceType,
+    RCAReport,
+    SolutionRecommendation,
+)
 
 
 def build_rca_report() -> RCAReport:
@@ -262,6 +267,50 @@ async def test_patch_suggestion_agent_keeps_supporting_context_out_of_affected_f
         "src/rag/pipeline.py, "
         "src/rag/retrieval/fusion/strategy.py"
     )
+
+
+@pytest.mark.asyncio
+async def test_patch_suggestion_agent_uses_structured_direct_code_evidence() -> None:
+    rca_report = build_rca_report().model_copy(
+        update={
+            "code_findings": [
+                "src/services/upload_service.py:19-34 contains the faulty guard."
+            ],
+            "evidence_ids": ["EVID-EXACT-OWNER", "EVID-GRAPH-SUPPORT"],
+        }
+    )
+    solution = build_solution().model_copy(
+        update={"evidence_ids": ["EVID-EXACT-OWNER", "EVID-GRAPH-SUPPORT"]}
+    )
+    evidence_items = [
+        EvidenceItem(
+            evidence_id="EVID-EXACT-OWNER",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/services/upload_service.py",
+            file_path="src/services/upload_service.py",
+            content="19: if filename in processed_uploads:\n20:     return",
+            metadata={"retrieval_source_type": "code_exact"},
+        ),
+        EvidenceItem(
+            evidence_id="EVID-GRAPH-SUPPORT",
+            source_type=EvidenceSourceType.GRAPH,
+            source_name="src/ingest.py",
+            file_path="src/ingest.py",
+            content="handle_file_upload calls ingest_single_document",
+            metadata={"retrieval_source_type": "code_graph"},
+        ),
+    ]
+
+    result = await PatchSuggestionAgent().run(
+        PatchSuggestionInput(
+            rca_report=rca_report,
+            solution_recommendation=solution,
+            evidence_items=evidence_items,
+        )
+    )
+
+    assert result.affected_files == ["src/services/upload_service.py"]
+    assert result.metadata["supporting_context_files"] == "src/ingest.py"
 
 
 def test_patch_suggestion_rules_do_not_hardcode_target_repo_terms() -> None:

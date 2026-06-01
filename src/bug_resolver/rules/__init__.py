@@ -17,6 +17,9 @@ from bug_resolver.rules.guardrail_graph_rules import GuardrailGraphRules
 from bug_resolver.rules.guardrail_routing_rules import GuardrailRoutingRules
 from bug_resolver.rules.owner_graph_expansion_rules import OwnerGraphExpansionRules
 from bug_resolver.rules.patch_generation_rules import PatchGenerationRules
+from bug_resolver.rules.patch_evidence_authorization_rules import (
+    PatchEvidenceAuthorizationRules,
+)
 from bug_resolver.rules.patch_suggestion_rules import PatchSuggestionRules
 from bug_resolver.rules.ranked_evidence_conversion_rules import (
     RankedEvidenceConversionRules,
@@ -45,6 +48,7 @@ __all__ = [
     "GuardrailGraphRules",
     "GuardrailRoutingRules",
     "PatchGenerationRules",
+    "PatchEvidenceAuthorizationRules",
     "PatchSuggestionRules",
     "OwnerGraphExpansionRules",
     "RankedEvidenceConversionRules",
