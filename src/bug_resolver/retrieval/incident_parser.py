@@ -6,6 +6,9 @@ from collections.abc import Mapping, Sequence
 
 from bug_resolver.rules.incident_parsing_rules import IncidentParsingRules
 from bug_resolver.schemas import Incident, IncidentFacts, LogEntry
+from bug_resolver.utils.observability import get_logger, traceable
+
+logger = get_logger(__name__)
 
 
 class IncidentParser:
@@ -14,6 +17,7 @@ class IncidentParser:
     def __init__(self, rules: IncidentParsingRules | None = None) -> None:
         self._rules = rules or IncidentParsingRules()
 
+    @traceable(name="incident_driven_context.parse_facts", run_type="parser")
     def parse(
         self,
         *,
@@ -23,15 +27,16 @@ class IncidentParser:
         log_texts: Sequence[str] | None = None,
         metadata: Mapping[str, str] | None = None,
     ) -> IncidentFacts:
+        runtime_texts = log_texts or ()
         texts = self._texts(
             summary=summary,
             description=description,
-            log_texts=log_texts or (),
+            log_texts=runtime_texts,
             metadata=metadata or {},
         )
         stack_frames = self._rules.extract_stack_frames(texts)
 
-        return IncidentFacts(
+        facts = IncidentFacts(
             incident_id=incident_id,
             summary=summary,
             description=description,
@@ -47,7 +52,21 @@ class IncidentParser:
             ),
             quoted_terms=self._rules.extract_quoted_terms(texts),
             config_like_terms=self._rules.extract_config_like_terms(texts),
+            log_key_terms=self._rules.extract_log_key_terms(runtime_texts),
+            event_terms=self._rules.extract_event_terms(runtime_texts),
         )
+        logger.info(
+            "incident facts parsed incident_id=%s runtime_texts=%s stack_frames=%s "
+            "exceptions=%s log_keys=%s events=%s symbols=%s",
+            incident_id,
+            len(runtime_texts),
+            len(facts.stack_frames),
+            len(facts.exception_types),
+            len(facts.log_key_terms),
+            len(facts.event_terms),
+            len(facts.candidate_symbols),
+        )
+        return facts
 
     def parse_incident(
         self,

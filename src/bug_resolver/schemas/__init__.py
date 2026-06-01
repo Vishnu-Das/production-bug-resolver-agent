@@ -45,6 +45,7 @@ from bug_resolver.schemas.rca import RCAReport
 from bug_resolver.schemas.retrieval import (
     FileContextRequest,
     GraphExpansionRequest,
+    IncidentDrivenContextResult,
     IncidentFacts,
     RetrievalAnchor,
     RetrievalBatchResult,
@@ -78,6 +79,7 @@ __all__ = [
     "HistoricalRCAContext",
     "HypothesisStatus",
     "Incident",
+    "IncidentDrivenContextResult",
     "IncidentFacts",
     "IncidentSeverity",
     "IncidentStatus",

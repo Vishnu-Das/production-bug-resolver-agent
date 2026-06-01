@@ -65,14 +65,14 @@ async def test_inc_007_upload_dedup_golden_investigation(tmp_path: Path) -> None
         [
             decision("golden-007-log", AgentName.LOG_INVESTIGATOR, ["INC-007 logs"]),
             decision(
-                "golden-007-kb",
-                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
-                ["upload ingestion content hash deduplication expectations"],
-            ),
-            decision(
                 "golden-007-code",
                 AgentName.CODE_INVESTIGATOR,
                 ["upload content_hash filename deduplicate documents"],
+            ),
+            decision(
+                "golden-007-kb",
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+                ["upload ingestion content hash deduplication expectations"],
             ),
             decision(
                 "golden-007-graph",
@@ -278,11 +278,6 @@ async def test_inc_008_reranker_config_golden_investigation(tmp_path: Path) -> N
         [
             decision("golden-008-log", AgentName.LOG_INVESTIGATOR, ["INC-008 logs"]),
             decision(
-                "golden-008-kb",
-                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
-                ["reranking configuration RERANKING_MODEL_NAME fallback expectations"],
-            ),
-            decision(
                 "golden-008-code",
                 AgentName.CODE_INVESTIGATOR,
                 ["reranker_model scores order_changed RERANKING_MODEL_NAME"],
@@ -291,6 +286,11 @@ async def test_inc_008_reranker_config_golden_investigation(tmp_path: Path) -> N
                 "golden-008-graph",
                 AgentName.GRAPH_INVESTIGATOR,
                 ["which function reads RERANKING_MODEL_NAME and caller chain"],
+            ),
+            decision(
+                "golden-008-kb",
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+                ["reranking configuration RERANKING_MODEL_NAME fallback expectations"],
             ),
         ]
     )

@@ -80,7 +80,8 @@ async def test_supervisor_agent_returns_structured_agent_decision() -> None:
     assert llm.output_schema is SupervisorRoutingOutput
     assert llm.system_prompt is not None
     assert "Choose exactly one next specialist agent" in llm.system_prompt
-    assert "what should happen rather than only what did happen" in llm.system_prompt
+    assert "This agent runs incident-driven file, exact, semantic, graph" in llm.system_prompt
+    assert "Recovery-only route" in llm.system_prompt
     assert "clear stack-trace or exception incidents" in llm.system_prompt
 
 

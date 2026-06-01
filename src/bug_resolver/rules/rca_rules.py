@@ -161,6 +161,16 @@ class RCARules:
     def evidence_ids(self, state: WorkflowState) -> list[str]:
         return self.evidence_selection.evidence_ids(state)
 
+    def ensure_direct_source_evidence_ids(
+        self,
+        state: WorkflowState,
+        evidence_ids: list[str],
+    ) -> list[str]:
+        return self.evidence_selection.ensure_direct_source_evidence_ids(
+            state,
+            evidence_ids,
+        )
+
     def confidence_score(self, state: WorkflowState) -> float:
         if not state.evidence_items:
             return 0.0

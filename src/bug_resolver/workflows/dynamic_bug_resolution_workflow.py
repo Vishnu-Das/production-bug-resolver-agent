@@ -136,6 +136,10 @@ class DynamicBugResolutionWorkflow:
                         decision=decision,
                         guardrail_decision=guardrail_decision,
                     )
+                    if not state.can_take_step():
+                        state.mark_low_confidence()
+                        state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
+                        return state
                     if guardrail_decision.fallback_next_agent in {
                         AgentName.FINISH,
                         AgentName.EVIDENCE_EVALUATOR,
@@ -251,6 +255,7 @@ class DynamicBugResolutionWorkflow:
             evidence_items = await self._code_investigator_agent.run(
                 CodeInvestigatorInput(
                     decision=decision,
+                    incident=state.incident,
                     evidence_items=state.evidence_items,
                     limit=5,
                 )
@@ -488,11 +493,14 @@ class DynamicBugResolutionWorkflow:
         state.record_guardrail_decision(guardrail_decision)
 
         if not guardrail_decision.allowed:
-            self._execution_recorder.record_blocked_guardrail_step(
-                state=state,
-                decision=decision,
-                guardrail_decision=guardrail_decision,
-            )
+            if state.can_take_step():
+                self._execution_recorder.record_blocked_guardrail_step(
+                    state=state,
+                    decision=decision,
+                    guardrail_decision=guardrail_decision,
+                )
+            state.mark_low_confidence()
+            state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
             return
 
         await self._execute_decision_safely(state=state, decision=decision)

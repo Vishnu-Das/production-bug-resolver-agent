@@ -477,3 +477,18 @@ async def test_solution_recommendation_agent_adds_risk_notes_for_low_confidence_
     )
     assert result.confidence_score == 0.20
     assert result.evidence_ids == []
+
+
+def test_solution_recommendation_agent_allows_evidence_backed_prose() -> None:
+    output = SolutionRecommendationOutput(
+        summary="Use an evidence-backed fix.",
+        immediate_steps=["Apply the evidence-backed validation change."],
+        long_term_steps=["Keep evidence-backed regression coverage."],
+        tests_to_add=["Add an evidence-backed regression test."],
+        monitoring_improvements=["Add evidence-backed diagnostics."],
+        risk_notes=["Validate the evidence-backed recommendation."],
+        confidence_score=0.75,
+        evidence_ids=["ev-code-1"],
+    )
+
+    assert not SolutionRecommendationAgent()._contains_evidence_id_in_prose(output)

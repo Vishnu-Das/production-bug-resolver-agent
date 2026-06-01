@@ -152,7 +152,10 @@ def test_route_fake_satisfies_retrieval_provider_protocols() -> None:
 
 
 @pytest.mark.asyncio
-async def test_parallel_context_retriever_runs_available_routes_concurrently() -> None:
+async def test_parallel_context_retriever_runs_available_routes_concurrently(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
     probe = ConcurrencyProbe(expected_calls=6)
     provider = AllRoutesProvider(probe)
     retriever = ParallelContextRetriever(
@@ -178,6 +181,9 @@ async def test_parallel_context_retriever_runs_available_routes_concurrently() -
     assert result.failed_retrievers == []
     assert result.failures == []
     assert result.warnings == []
+    assert "parallel context retrieval started routes=6" in caplog.text
+    assert "parallel retrieval route finished route=exact_search" in caplog.text
+    assert "parallel context retrieval finished routes=6 candidates=6 failures=0" in caplog.text
 
 
 @pytest.mark.asyncio

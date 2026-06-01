@@ -124,6 +124,20 @@ class RetrievalPlanningRules:
         )
         anchors.extend(
             self._simple_anchors(
+                facts.log_key_terms,
+                anchor_type="log_key_term",
+                source="runtime_text",
+            )
+        )
+        anchors.extend(
+            self._simple_anchors(
+                facts.event_terms,
+                anchor_type="event_term",
+                source="runtime_text",
+            )
+        )
+        anchors.extend(
+            self._simple_anchors(
                 facts.candidate_symbols,
                 anchor_type="candidate_symbol",
                 source="incident_text",
@@ -203,6 +217,22 @@ class RetrievalPlanningRules:
         )
         queries.extend(
             self._queries_for_values(
+                facts.log_key_terms,
+                purpose="Find code references to structured log key",
+                priority=90,
+                source_hint="log_key_term",
+            )
+        )
+        queries.extend(
+            self._queries_for_values(
+                facts.event_terms,
+                purpose="Find code references to runtime event name",
+                priority=88,
+                source_hint="event_term",
+            )
+        )
+        queries.extend(
+            self._queries_for_values(
                 self._symbol_values(facts),
                 purpose="Find exact function or symbol reference",
                 priority=90,
@@ -211,21 +241,13 @@ class RetrievalPlanningRules:
         )
         queries.extend(
             self._queries_for_values(
-                (self._compact(value) for value in facts.error_terms),
+                self._compact_exact_error_terms(facts.error_terms),
                 purpose="Find exact error text occurrence",
                 priority=88,
                 source_hint="error_term",
             )
         )
-        queries.extend(
-            self._queries_for_values(
-                [*facts.trace_ids, *facts.request_ids],
-                purpose="Find exact runtime identifier occurrence",
-                priority=85,
-                source_hint="runtime_identifier",
-            )
-        )
-        return self._deduplicate_queries(queries)
+        return self._deduplicate_queries(queries, query_text_only=True)
 
     def build_structural_queries(self, facts: IncidentFacts) -> list[RetrievalQuery]:
         """Plan structural definition and usage lookup for grounded symbols."""
@@ -394,6 +416,15 @@ class RetrievalPlanningRules:
 
     def _combined_compact(self, values: Iterable[str], *, limit: int) -> str:
         return self._compact(" ".join(self._unique_strings(values)[:limit]))
+
+    def _compact_exact_error_terms(self, values: Iterable[str]) -> list[str]:
+        return [
+            compact_value
+            for value in values
+            if (compact_value := self._compact(value, max_length=120))
+            and not compact_value.endswith("...")
+            and len(compact_value.split()) <= 16
+        ]
 
     def _deduplicate_anchors(self, anchors: Iterable[RetrievalAnchor]) -> list[RetrievalAnchor]:
         unique_anchors: list[RetrievalAnchor] = []

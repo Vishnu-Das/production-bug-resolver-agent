@@ -110,7 +110,11 @@ class WorkflowState(StrictBaseModel):
 
     def record_agent_execution(self, record: AgentExecutionRecord) -> None:
         self.trace.agent_executions.append(record)
-        if record.status in {AgentRunStatus.RUNNING, AgentRunStatus.SUCCEEDED}:
+        if record.status in {
+            AgentRunStatus.RUNNING,
+            AgentRunStatus.SUCCEEDED,
+            AgentRunStatus.FAILED,
+        }:
             self.agent_invocation_counts[record.agent_name] = (
                 self.agent_invocation_counts.get(record.agent_name, 0) + 1
             )

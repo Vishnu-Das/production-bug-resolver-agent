@@ -497,3 +497,25 @@ def test_workflow_state_enforces_agent_invocation_limit() -> None:
     )
 
     assert state.can_invoke_agent(AgentName.LOG_INVESTIGATOR) is False
+
+
+def test_workflow_state_counts_failed_agent_execution_toward_invocation_limit() -> None:
+    state = WorkflowState(
+        incident=Incident(
+            incident_id="INC-001",
+            title="Bug",
+            description="Something failed",
+        ),
+        max_agent_invocations_per_agent=1,
+    )
+
+    state.record_agent_execution(
+        AgentExecutionRecord(
+            execution_id="execution-1",
+            agent_name=AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+            status=AgentRunStatus.FAILED,
+            error="provider unavailable",
+        )
+    )
+
+    assert state.can_invoke_agent(AgentName.KNOWLEDGE_BASE_INVESTIGATOR) is False

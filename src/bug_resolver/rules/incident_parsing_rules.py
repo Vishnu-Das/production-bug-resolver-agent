@@ -49,11 +49,39 @@ REQUEST_ID_PATTERN = re.compile(
 QUOTED_TERM_PATTERN = re.compile(r"(?P<quote>[\"'])(?P<value>[^\n\r\"']+)(?P=quote)")
 CONFIG_LIKE_TERM_PATTERN = re.compile(r"\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b")
 FUNCTION_CALL_PATTERN = re.compile(r"\b(?P<value>[A-Za-z_][A-Za-z0-9_]*)\s*\(")
-DOTTED_SYMBOL_PATTERN = re.compile(
-    r"\b(?P<value>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\b"
+DOTTED_CALL_PATTERN = re.compile(
+    r"\b(?P<value>[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+)\s*\("
 )
 CLASS_LIKE_PATTERN = re.compile(r"\b(?P<value>[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9]*)+)\b")
+STRUCTURED_KEY_PATTERN = re.compile(
+    r'(?<![A-Za-z0-9_])(?:"(?P<json_key>[A-Za-z_][A-Za-z0-9_]*)"\s*:|'
+    r"(?P<plain_key>[A-Za-z_][A-Za-z0-9_-]*)\s*=)"
+)
+STRUCTURED_VALUE_PATTERN = re.compile(
+    r'(?<![A-Za-z0-9_])(?:"?(?P<key>[A-Za-z_][A-Za-z0-9_-]*)"?\s*[:=]\s*)'
+    r'(?:"(?P<double_quoted>[^"]*)"|\'(?P<single_quoted>[^\']*)\'|'
+    r"(?P<bare>[^\s,}\]]+))"
+)
+SNAKE_CASE_RUNTIME_TERM_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_.])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![A-Za-z0-9_.])"
+)
+UUID_PATTERN = re.compile(
+    r"\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-"
+    r"[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z",
+    re.IGNORECASE,
+)
+LONG_HASH_PATTERN = re.compile(r"\A(?:[A-Za-z0-9_-]+:)?[0-9a-f]{24,}\Z", re.IGNORECASE)
 HTTP_STATUS_CODES = frozenset({400, 401, 403, 404, 409, 422, 429, 500, 502, 503, 504})
+EVENT_VALUE_KEYS = frozenset({"event", "action", "name"})
+IGNORED_LOG_KEYS = frozenset(
+    {
+        "request_id",
+        "requestid",
+        "trace_id",
+        "traceid",
+        "x_request_id",
+    }
+)
 
 
 class IncidentParsingRules:
@@ -136,6 +164,34 @@ class IncidentParsingRules:
             for match in CONFIG_LIKE_TERM_PATTERN.finditer(text)
         )
 
+    def extract_log_key_terms(self, runtime_texts: Sequence[str]) -> list[str]:
+        """Extract code-searchable keys from structured runtime text."""
+        return self._unique_strings(
+            key
+            for text in runtime_texts
+            for match in STRUCTURED_KEY_PATTERN.finditer(text)
+            if not self._is_identifier_key(key := self._normalized_log_key(match))
+        )
+
+    def extract_event_terms(self, runtime_texts: Sequence[str]) -> list[str]:
+        """Extract conservative event-like values and snake-case runtime tokens."""
+        structured_values = [
+            value
+            for text in runtime_texts
+            for match in STRUCTURED_VALUE_PATTERN.finditer(text)
+            if match.group("key").casefold().replace("-", "_") in EVENT_VALUE_KEYS
+            if (value := self._structured_value(match))
+            and self._is_searchable_runtime_term(value)
+        ]
+        standalone_terms = [
+            match.group(0)
+            for text in runtime_texts
+            for match in SNAKE_CASE_RUNTIME_TERM_PATTERN.finditer(text)
+            if self._is_searchable_runtime_term(match.group(0))
+            and not self._is_identifier_key(match.group(0))
+        ]
+        return self._unique_strings([*structured_values, *standalone_terms])
+
     def extract_candidate_symbols(
         self,
         texts: Sequence[str],
@@ -151,7 +207,7 @@ class IncidentParsingRules:
         ]
 
         for text in texts:
-            values.extend(match.group("value") for match in DOTTED_SYMBOL_PATTERN.finditer(text))
+            values.extend(match.group("value") for match in DOTTED_CALL_PATTERN.finditer(text))
             values.extend(match.group("value") for match in FUNCTION_CALL_PATTERN.finditer(text))
             values.extend(
                 match.group("value")
@@ -161,6 +217,35 @@ class IncidentParsingRules:
             )
 
         return self._unique_strings(values)
+
+    def _normalized_log_key(self, match: re.Match[str]) -> str:
+        return (match.group("json_key") or match.group("plain_key")).replace("-", "_")
+
+    def _structured_value(self, match: re.Match[str]) -> str:
+        return (
+            match.group("double_quoted")
+            or match.group("single_quoted")
+            or match.group("bare")
+            or ""
+        ).strip()
+
+    def _is_identifier_key(self, value: str) -> bool:
+        normalized = value.casefold().replace("-", "_")
+        return normalized in IGNORED_LOG_KEYS or normalized.endswith("_id")
+
+    def _is_searchable_runtime_term(self, value: str) -> bool:
+        normalized = value.strip().strip("\"'").casefold()
+        if not normalized or len(normalized) > 100:
+            return False
+        if normalized in {"true", "false", "null", "none"}:
+            return False
+        if normalized.startswith(("req_", "req-", "trace_", "trace-")):
+            return False
+        if UUID_PATTERN.fullmatch(normalized) or LONG_HASH_PATTERN.fullmatch(normalized):
+            return False
+        if "." in normalized or "/" in normalized or "\\" in normalized:
+            return False
+        return bool(re.fullmatch(r"[a-z][a-z0-9_]*", normalized))
 
     def unique(self, values: Iterable[str]) -> list[str]:
         """Return non-empty string values once, preserving first-seen order."""

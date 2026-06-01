@@ -50,9 +50,8 @@ LOG_FINDING_MARKERS = (
 )
 HYPOTHESIS_PREFIX_PATTERN = re.compile(r"^H\d+\s*:?\s*", re.IGNORECASE)
 EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
-    r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"
-    r"evidence-[A-Za-z0-9_./\\:-]+)\b",
-    re.IGNORECASE,
+    r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Z0-9_-]+|kb-[A-Za-z0-9_-]+|"
+    r"evidence-(?:src|tests|eval|docs)[/\\][A-Za-z0-9_./\\:-]+)\b",
 )
 
 logger = get_logger(__name__)
@@ -305,6 +304,11 @@ class RCAWriterAgent(BaseAgent[WorkflowState, RCAReport]):
             evidence_ids=evidence_ids,
             fallback_report=fallback_report,
         )
+        if output.code_findings:
+            evidence_ids = self._rules.ensure_direct_source_evidence_ids(
+                state,
+                evidence_ids,
+            )
         evidence_ids = self._ensure_source_evidence_when_findings_exist(
             state=state,
             findings=output.graph_findings,

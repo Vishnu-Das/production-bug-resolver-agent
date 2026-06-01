@@ -816,3 +816,55 @@ def test_generic_evidence_id_fallback_keeps_evidence_when_no_strong_term_exists(
         "ev-kb-b",
         "ev-kb-c",
     ]
+
+
+def test_rca_evidence_ids_preserve_direct_source_snippet_with_graph_context() -> None:
+    state = make_state(
+        title="Request processing fails",
+        description="A runtime event shows repeated processing.",
+        affected_area="request processing",
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-log",
+        source_type=EvidenceSourceType.LOG,
+        source_name="app.log",
+        content="processing_started repeated_processing_detected=true",
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-semantic",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/services/processor.py",
+            file_path="src/services/processor.py",
+            content="Semantic summary of process_record implementation.",
+            relevance_score=0.95,
+            metadata={"retrieval_source_type": "code_semantic", "rank": "1"},
+        )
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-exact",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/services/processor.py",
+            file_path="src/services/processor.py",
+            line_start=19,
+            line_end=20,
+            content="19: if record_id in processed_records:\n20:     return",
+            relevance_score=0.9,
+            metadata={"retrieval_source_type": "code_exact", "rank": "2"},
+        )
+    )
+    add_evidence(
+        state,
+        evidence_id="ev-graph",
+        source_type=EvidenceSourceType.GRAPH,
+        source_name="src/services/processor.py",
+        file_path="src/services/processor.py",
+        content="process_request calls process_record.",
+    )
+
+    evidence_ids = RCARules().evidence_ids(state)
+
+    assert "ev-exact" in evidence_ids
+    assert "ev-graph" in evidence_ids

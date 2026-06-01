@@ -11,6 +11,8 @@ from bug_resolver.schemas import EvidenceItem, EvidenceSourceType, WorkflowState
 class RCAEvidenceSelectionRules:
     """Select the strongest evidence IDs and findings for RCA prose."""
 
+    _DIRECT_SOURCE_RETRIEVAL_TYPES = {"code_exact", "file_context"}
+
     def __init__(
         self,
         evidence_selection_rules: EvidenceSelectionRules | None = None,
@@ -42,9 +44,27 @@ class RCAEvidenceSelectionRules:
             [evidence.evidence_id for evidence in selected_evidence]
         )
         if evidence_ids:
-            return evidence_ids
+            return self.ensure_direct_source_evidence_ids(state, evidence_ids)
 
         return [evidence.evidence_id for evidence in state.evidence_items]
+
+    def ensure_direct_source_evidence_ids(
+        self,
+        state: WorkflowState,
+        evidence_ids: list[str],
+    ) -> list[str]:
+        """Include an exact/file-context snippet when direct source evidence exists."""
+        direct_source_evidence = self._direct_source_evidence(state)
+        if not direct_source_evidence:
+            return evidence_ids
+        if any(
+            evidence.evidence_id in evidence_ids
+            for evidence in direct_source_evidence
+        ):
+            return evidence_ids
+        return self.formatter.unique(
+            [*evidence_ids, direct_source_evidence[0].evidence_id]
+        )
 
     def selected_evidence_for_source(
         self,
@@ -207,3 +227,27 @@ class RCAEvidenceSelectionRules:
             penalty -= 2.0
 
         return penalty
+
+    def _direct_source_evidence(self, state: WorkflowState) -> list[EvidenceItem]:
+        return sorted(
+            [
+                evidence
+                for evidence in self.evidence_for_source(state, EvidenceSourceType.CODE)
+                if evidence.metadata.get("retrieval_source_type")
+                in self._DIRECT_SOURCE_RETRIEVAL_TYPES
+            ],
+            key=lambda evidence: (
+                self._metadata_rank(evidence),
+                -(evidence.relevance_score or 0.0),
+                evidence.evidence_id,
+            ),
+        )
+
+    def _metadata_rank(self, evidence: EvidenceItem) -> int:
+        raw_rank = evidence.metadata.get("rank")
+        if raw_rank is None:
+            return 1_000_000
+        try:
+            return int(raw_rank)
+        except ValueError:
+            return 1_000_000

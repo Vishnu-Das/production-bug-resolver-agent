@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 
 import bug_resolver.rules.retrieval_planning_rules as retrieval_planning_rules
+import pytest
 from bug_resolver.retrieval.context_retrieval_planner import ContextRetrievalPlanner
 from bug_resolver.schemas import IncidentFacts, StackFrame
 
@@ -37,6 +38,30 @@ def test_planner_creates_file_context_from_stack_frame() -> None:
         ("line_number", "42"),
         ("function_name", "handle_request"),
     }
+
+
+def test_planner_debug_log_omits_runtime_identifiers(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("DEBUG")
+
+    ContextRetrievalPlanner().plan(
+        IncidentFacts(
+            incident_id="INC-DEBUG-001",
+            summary="Duplicate records were observed",
+            request_ids=["req-private-123"],
+            trace_ids=["trace-private-456"],
+            quoted_terms=["sha256:private-value"],
+            log_key_terms=["record_fingerprint"],
+            event_terms=["duplicate_record_detected"],
+        )
+    )
+
+    assert "record_fingerprint" in caplog.text
+    assert "duplicate_record_detected" in caplog.text
+    assert "req-private-123" not in caplog.text
+    assert "trace-private-456" not in caplog.text
+    assert "sha256:private-value" not in caplog.text
 
 
 def test_planner_creates_graph_expansion_from_stack_frame() -> None:
@@ -79,6 +104,55 @@ def test_planner_creates_exact_queries_for_exception_config_and_symbols() -> Non
     assert queries["OPENAI_API_KEY"].purpose == "Find exact config/env reference"
     assert queries["handle_request"].purpose == "Find exact function or symbol reference"
     assert queries["TypeError"].priority > plan.semantic_queries[0].priority
+
+
+def test_planner_creates_exact_queries_for_structured_log_keys_and_events() -> None:
+    plan = ContextRetrievalPlanner().plan(
+        IncidentFacts(
+            incident_id="INC-STRUCTURED-001",
+            summary="Worker produced duplicate records",
+            log_key_terms=["record_fingerprint", "dedupe_key"],
+            event_terms=["duplicate_record_detected"],
+        )
+    )
+
+    queries = {query.query: query for query in plan.exact_queries}
+    anchors = {(anchor.anchor_type, anchor.value) for anchor in plan.anchors}
+
+    assert queries["record_fingerprint"].purpose == "Find code references to structured log key"
+    assert queries["record_fingerprint"].priority == 90
+    assert queries["duplicate_record_detected"].purpose == (
+        "Find code references to runtime event name"
+    )
+    assert queries["duplicate_record_detected"].priority == 88
+    assert ("log_key_term", "dedupe_key") in anchors
+    assert ("event_term", "duplicate_record_detected") in anchors
+
+
+def test_planner_avoids_noisy_exact_queries_when_structured_anchors_exist() -> None:
+    plan = ContextRetrievalPlanner().plan(
+        IncidentFacts(
+            incident_id="INC-STRUCTURED-002",
+            summary="Worker produced duplicate records",
+            error_terms=[
+                "This is an intentionally long runtime error description that should remain "
+                "semantic context instead of becoming an exact source query because it contains "
+                "too many words to be useful for text search."
+            ],
+            request_ids=["req-123"],
+            trace_ids=["trace-456"],
+            quoted_terms=["guide.pdf"],
+            log_key_terms=["record_fingerprint"],
+        )
+    )
+
+    exact_queries = {query.query for query in plan.exact_queries}
+
+    assert "record_fingerprint" in exact_queries
+    assert "req-123" not in exact_queries
+    assert "trace-456" not in exact_queries
+    assert "guide.pdf" not in exact_queries
+    assert not any(query.endswith("...") for query in exact_queries)
 
 
 def test_planner_creates_semantic_queries_from_summary_description_and_quoted_terms() -> None:

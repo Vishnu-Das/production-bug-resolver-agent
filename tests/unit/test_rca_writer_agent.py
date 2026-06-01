@@ -116,6 +116,25 @@ def add_graph_evidence(state: WorkflowState) -> None:
     )
 
 
+def add_direct_source_evidence(state: WorkflowState) -> None:
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-code-exact",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/rag/router.py",
+            file_path="src/rag/router.py",
+            line_start=42,
+            line_end=43,
+            content="42: if response is None:\n43:     return fallback_response",
+            relevance_score=0.85,
+            metadata={
+                "retrieval_source_type": "code_exact",
+                "rank": "2",
+            },
+        )
+    )
+
+
 def add_supporting_code_evidence(state: WorkflowState) -> None:
     state.add_evidence(
         EvidenceItem(
@@ -342,6 +361,54 @@ async def test_rca_writer_agent_preserves_graph_evidence_when_llm_graph_findings
         "src/rag/router.py:route_query is called by answer_question."
     ]
     assert result.evidence_ids == ["ev-log-1", "ev-code-1", "ev-kb-1", "ev-graph-1"]
+
+
+@pytest.mark.asyncio
+async def test_rca_writer_agent_preserves_direct_source_snippet_with_graph_context() -> None:
+    state = make_state()
+    add_evidence(state)
+    add_direct_source_evidence(state)
+    add_graph_evidence(state)
+    state.evidence_evaluation = await EvidenceEvaluatorAgent().run(state)
+    llm = FakeRCAWriterLLM(
+        RCAWriterOutput(
+            title="LLM RCA for summary route failure",
+            incident_summary="The summary route failed for users.",
+            impact="Users saw failed summary responses.",
+            symptoms=["500 during summary flow"],
+            log_findings=["Log evidence shows TypeError in route_query."],
+            code_findings=["src/rag/router.py:42-43 shows the implementation condition."],
+            graph_findings=[
+                "src/rag/router.py:route_query is called by answer_question."
+            ],
+            knowledge_base_findings=["README describes structured router output."],
+            hypotheses_considered=["H1: Router output contract mismatch."],
+            selected_hypothesis_id="H1",
+            root_cause="Router output contract mismatch caused the failure.",
+            technical_explanation=(
+                "The implementation condition and graph owner context explain the failure."
+            ),
+            evidence_ids=["ev-log-1", "ev-code-1", "ev-kb-1", "ev-graph-1"],
+            confidence_score=0.78,
+            confidence_reason="Log, code, graph, and knowledge-base evidence agree.",
+            immediate_fix="Normalize router response shape before access.",
+            long_term_prevention="Add structured router response validation.",
+            tests_to_add=["Add regression test for malformed router output."],
+            open_questions=[],
+            low_confidence_warning=None,
+        )
+    )
+
+    result = await RCAWriterAgent(llm_client=llm).run(state)
+
+    assert result.metadata["rca_writer"] == "llm"
+    assert result.evidence_ids == [
+        "ev-log-1",
+        "ev-code-1",
+        "ev-kb-1",
+        "ev-graph-1",
+        "ev-code-exact",
+    ]
 
 
 @pytest.mark.asyncio
@@ -665,3 +732,26 @@ async def test_rca_writer_agent_requires_evidence_evaluation() -> None:
 
     with pytest.raises(ValueError, match="requires evidence evaluation before RCA"):
         await RCAWriterAgent().run(state)
+
+
+def test_rca_writer_agent_allows_evidence_backed_prose() -> None:
+    output = RCAWriterOutput(
+        title="Evidence-backed RCA",
+        incident_summary="This is an evidence-backed explanation.",
+        impact=None,
+        symptoms=[],
+        log_findings=[],
+        code_findings=[],
+        knowledge_base_findings=[],
+        hypotheses_considered=["H1: Validate the implementation contract."],
+        selected_hypothesis_id="H1",
+        root_cause="Evidence-backed analysis points to a contract mismatch.",
+        technical_explanation="The evidence-backed conclusion uses collected context.",
+        evidence_ids=["ev-log-1"],
+        confidence_score=0.5,
+        confidence_reason="Evidence-backed analysis is available.",
+        tests_to_add=["Add a regression test."],
+        open_questions=[],
+    )
+
+    assert not RCAWriterAgent()._contains_evidence_id_in_prose(output)

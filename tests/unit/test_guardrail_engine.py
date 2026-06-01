@@ -242,7 +242,7 @@ def test_guardrail_engine_routes_to_code_when_evaluation_says_code_is_missing() 
     assert result.fallback_next_agent == AgentName.CODE_INVESTIGATOR
 
 
-def test_guardrail_engine_allows_kb_when_code_is_missing_but_no_kb_evidence_exists() -> None:
+def test_guardrail_engine_routes_early_kb_request_to_unified_code_investigator() -> None:
     engine = GuardrailEngine()
     state = make_state()
     state.add_evidence(
@@ -266,8 +266,38 @@ def test_guardrail_engine_allows_kb_when_code_is_missing_but_no_kb_evidence_exis
 
     result = engine.validate_decision(state=state, decision=decision)
 
-    assert result.allowed is True
+    assert result.allowed is False
     assert "missing_code_evidence_should_route_to_code" not in result.violated_rules
+    assert (
+        "standalone_graph_or_kb_investigator_is_recovery_only"
+        in result.violated_rules
+    )
+    assert result.fallback_next_agent == AgentName.CODE_INVESTIGATOR
+
+
+def test_guardrail_engine_routes_early_graph_request_to_unified_code_investigator() -> None:
+    engine = GuardrailEngine()
+    state = make_state()
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-log-1",
+            source_type=EvidenceSourceType.LOG,
+            source_name="app.log",
+            content="TypeError in service",
+        )
+    )
+
+    result = engine.validate_decision(
+        state=state,
+        decision=make_decision(AgentName.GRAPH_INVESTIGATOR),
+    )
+
+    assert result.allowed is False
+    assert (
+        "standalone_graph_or_kb_investigator_is_recovery_only"
+        in result.violated_rules
+    )
+    assert result.fallback_next_agent == AgentName.CODE_INVESTIGATOR
 
 
 def test_guardrail_engine_blocks_repeated_kb_when_code_is_still_missing() -> None:
@@ -305,6 +335,113 @@ def test_guardrail_engine_blocks_repeated_kb_when_code_is_still_missing() -> Non
     assert result.allowed is False
     assert "missing_code_evidence_should_route_to_code" in result.violated_rules
     assert result.fallback_next_agent == AgentName.CODE_INVESTIGATOR
+
+
+def test_guardrail_engine_routes_to_kb_when_evaluation_says_kb_is_missing() -> None:
+    engine = GuardrailEngine()
+    state = make_state()
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-log-1",
+            source_type=EvidenceSourceType.LOG,
+            source_name="app.log",
+            content="Request completed with an unexpected result.",
+        )
+    )
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-code-1",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/app.py",
+            file_path="src/app.py",
+            content="def handle_request(): return result",
+        )
+    )
+    state.evidence_evaluation = EvidenceEvaluationResult(
+        evaluation_id="eval-1",
+        incident_id="INC-001",
+        confidence_score=0.7,
+        retry_required=True,
+        missing_evidence=["Knowledge-base evidence is missing for expected behavior."],
+        reason="Expected behavior documentation is still needed.",
+    )
+
+    decision = make_decision(AgentName.CODE_INVESTIGATOR)
+
+    result = engine.validate_decision(state=state, decision=decision)
+
+    assert result.allowed is False
+    assert (
+        "missing_knowledge_base_evidence_should_route_to_knowledge_base"
+        in result.violated_rules
+    )
+    assert result.fallback_next_agent == AgentName.KNOWLEDGE_BASE_INVESTIGATOR
+
+
+def test_guardrail_engine_allows_graph_when_structural_and_kb_evidence_are_missing() -> None:
+    engine = GuardrailEngine()
+    state = make_state()
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-code-1",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/app.py",
+            file_path="src/app.py",
+            content="def handle_request(): return service.run()",
+        )
+    )
+    state.evidence_evaluation = EvidenceEvaluationResult(
+        evaluation_id="eval-1",
+        incident_id="INC-001",
+        confidence_score=0.7,
+        retry_required=True,
+        missing_evidence=[
+            "Structural graph evidence is missing.",
+            "Knowledge-base evidence is missing for expected behavior.",
+        ],
+        reason="Structural and documented context are still needed.",
+    )
+
+    result = engine.validate_decision(
+        state=state,
+        decision=make_decision(AgentName.GRAPH_INVESTIGATOR),
+    )
+
+    assert result.allowed is True
+
+
+def test_guardrail_engine_routes_to_graph_when_structural_evidence_is_missing() -> None:
+    engine = GuardrailEngine()
+    state = make_state()
+    state.add_evidence(
+        EvidenceItem(
+            evidence_id="ev-code-1",
+            source_type=EvidenceSourceType.CODE,
+            source_name="src/app.py",
+            file_path="src/app.py",
+            content="def handle_request(): return service.run()",
+        )
+    )
+    state.evidence_evaluation = EvidenceEvaluationResult(
+        evaluation_id="eval-1",
+        incident_id="INC-001",
+        confidence_score=0.7,
+        retry_required=True,
+        missing_evidence=["Structural graph evidence is missing."],
+        reason="Structural context is still needed.",
+    )
+
+    result = engine.validate_decision(
+        state=state,
+        decision=make_decision(AgentName.CODE_INVESTIGATOR),
+    )
+
+    assert result.allowed is False
+    assert (
+        "missing_structural_graph_evidence_should_route_to_graph"
+        in result.violated_rules
+    )
+    assert result.fallback_next_agent == AgentName.GRAPH_INVESTIGATOR
 
 
 def test_guardrail_engine_blocks_rca_without_minimum_evidence() -> None:

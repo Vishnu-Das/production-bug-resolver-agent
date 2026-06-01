@@ -298,6 +298,11 @@ class DynamicBugResolutionGraphWorkflow:
             decision=decision,
             guardrail_decision=guardrail_decision,
         )
+        if not state.can_take_step():
+            state.mark_low_confidence()
+            state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
+            graph_state.next_route = "finish"
+            return graph_state
 
         fallback_agent = guardrail_decision.fallback_next_agent
         if fallback_agent is None:
@@ -346,6 +351,7 @@ class DynamicBugResolutionGraphWorkflow:
             evidence_items = await self._code_investigator_agent.run(
                 CodeInvestigatorInput(
                     decision=decision,
+                    incident=state.incident,
                     evidence_items=state.evidence_items,
                     limit=5,
                 )
@@ -433,11 +439,14 @@ class DynamicBugResolutionGraphWorkflow:
         state.record_guardrail_decision(guardrail_decision)
 
         if not guardrail_decision.allowed:
-            self._record_blocked_guardrail_step(
-                state=state,
-                decision=decision,
-                guardrail_decision=guardrail_decision,
-            )
+            if state.can_take_step():
+                self._record_blocked_guardrail_step(
+                    state=state,
+                    decision=decision,
+                    guardrail_decision=guardrail_decision,
+                )
+            state.mark_low_confidence()
+            state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
             graph_state.next_route = "finish"
             return graph_state
 
@@ -450,7 +459,7 @@ class DynamicBugResolutionGraphWorkflow:
         if evaluation.retry_required:
             if state.can_replan():
                 state.increment_replan()
-            elif not self._can_retry_for_structural_graph_evidence(state):
+            elif not self._can_retry_for_required_evidence(state):
                 state.mark_low_confidence()
                 state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
                 graph_state.next_route = "finish"
@@ -661,12 +670,19 @@ class DynamicBugResolutionGraphWorkflow:
 
     def _route_after_evidence_evaluation(self, graph_state: DynamicGraphState) -> GraphRoute:
         state = self._state(graph_state)
-        if state.investigation_status == InvestigationStatus.FAILED:
+        if state.investigation_status in {
+            InvestigationStatus.FAILED,
+            InvestigationStatus.MAX_STEPS_REACHED,
+        } or state.low_confidence:
             return "finish"
 
         evaluation = state.evidence_evaluation
 
         if evaluation is not None and evaluation.can_write_rca:
+            if not self._has_capacity_for_finalization(state):
+                state.mark_low_confidence()
+                state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
+                return "finish"
             return "rca_writer"
 
         if state.can_take_step() and evaluation is not None and evaluation.retry_required:
@@ -675,6 +691,14 @@ class DynamicBugResolutionGraphWorkflow:
         state.mark_low_confidence()
         state.investigation_status = InvestigationStatus.MAX_STEPS_REACHED
         return "finish"
+
+    def _has_capacity_for_finalization(self, state: WorkflowState) -> bool:
+        required_steps = 3
+        if self._include_patch_plan:
+            required_steps += 1
+        if self._include_patch_diff:
+            required_steps += 1
+        return len(state.trace.steps) + required_steps <= state.max_steps
 
     def _route_after_rca_writer(self, graph_state: DynamicGraphState) -> GraphRoute:
         state = self._state(graph_state)
@@ -732,6 +756,25 @@ class DynamicBugResolutionGraphWorkflow:
         return (
             AgentName.GRAPH_INVESTIGATOR in state.allowed_agent_names
             and state.can_invoke_agent(AgentName.GRAPH_INVESTIGATOR)
+        )
+
+    def _can_retry_for_required_evidence(self, state: WorkflowState) -> bool:
+        if self._can_retry_for_structural_graph_evidence(state):
+            return True
+
+        evaluation = state.evidence_evaluation
+        if evaluation is None:
+            return False
+
+        if not any(
+            "Knowledge-base evidence is missing" in missing_evidence
+            for missing_evidence in evaluation.missing_evidence
+        ):
+            return False
+
+        return (
+            AgentName.KNOWLEDGE_BASE_INVESTIGATOR in state.allowed_agent_names
+            and state.can_invoke_agent(AgentName.KNOWLEDGE_BASE_INVESTIGATOR)
         )
 
     def _ensure_evidence_evaluator_decision(self, state: WorkflowState) -> AgentDecision:

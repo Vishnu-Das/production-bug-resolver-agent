@@ -29,9 +29,8 @@ ANALYZE_ONLY_COMPLETION_CLAIM_PHRASES = (
     "created a pull request",
 )
 EVIDENCE_ID_IN_PROSE_PATTERN = re.compile(
-    r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Za-z0-9_-]+|kb-[A-Za-z0-9_-]+|"
-    r"evidence-[A-Za-z0-9_./\\:-]+)\b",
-    re.IGNORECASE,
+    r"\b(?:EVID-[A-Z0-9_-]+|EVIDENCE-[A-Z0-9_-]+|kb-[A-Za-z0-9_-]+|"
+    r"evidence-(?:src|tests|eval|docs)[/\\][A-Za-z0-9_./\\:-]+)\b",
 )
 logger = get_logger(__name__)
 

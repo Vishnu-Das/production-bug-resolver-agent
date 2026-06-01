@@ -439,23 +439,26 @@ async def test_graph_workflow_completes_rca_solution_and_report() -> None:
 
 
 @pytest.mark.asyncio
-async def test_graph_workflow_records_recoverable_provider_error_and_continues() -> None:
+async def test_graph_workflow_bounds_recoverable_provider_error_retries() -> None:
     supervisor = FakeSupervisorAgent(
         [
-            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
-            decision("decision-2", AgentName.KNOWLEDGE_BASE_INVESTIGATOR, ["docs"]),
-            decision("decision-3", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-BEHAVIOR logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["selected strategy code"]),
+            decision("decision-3", AgentName.KNOWLEDGE_BASE_INVESTIGATOR, ["docs"]),
         ]
     )
     workflow = make_graph_workflow(
         supervisor,
+        incident_provider=BehaviorMismatchIncidentProvider(),
+        log_provider=BehaviorMismatchLogProvider(),
         knowledge_base_provider=FailingKnowledgeBaseProvider(),
         max_replans=3,
     )
 
-    state = await workflow.run("INC-001")
+    state = await workflow.run("INC-BEHAVIOR")
 
-    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert state.investigation_status == InvestigationStatus.MAX_STEPS_REACHED
+    assert state.low_confidence is True
     assert state.error_events
     assert state.error_events[0].component == AgentName.KNOWLEDGE_BASE_INVESTIGATOR.value
     assert state.error_events[0].recoverable is True
@@ -468,6 +471,10 @@ async def test_graph_workflow_records_recoverable_provider_error_and_continues()
     assert any(
         evidence.source_type == EvidenceSourceType.CODE
         for evidence in state.evidence_items
+    )
+    assert (
+        state.agent_invocation_counts[AgentName.KNOWLEDGE_BASE_INVESTIGATOR]
+        == state.max_agent_invocations_per_agent
     )
 
 
@@ -520,6 +527,36 @@ async def test_graph_workflow_routes_to_graph_investigator() -> None:
 
 
 @pytest.mark.asyncio
+async def test_graph_workflow_forces_missing_structural_graph_route() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["router.py TypeError"]),
+            decision("decision-3", AgentName.CODE_INVESTIGATOR, ["more source context"]),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        log_provider=StructuralHintLogProvider(),
+    )
+
+    state = await workflow.run("INC-001")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert any(
+        "missing_structural_graph_evidence_should_route_to_graph"
+        in guardrail_decision.violated_rules
+        and guardrail_decision.fallback_next_agent == AgentName.GRAPH_INVESTIGATOR
+        for guardrail_decision in state.trace.guardrail_decisions
+    )
+    assert any(
+        step.agent_name == AgentName.GRAPH_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
+    )
+
+
+@pytest.mark.asyncio
 async def test_graph_workflow_falls_back_to_code_when_kb_is_chosen_without_code() -> None:
     supervisor = FakeSupervisorAgent(
         [
@@ -533,7 +570,8 @@ async def test_graph_workflow_falls_back_to_code_when_kb_is_chosen_without_code(
 
     assert state.investigation_status == InvestigationStatus.COMPLETED
     assert any(
-        "missing_code_evidence_should_route_to_code" in guardrail_decision.violated_rules
+        "standalone_graph_or_kb_investigator_is_recovery_only"
+        in guardrail_decision.violated_rules
         and guardrail_decision.fallback_next_agent == AgentName.CODE_INVESTIGATOR
         for guardrail_decision in state.trace.guardrail_decisions
     )
@@ -545,7 +583,7 @@ async def test_graph_workflow_falls_back_to_code_when_kb_is_chosen_without_code(
 
 
 @pytest.mark.asyncio
-async def test_graph_workflow_blocks_repeated_kb_and_falls_back_to_code() -> None:
+async def test_graph_workflow_blocks_early_kb_and_falls_back_to_code() -> None:
     supervisor = FakeSupervisorAgent(
         [
             decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-001 logs"]),
@@ -553,11 +591,6 @@ async def test_graph_workflow_blocks_repeated_kb_and_falls_back_to_code() -> Non
                 "decision-2",
                 AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
                 ["routing expectations"],
-            ),
-            decision(
-                "decision-3",
-                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
-                ["product expectations"],
             ),
         ]
     )
@@ -575,12 +608,10 @@ async def test_graph_workflow_blocks_repeated_kb_and_falls_back_to_code() -> Non
     ]
 
     assert state.investigation_status == InvestigationStatus.COMPLETED
-    assert [step.run_status for step in kb_steps] == [
-        AgentRunStatus.SUCCEEDED,
-        AgentRunStatus.BLOCKED,
-    ]
+    assert [step.run_status for step in kb_steps] == [AgentRunStatus.BLOCKED]
     assert any(
-        "missing_code_evidence_should_route_to_code" in guardrail_decision.violated_rules
+        "standalone_graph_or_kb_investigator_is_recovery_only"
+        in guardrail_decision.violated_rules
         and guardrail_decision.fallback_next_agent == AgentName.CODE_INVESTIGATOR
         for guardrail_decision in state.trace.guardrail_decisions
     )
@@ -627,6 +658,40 @@ async def test_graph_workflow_routes_to_kb_for_expected_behavior_mismatch() -> N
             for missing in seen_state.evidence_evaluation.missing_evidence
         )
         for seen_state in supervisor.seen_states
+    )
+
+
+@pytest.mark.asyncio
+async def test_graph_workflow_forces_missing_kb_route_after_replans_are_exhausted() -> None:
+    supervisor = FakeSupervisorAgent(
+        [
+            decision("decision-1", AgentName.LOG_INVESTIGATOR, ["INC-BEHAVIOR logs"]),
+            decision("decision-2", AgentName.CODE_INVESTIGATOR, ["selected strategy code"]),
+            decision("decision-3", AgentName.CODE_INVESTIGATOR, ["more source context"]),
+        ]
+    )
+    workflow = make_graph_workflow(
+        supervisor,
+        incident_provider=BehaviorMismatchIncidentProvider(),
+        log_provider=BehaviorMismatchLogProvider(),
+        knowledge_base_provider=FakeKnowledgeBaseProvider(),
+    )
+
+    state = await workflow.run("INC-BEHAVIOR")
+
+    assert state.investigation_status == InvestigationStatus.COMPLETED
+    assert state.replan_count == state.max_replans
+    assert any(
+        "missing_knowledge_base_evidence_should_route_to_knowledge_base"
+        in guardrail_decision.violated_rules
+        and guardrail_decision.fallback_next_agent
+        == AgentName.KNOWLEDGE_BASE_INVESTIGATOR
+        for guardrail_decision in state.trace.guardrail_decisions
+    )
+    assert any(
+        step.agent_name == AgentName.KNOWLEDGE_BASE_INVESTIGATOR
+        and step.run_status == AgentRunStatus.SUCCEEDED
+        for step in state.trace.steps
     )
 
 

@@ -88,6 +88,28 @@ class GuardrailEngine:
         if self._evidence_rules.should_route_to_missing_code_evidence(state, decision):
             violated_rules.append("missing_code_evidence_should_route_to_code")
 
+        if self._evidence_rules.should_block_non_recovery_specialist_route(
+            state,
+            decision,
+        ):
+            violated_rules.append("standalone_graph_or_kb_investigator_is_recovery_only")
+
+        if self._evidence_rules.should_route_to_missing_structural_graph_evidence(
+            state,
+            decision,
+        ):
+            violated_rules.append(
+                "missing_structural_graph_evidence_should_route_to_graph"
+            )
+
+        if self._evidence_rules.should_route_to_missing_knowledge_base_evidence(
+            state,
+            decision,
+        ):
+            violated_rules.append(
+                "missing_knowledge_base_evidence_should_route_to_knowledge_base"
+            )
+
         if self._routing_rules.repeated_agent_call_without_new_reason(state, decision):
             violated_rules.append("repeated_agent_call_without_new_reason")
 

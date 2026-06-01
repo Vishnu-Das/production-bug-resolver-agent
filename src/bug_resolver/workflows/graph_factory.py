@@ -38,6 +38,7 @@ from bug_resolver.workflows.dynamic_bug_resolution_graph import (
     DynamicBugResolutionGraphWorkflow,
 )
 from bug_resolver.workflows.workflow_dependencies import (
+    build_incident_driven_context_service,
     load_or_build_code_index,
 )
 
@@ -90,6 +91,18 @@ async def build_dynamic_graph_workflow(
         settings=settings,
         embedding_client=embedding_client,
     )
+    code_context_provider = FAISSCodeContextProvider(
+        vector_store=vector_store,
+        embedding_client=embedding_client,
+    )
+    code_graph_provider = PythonASTCodeGraphProvider(settings.target_repo_path)
+    knowledge_base_provider = LocalKnowledgeBaseProvider(settings.knowledge_base_dir)
+    incident_driven_context_service = build_incident_driven_context_service(
+        settings=settings,
+        code_context_provider=code_context_provider,
+        code_graph_provider=code_graph_provider,
+        knowledge_base_provider=knowledge_base_provider,
+    )
 
     return DynamicBugResolutionGraphWorkflow(
         incident_provider=FileIncidentProvider(settings.incidents_dir),
@@ -97,21 +110,19 @@ async def build_dynamic_graph_workflow(
         guardrail_engine=GuardrailEngine(),
         log_investigator_agent=LogInvestigatorAgent(FileLogProvider(settings.logs_dir)),
         code_investigator_agent=CodeInvestigatorAgent(
-            FAISSCodeContextProvider(
-                vector_store=vector_store,
-                embedding_client=embedding_client,
-            ),
+            code_context_provider,
             code_query_rules=CodeQueryRules(),
+            incident_driven_context_service=incident_driven_context_service,
         ),
         code_graph_investigator_agent=CodeGraphInvestigatorAgent(
-            PythonASTCodeGraphProvider(settings.target_repo_path),
+            code_graph_provider,
             code_query_rules=CodeQueryRules(),
         ),
         historical_rca_investigator_agent=HistoricalRCAInvestigatorAgent(
             FileHistoricalRCAProvider(settings.historical_rca_dir)
         ),
         knowledge_base_investigator_agent=KnowledgeBaseInvestigatorAgent(
-            LocalKnowledgeBaseProvider(settings.knowledge_base_dir)
+            knowledge_base_provider
         ),
         evidence_evaluator_agent=EvidenceEvaluatorAgent(),
         rca_writer_agent=RCAWriterAgent(llm_client=rca_writer_llm_client),

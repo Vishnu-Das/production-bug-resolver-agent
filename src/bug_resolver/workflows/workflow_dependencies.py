@@ -7,14 +7,47 @@ from pathlib import Path
 from bug_resolver.config.settings import AppSettings
 from bug_resolver.embeddings.openai_embedding_client import OpenAIEmbeddingClient
 from bug_resolver.errors import ConfigurationError, RetrievalError
+from bug_resolver.providers.code import CodeContextProvider
+from bug_resolver.providers.graph import CodeGraphProvider
+from bug_resolver.providers.knowledge import KnowledgeBaseProvider
+from bug_resolver.providers.retrieval import (
+    CodeGraphExpansionAdapter,
+    KnowledgeSearchAdapter,
+    LocalExactSearchProvider,
+    LocalFileContextProvider,
+    SemanticCodeSearchAdapter,
+)
 from bug_resolver.retrieval.code_file_loader import CodeFileLoader
 from bug_resolver.retrieval.code_indexer import CodeIndexer
 from bug_resolver.retrieval.faiss_vector_store import FAISSVectorStore
+from bug_resolver.retrieval.incident_driven_context_service import (
+    IncidentDrivenContextService,
+)
+from bug_resolver.retrieval.parallel_context_retriever import ParallelContextRetriever
 from bug_resolver.retrieval.python_ast_code_chunker import PythonASTCodeChunker
 from bug_resolver.utils.observability import get_logger
 
 
 logger = get_logger(__name__)
+
+
+def build_incident_driven_context_service(
+    *,
+    settings: AppSettings,
+    code_context_provider: CodeContextProvider,
+    code_graph_provider: CodeGraphProvider,
+    knowledge_base_provider: KnowledgeBaseProvider,
+) -> IncidentDrivenContextService:
+    """Assemble the incident-driven retrieval pipeline from existing providers."""
+    return IncidentDrivenContextService(
+        ParallelContextRetriever(
+            file_context_provider=LocalFileContextProvider(settings.target_repo_path),
+            exact_search_provider=LocalExactSearchProvider(settings.target_repo_path),
+            semantic_code_search_provider=SemanticCodeSearchAdapter(code_context_provider),
+            code_graph_provider=CodeGraphExpansionAdapter(code_graph_provider),
+            knowledge_search_provider=KnowledgeSearchAdapter(knowledge_base_provider),
+        )
+    )
 
 
 async def load_or_build_code_index(

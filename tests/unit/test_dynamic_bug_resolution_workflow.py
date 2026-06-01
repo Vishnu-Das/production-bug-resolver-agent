@@ -386,7 +386,8 @@ async def test_dynamic_workflow_falls_back_to_code_when_supervisor_repeats_logs(
 
     assert state.investigation_status == InvestigationStatus.COMPLETED
     assert any(
-        "missing_code_evidence_should_route_to_code" in guardrail_decision.violated_rules
+        "standalone_graph_or_kb_investigator_is_recovery_only"
+        in guardrail_decision.violated_rules
         for guardrail_decision in state.trace.guardrail_decisions
     )
     assert any(

@@ -37,6 +37,8 @@ def test_incident_facts_defaults() -> None:
     assert facts.candidate_symbols == []
     assert facts.quoted_terms == []
     assert facts.config_like_terms == []
+    assert facts.log_key_terms == []
+    assert facts.event_terms == []
 
 
 def test_incident_facts_accepts_stack_frames() -> None:

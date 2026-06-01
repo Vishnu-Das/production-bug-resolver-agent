@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable
 from dataclasses import dataclass
+from time import perf_counter
 
 from bug_resolver.providers.retrieval import (
     CodeGraphExpansionProvider,
@@ -21,8 +21,9 @@ from bug_resolver.schemas import (
     RetrievalPlan,
     RetrievalProviderFailure,
 )
+from bug_resolver.utils.observability import get_logger, traceable
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -52,12 +53,20 @@ class ParallelContextRetriever:
         self._code_graph_provider = code_graph_provider
         self._knowledge_search_provider = knowledge_search_provider
 
+    @traceable(name="incident_driven_context.retrieve_parallel", run_type="retriever")
     async def retrieve(self, plan: RetrievalPlan) -> RetrievalBatchResult:
         """Execute populated routes in parallel without ranking or transforming candidates."""
         calls = self._build_calls(plan)
         if not calls:
+            logger.info("parallel context retrieval skipped routes=0")
             return RetrievalBatchResult()
 
+        started_at = perf_counter()
+        logger.info(
+            "parallel context retrieval started routes=%s names=%s",
+            len(calls),
+            [call.route for call in calls],
+        )
         responses = await asyncio.gather(
             *(call.awaitable for call in calls),
             return_exceptions=True,
@@ -79,8 +88,22 @@ class ParallelContextRetriever:
                 warnings.append(warning)
                 logger.warning(warning)
                 continue
+            logger.info(
+                "parallel retrieval route finished route=%s provider=%s candidates=%s",
+                call.route,
+                call.provider_name,
+                len(response),
+            )
             candidates.extend(response)
 
+        logger.info(
+            "parallel context retrieval finished routes=%s candidates=%s failures=%s "
+            "duration_ms=%.2f",
+            len(calls),
+            len(candidates),
+            len(failures),
+            (perf_counter() - started_at) * 1000,
+        )
         return RetrievalBatchResult(
             candidates=candidates,
             warnings=warnings,

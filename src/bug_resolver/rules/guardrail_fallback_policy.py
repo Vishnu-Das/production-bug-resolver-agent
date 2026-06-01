@@ -23,7 +23,11 @@ class GuardrailFallbackPolicy:
             return AgentName.LOG_INVESTIGATOR
 
         if (
-            blocked_agent == AgentName.GRAPH_INVESTIGATOR
+            blocked_agent
+            in {
+                AgentName.GRAPH_INVESTIGATOR,
+                AgentName.KNOWLEDGE_BASE_INVESTIGATOR,
+            }
             and state.can_invoke_agent(AgentName.CODE_INVESTIGATOR)
         ):
             return AgentName.CODE_INVESTIGATOR
@@ -32,6 +36,18 @@ class GuardrailFallbackPolicy:
             AgentName.CODE_INVESTIGATOR
         ):
             return AgentName.CODE_INVESTIGATOR
+
+        if (
+            self._evidence_rules.missing_structural_graph_evidence(state)
+            and state.can_invoke_agent(AgentName.GRAPH_INVESTIGATOR)
+        ):
+            return AgentName.GRAPH_INVESTIGATOR
+
+        if (
+            self._evidence_rules.missing_knowledge_base_evidence(state)
+            and state.can_invoke_agent(AgentName.KNOWLEDGE_BASE_INVESTIGATOR)
+        ):
+            return AgentName.KNOWLEDGE_BASE_INVESTIGATOR
 
         if blocked_agent == AgentName.FINISH:
             return AgentName.EVIDENCE_EVALUATOR

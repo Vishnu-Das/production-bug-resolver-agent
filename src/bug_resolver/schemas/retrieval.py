@@ -5,7 +5,10 @@ from __future__ import annotations
 from pydantic import Field, model_validator
 
 from bug_resolver.schemas.common import ConfidenceScore, StrictBaseModel
-from bug_resolver.schemas.evidence_scoring import EvidenceCandidate
+from bug_resolver.schemas.evidence_scoring import (
+    EvidenceCandidate,
+    EvidenceEvaluationResult,
+)
 
 
 class StackFrame(StrictBaseModel):
@@ -32,6 +35,8 @@ class IncidentFacts(StrictBaseModel):
     candidate_symbols: list[str] = Field(default_factory=list)
     quoted_terms: list[str] = Field(default_factory=list)
     config_like_terms: list[str] = Field(default_factory=list)
+    log_key_terms: list[str] = Field(default_factory=list)
+    event_terms: list[str] = Field(default_factory=list)
 
 
 class RetrievalAnchor(StrictBaseModel):
@@ -110,3 +115,16 @@ class RetrievalBatchResult(StrictBaseModel):
     warnings: list[str] = Field(default_factory=list)
     failed_retrievers: list[str] = Field(default_factory=list)
     failures: list[RetrievalProviderFailure] = Field(default_factory=list)
+
+
+class IncidentDrivenContextResult(StrictBaseModel):
+    """Structured output from incident-driven retrieval and evidence evaluation."""
+
+    facts: IncidentFacts
+    retrieval_plan: RetrievalPlan
+    raw_candidates: list[EvidenceCandidate] = Field(default_factory=list)
+    normalized_candidates: list[EvidenceCandidate] = Field(default_factory=list)
+    deduplicated_candidates: list[EvidenceCandidate] = Field(default_factory=list)
+    evaluation: EvidenceEvaluationResult
+    retrieval_warnings: list[str] = Field(default_factory=list)
+    failed_retrievers: list[str] = Field(default_factory=list)

@@ -15,8 +15,15 @@ from bug_resolver.rules.guardrail_evidence_rules import GuardrailEvidenceRules
 from bug_resolver.rules.guardrail_fallback_policy import GuardrailFallbackPolicy
 from bug_resolver.rules.guardrail_graph_rules import GuardrailGraphRules
 from bug_resolver.rules.guardrail_routing_rules import GuardrailRoutingRules
+from bug_resolver.rules.owner_graph_expansion_rules import OwnerGraphExpansionRules
 from bug_resolver.rules.patch_generation_rules import PatchGenerationRules
 from bug_resolver.rules.patch_suggestion_rules import PatchSuggestionRules
+from bug_resolver.rules.ranked_evidence_conversion_rules import (
+    RankedEvidenceConversionRules,
+)
+from bug_resolver.rules.ranked_evidence_selection_rules import (
+    RankedEvidenceSelectionRules,
+)
 from bug_resolver.rules.solution_rules import SolutionRules
 
 __all__ = [
@@ -39,5 +46,8 @@ __all__ = [
     "GuardrailRoutingRules",
     "PatchGenerationRules",
     "PatchSuggestionRules",
+    "OwnerGraphExpansionRules",
+    "RankedEvidenceConversionRules",
+    "RankedEvidenceSelectionRules",
     "SolutionRules",
 ]

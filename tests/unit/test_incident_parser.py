@@ -77,6 +77,80 @@ def test_incident_parser_extracts_config_like_terms() -> None:
     assert facts.config_like_terms == ["RERANKING_MODEL_NAME"]
 
 
+def test_incident_parser_extracts_structured_log_keys() -> None:
+    facts = IncidentParser().parse(
+        incident_id="INC-STRUCTURED-001",
+        summary="Worker produced duplicate records",
+        log_texts=[
+            'content_hash="abc123" dedupe_key="record:abc123" '
+            "processed_uploads_match=true"
+        ],
+    )
+
+    assert facts.log_key_terms == [
+        "content_hash",
+        "dedupe_key",
+        "processed_uploads_match",
+    ]
+
+
+def test_incident_parser_extracts_json_log_keys() -> None:
+    facts = IncidentParser().parse(
+        incident_id="INC-STRUCTURED-002",
+        summary="Runtime event was recorded",
+        log_texts=['{"event": "cache_refresh_failed", "content_hash": "abc123"}'],
+    )
+
+    assert facts.log_key_terms == ["event", "content_hash"]
+
+
+def test_incident_parser_extracts_event_values_and_runtime_snake_case_terms() -> None:
+    facts = IncidentParser().parse(
+        incident_id="INC-STRUCTURED-003",
+        summary="Runtime workflow changed",
+        log_texts=[
+            "event=cache_refresh_failed action=indexing_started "
+            "name=document_uploaded processed_uploads_match=true"
+        ],
+    )
+
+    assert facts.event_terms == [
+        "cache_refresh_failed",
+        "indexing_started",
+        "document_uploaded",
+        "processed_uploads_match",
+    ]
+
+
+def test_incident_parser_deduplicates_structured_terms_and_avoids_noisy_values() -> None:
+    facts = IncidentParser().parse(
+        incident_id="INC-STRUCTURED-004",
+        summary="Runtime workflow changed",
+        log_texts=[
+            "request_id=req_123 trace_id=trace_456 event=cache_refresh_failed "
+            'filename="guide.pdf" digest="aabbccddeeff00112233445566778899" '
+            "correlation_id=123e4567-e89b-12d3-a456-426614174000 "
+            "cache_refresh_failed=true",
+            "event=cache_refresh_failed",
+        ],
+    )
+
+    assert facts.log_key_terms == [
+        "event",
+        "filename",
+        "digest",
+        "cache_refresh_failed",
+    ]
+    assert facts.event_terms == ["cache_refresh_failed"]
+    assert "request_id" not in facts.log_key_terms
+    assert "trace_id" not in facts.log_key_terms
+    assert "req_123" not in facts.event_terms
+    assert "trace_456" not in facts.event_terms
+    assert "guide.pdf" not in facts.event_terms
+    assert "aabbccddeeff00112233445566778899" not in facts.event_terms
+    assert "123e4567-e89b-12d3-a456-426614174000" not in facts.event_terms
+
+
 def test_incident_parser_extracts_candidate_symbols_from_text() -> None:
     facts = IncidentParser().parse(
         incident_id="INC-007",
@@ -86,6 +160,16 @@ def test_incident_parser_extracts_candidate_symbols_from_text() -> None:
     assert "BillingService" in facts.candidate_symbols
     assert "payment.charge_card" in facts.candidate_symbols
     assert "charge_card" in facts.candidate_symbols
+
+
+def test_incident_parser_does_not_treat_runtime_modules_or_filenames_as_symbols() -> None:
+    facts = IncidentParser().parse(
+        incident_id="INC-STRUCTURED-005",
+        summary="Runtime workflow changed",
+        log_texts=['service.worker filename="guide.pdf" worker.step_started=true'],
+    )
+
+    assert facts.candidate_symbols == []
 
 
 def test_incident_parser_deduplicates_preserving_order() -> None:
